@@ -57,6 +57,9 @@ import fetch_render_tinyfish as _render_tinyfish
 # 质量信号层（第三级）：来源分类 / 页面类型 / 质量分 / 内容安全
 import fetch_quality as _quality
 
+# 认证直取层（第零级前置）：飞书云文档经 lark-cli 取原生 Markdown
+import fetch_feishu as _feishu
+
 # 本地状态目录唯一来源（env ARGO_STATE_DIR → config cache.db_path 父目录 → 旧路径）
 import argo_paths as _paths
 from net_proxy import open_url  # 出口调度唯一入口（issue #13 同类修复）
@@ -176,7 +179,7 @@ _EMPTY_SHELL = re.compile(
 # 已产出 Markdown 的抓取方式：内容已由站点或阅读器转好，没有 HTML 壳可言。
 _MARKDOWN_METHODS = frozenset({"http_md", "md_variant", "llms_txt",
                                "jina", "jina_reader", "parallel",
-                               "parallel_mcp", "tinyfish"})
+                               "parallel_mcp", "tinyfish", "feishu_md"})
 
 
 def _needs_browser(result: dict) -> bool:
@@ -1277,6 +1280,30 @@ def fetch_v3(url: str, max_chars: int = 8000, timeout: float = 8.0,
 
     # URL 优化（Reddit 重写、追踪参数清理）
     url = _optimize_url(url)
+
+    # ── 飞书文档：认证直取（真·第零级，排在 robots 之前）───────────────────
+    # 放在缓存、robots 与任何网络尝试之前。三个理由：
+    #   ① 公开路径对飞书文档 URL 注定失败（登录墙），先试只会白烧一整条降级链
+    #      ——实测 35s 冷启动 Chrome CDP，换回一个 231 字符的登录页；
+    #   ② 结果带 login_state_used，本就属登录态分区、不落公共缓存，走缓存
+    #      读写在语义上是错的（而且既有缓存里那份登录页会遮蔽本修复）；
+    #   ③ 排在 robots 之前：robots.txt 规范的是**爬取**，而本通道是拿用户自己的
+    #      OAuth 凭据调自家租户的 API，不是爬取，robots 不适用。实测 feishu.cn
+    #      的 robots 恒为 Allow:/，这次检查结果必然是放行——纯白付一次网络往返
+    #      （robots_guard 的缓存是模块级字典、只在进程内，CLI 每次调用都是新进程，
+    #      故 0.16–0.29s 每次照付，占本路径总耗时约 25%）。
+    # need_html / actions 跳过：本通道只产 markdown，与 tinyfish/jina/Parallel
+    # 同类，契约一致（见 docstring 的 need_html 说明）。
+    if _feishu.enabled() and not need_html and not actions:
+        feishu_text = _feishu.fetch_text(url, min(timeout, 10.0))
+        if feishu_text is not None:
+            result = _markdown_result(url, feishu_text, max_chars, "feishu_md")
+            # 登录态内容 → 进 cache 的登录态分区，不落公共缓存（复用既有机制，
+            # 见 cache.is_login_partition_payload）。飞书正文只在有权限的人手里成立。
+            result["login_state_used"] = True
+            result = _assess_quality(result)
+            result["cached"] = False
+            return _strip_html_unless_needed(result, need_html)
 
     # robots.txt 尊重（合规检查）：被禁路径直接拒绝，抓取失败放行
     try:

@@ -65,6 +65,32 @@ _PAYWALL_MARKERS = (
     "premium content", "paywall",
 )
 
+# 登录墙/注册墙（多语言）。命中即 page_type=auth_wall，下游 cache._POOR_PAGE_TYPES
+# 早已把它当内容类失败（换源别耗）——此前缺的是生产方：主抓取路径只有英文
+# paywall 标记，中文登录墙一律落 unknown，再靠 quality_score>0.25 且
+# len>80 两道阈值险过，于是登录页带着 content_ok=True 混进结果
+# （实测飞书文档 URL：chrome_cdp 冷启动 35s，拿回「扫码登录」页 231 字符，
+#  quality_score 0.31，content_ok=True）。
+#
+# 与 blocked 的分界沿用 engine_failure 的裁决：auth 是「内容存在但你没资格」，
+# blocked 是「请求在到达内容前就被机器挡下」。故验证码/人机校验属 blocked，
+# 不入此表——把两者混为一谈会把用户支去错误的修复方向（重登录 vs 换请求形态）。
+_AUTH_WALL_MARKERS = (
+    # 中文
+    "扫码登录", "请先登录", "登录后查看", "登录以继续", "请登录后", "登录已过期",
+    "还没有账号", "切换至", "账号登录", "手机号登录", "密码登录",
+    # 英文
+    "sign in to continue", "log in to continue", "sign in to view",
+    "sign in to read", "please log in", "please sign in",
+    "login required", "not logged in",
+)
+
+# 内容类失败的页面类型：结构判出来即「没有可用正文」。
+# 单一真源——cache.local_status 的取数可用性分流与 fetch_quality 的 content_ok
+# 共用本表。同一判据两处各写一份，迟早漂移成两个不同答案（本仓对布尔开关
+# 已有同样的纪律：只留一套计算方式）。
+WALL_PAGE_TYPES = ("auth_wall", "paywall", "js_shell")
+
 _META_REFRESH_RE = re.compile(
     r'<meta\b[^>]*?http-equiv=["\']refresh["\'][^>]*?content=["\'][^"\']*url=',
     re.IGNORECASE,
@@ -212,26 +238,40 @@ def detect_page_type(html: str, url: str = "", content: str = "") -> dict:
     """从 HTML 判断页面结构类型。
 
     返回 {"page_type", "confidence"}。
-    page_type: article/list/forum/qa/docs/paywall/redirect/unknown。
-    错误推导信号（js_shell/auth_wall）不在此处检测——由上层错误回调 override。
+    page_type: article/list/forum/qa/docs/auth_wall/paywall/redirect/unknown。
+    auth_wall（登录墙）在此处检测：它常以 HTTP 200 + 合法 HTML 返回，走不到
+    「上层错误回调」，只能靠正文标记认；js_shell 仍由上层错误回调 override。
 
     content 参数用于 markdown-only 源（.md 变体 / tinyfish 渲染层）回退：
     这类源没有原始 HTML，docs / list / forum 等结构信号全部缺失，只能按
     正文字数判「正文充分」，confidence 相应压低（0.4）以反映判定降级。
     """
     if not html or not html.strip():
+        # markdown-only 源同样可能落登录墙（远端渲染器把登录页也转成 markdown）
+        if content and any(m in content.lower() for m in _AUTH_WALL_MARKERS):
+            return {"page_type": "auth_wall", "confidence": 0.7}
         if content and len(content) > MIN_ARTICLE_CHARS:
             return {"page_type": "article", "confidence": 0.4}
         return {"page_type": "unknown", "confidence": 0.0}
     low = html.lower()
+    # de-tag 后的正文：JS 渲染的墙页在原始 HTML 里是空壳或把词拆进不同标签，
+    # 只匹配 html 会整类漏判——实测飞书登录页 html 16KB 不含「扫码登录」，
+    # 提取正文 231 字含，于是判成 unknown 并带着 content_ok=True 混进结果。
+    text_low = (content or "").lower()
     # 跳转
     if _META_REFRESH_RE.search(low):
         return {"page_type": "redirect", "confidence": 0.9}
     text_len_approx = len(re.sub(r"<[^>]+>", "", low))
     if _JS_REDIRECT_RE.search(low) and text_len_approx < 500:
         return {"page_type": "redirect", "confidence": 0.85}
-    # paywall
-    if any(m in low for m in _PAYWALL_MARKERS):
+    # 登录墙（先于 paywall：前者可自救，后者不可）。两侧都看：html 覆盖静态页，
+    # 正文覆盖 JS 渲染页。
+    if any(m in text_low for m in _AUTH_WALL_MARKERS) or \
+            any(m in low for m in _AUTH_WALL_MARKERS):
+        return {"page_type": "auth_wall", "confidence": 0.85}
+    # paywall（同样两侧都看；只查 html 会漏 JS 渲染的付费墙）
+    if any(m in text_low for m in _PAYWALL_MARKERS) or \
+            any(m in low for m in _PAYWALL_MARKERS):
         return {"page_type": "paywall", "confidence": 0.9}
     # 结构化标记
     if any(m in low for m in _QA_MARKERS):
