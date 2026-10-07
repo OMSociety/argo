@@ -7,6 +7,9 @@
   mdfind   macOS Spotlight 全盘保底（--spotlight 或 --scope all）
 
 输出原则：默认精简文本（路径:行号:截断片段），--json 供 Agent 消费。
+排序原则：内容命中按 BM25F 相关度重排（池子选择仍是确定性的 (路径,行号) 口径，
+变的只是池内次序；ARGO_SEEK_CONTENT_RERANK=0 关闭，正则/纯符号查询与
+--count/--context 模式自动跳过）。文件名场景用 fzf V2 评分 + 拼音加分。
 全链路零 token 消耗：工具输出本身就是压缩后的结果。
 
 用法：
@@ -295,6 +298,95 @@ def _apply_noise_floor(rows, root, max_results):
     return (clean + noisy)[:max_results]
 
 
+_ENV_FALSY = ("0", "off", "no", "false", "disable", "disabled")
+
+# 重排开启时的池子上限：评分几百行在毫秒级（seek_rank 单遍计数），而浅池
+# 会让「每文件只轮到 1 行」、文件内最相关的深行进不了评分视野。
+_POOL_CAP_MAX = 400
+
+
+def _rerank_wanted(raw_query: str, context: int, count: bool,
+                   fixed: bool) -> bool:
+    """内容重排是否应该启用（只做**廉价判定**，不导入打分模块）。
+
+    供 rg_search 在选池**之前**决定池子上限：重排开启时池子放宽到
+    _POOL_CAP_MAX（评分几百行只多几毫秒，而浅池会把每个文件只轮到 1 行、
+    文件内最相关的深行永远进不了评分视野）；关闭时维持与旧版逐位一致的
+    小池（此时输出次序 = (路径,行号) 基准序，行为零变化）。
+    """
+    if (os.environ.get("ARGO_SEEK_CONTENT_RERANK", "").strip().lower()
+            in _ENV_FALSY):
+        return False
+    return bool(fixed) and not count and context <= 0 and bool(raw_query)
+
+
+def _rerank_content(rows, raw_query: str, context: int, count: bool,
+                    fixed: bool = True):
+    """BM25F 相关度重排的**闸门**：条件全过才真正打分，否则原样返回。
+
+    1. ARGO_SEEK_CONTENT_RERANK 关闭 → 整体逃生门（恢复 (路径,行号) 原序）
+    2. --count / --context 模式跳过：计数模式的输出语义是「每文件命中数」，
+       上下文模式的行序承载分组结构，都不适用相关度次序
+    3. 非字面量查询（正则/PCRE2，fixed=False）跳过：词元切分会把 `\\d{4}`
+       切成 d/4/2 这类碎片，重排只引入噪声（字面量才进重排）
+    4. seek_rank 任何异常 → 原样返回（重排是增益项，绝不阻塞主流程）
+
+    打分只依赖 (路径, 行号, 行文本, 查询)，与 rg 发射序无关，并列分按
+    (路径,行号) 升序——test_determinism_20261006 的确定性契约由此延续。
+    """
+    if not _rerank_wanted(raw_query, context, count, fixed):
+        return rows
+    try:
+        import seek_rank
+        import seek_frecency
+        boost_fn = seek_frecency.boost if seek_frecency.enabled() else None
+        return seek_rank.rank_rows(rows, raw_query, boost_fn=boost_fn)
+    except Exception:
+        return rows
+
+
+def _select_pool(candidates, cap: int, per_file: int = 8) -> list:
+    """有界池的**按文件轮转配额**选择（2026-10-07，方案甲）。
+
+    旧口径 = (路径,行号,内容) 最小的 cap 条：单文件命中几百行的高频词查询
+    会把池位全吃掉，而路径序在后的文件（sub-skills/ 排在 docs/ 之后）一行
+    都进不了池——BM25F 重排只能排池内的东西，池子本身偏了排序再好也白搭。
+
+    现口径：文件按路径序（确定性），每文件最多 per_file 行（取该文件
+    (行号,内容) 最小的几行），轮转填满 cap。命中集无论以什么顺序发射，
+    选出的池逐条一致（test_determinism 契约延续）；多样性换来的代价是
+    「单文件超 per_file 行的深处行」可能落选——对行粒度输出这是可接受的
+    取舍，深层行本就该用 --context / --outline 精读。
+    """
+    by_file: dict[str, list] = {}
+    for fp, ln, txt in candidates:
+        rows = by_file.setdefault(fp, [])
+        if len(rows) < per_file:
+            rows.append((ln, txt))
+        elif per_file > 1:
+            # 有界保持每文件最小的 per_file 行：与 nsmallest 同语义
+            largest = max(rows)
+            if (ln, txt) < largest:
+                rows[rows.index(largest)] = (ln, txt)
+    out: list = []
+    # 文件按路径序轮转，各出 1 行填池——池内文件多样性优先于单文件深度
+    consumed: dict[str, int] = {fp: 0 for fp in by_file}
+    while len(out) < cap:
+        progressed = False
+        for fp in sorted(by_file):
+            i = consumed[fp]
+            if i < len(by_file[fp]):
+                ln, txt = by_file[fp][i]
+                out.append((fp, ln, txt))
+                consumed[fp] = i + 1
+                progressed = True
+                if len(out) >= cap:
+                    break
+        if not progressed:
+            break
+    return out
+
+
 def rg_search(patterns, path, excludes, exts, context, count, max_results,
               fixed, raw_query="", dots=False, drop_noise=True, timeout=None,
               since_ts=None, until_ts=None):
@@ -364,13 +456,12 @@ def rg_search(patterns, path, excludes, exts, context, count, max_results,
     out = []
     # 上界池 + **确定性选择**：rg 并行遍历的发射序不稳定，「先到先得」截断
     # 拿到的是任意的 cap 条——同一查询两次跑、命中集与排序都不同（v1.4.1
-    # 审计遗留，2026-10-06 定性修复）。rg 的全量输出反正已被
-    # subprocess.run 缓冲，此前的 break 从来省不下 rg 的墙钟；改用有界堆
-    # 选 (路径,行号,内容) 最小的 cap 条：与发射序无关、内存 O(cap)、单遍
-    # 流式，池子天然按路径有序，噪声档分层（clean+noisy 保序）随之确定。
-    # 超大仓高频词 >cap 时稳定呈现路径序最前的 cap 个——无内容相关性
-    # 排序可用的前提下，这是可复现的口径。
+    # 审计遗留，2026-10-06 定性修复）。池子选择与发射序无关、内存有界、
+    # 单遍流式（2026-10-07 升级为按文件轮转配额，见 _select_pool：修复
+    # 「单文件高频命中挤占池位、路径序靠后文件整体出局」的多样性缺陷）。
     cap = max(max_results, min(max_results * 4, 400))
+    if _rerank_wanted(raw_query, context, count, fixed):
+        cap = max(cap, _POOL_CAP_MAX)  # 重排开启：池子放宽，深行进得了评分视野
     candidates = (
         (m.group(1), int(m.group(2)), truncate(m.group(3)))
         for line in proc.stdout.splitlines()
@@ -378,7 +469,14 @@ def rg_search(patterns, path, excludes, exts, context, count, max_results,
         # 时间窗在入池前过滤：窗外行不占上界名额（先截断后过滤会漏报）
         and _in_time_window(m.group(1), since_ts, until_ts)
     )
-    out = heapq.nsmallest(cap, candidates, key=lambda t: (t[0], t[1], t[2]))
+    out = _select_pool(candidates, cap)
+    out.sort()  # 基准序 = (路径,行号,内容)：重排关闭时与 2026-10-06 口径逐位一致
+    # BM25F 相关度重排（2026-10-07，方案甲）：池子的**选择**口径不变（与发射序
+    # 无关），变的只是池内**呈现次序**——基线实测多词查询的 top5 常被配置/
+    # 文档里的顺带提及占满，实现文件进不了前五。闸门与降级见 _rerank_content。
+    # 注意：这里刻意不写具体查询例——本文件就在被搜语料里，注释里出现
+    # 常见查询原词会给 eval 制造自污染（首轮实测踩过）。
+    out = _rerank_content(out, raw_query, context, count, fixed)
     if drop_noise:
         out = _apply_noise_floor(out, path, max_results)
     else:
@@ -386,9 +484,96 @@ def rg_search(patterns, path, excludes, exts, context, count, max_results,
     return out, None
 
 
-# ── 文件名相关性评分 + 拼音首字母（fzf 式；pypinyin 优先，GB2312 表保底）──────────
+# ── fzf FuzzyMatchV2 评分 + 拼音首字母（pypinyin 优先，GB2312 表保底）──────────
+# 评分常数与对齐算法按 junegunn/fzf src/algo/algo.go 的 FuzzyMatchV2 口径实现
+# （2026-10-07 方案甲：原手搓版只有「边界+4/连续+3/全等+5」三档，无 gap 惩罚、
+# 无 camelCase 加成，歧义文件名的 top1 判定比 fzf 真版粗一档）。DP 对齐保证
+# 最优匹配位置（xaabc 搜 ab 时「跳过词首 a 取边界 b」的得分高于顺位连打，
+# 顺位贪心永远发现不了这类反超）；文件名长度量级下 O(m·n) 开销微秒级。
 
-# GB2312 首字母区间表（常用汉字全覆盖；生僻字回退原字）
+_SCORE_MATCH = 16
+_GAP_START = -3
+_GAP_EXT = -1
+_BONUS_BOUNDARY = _SCORE_MATCH // 2              # 8：串首/路径段/词边界
+_BONUS_NON_WORD = _SCORE_MATCH // 2              # 8：其他非词字符之后
+_BONUS_CAMEL = _BONUS_BOUNDARY + _GAP_EXT        # 7：驼峰大写/字母→数字
+_BONUS_CONSECUTIVE = -(_GAP_START + _GAP_EXT)    # 4：连续命中
+_FIRST_CHAR_MULT = 2                             # 首个模式字符的边界加成翻倍
+_EXACT_CASE_BONUS = _SCORE_MATCH                 # 全等（区分大小写）
+_EXACT_BONUS = _SCORE_MATCH // 2                 # 全等（仅忽略大小写）
+
+
+def _match_bonus(prev: str | None, ch: str) -> int:
+    """n[j] 作为匹配点时的边界加成（fzf 的 bonusFor 口径）。"""
+    if prev is None:
+        return _BONUS_BOUNDARY
+    if prev in "/-_. ":
+        return _BONUS_BOUNDARY
+    if prev.islower() and ch.isupper():
+        return _BONUS_CAMEL
+    if prev.isalpha() and ch.isdigit():
+        return _BONUS_CAMEL
+    if not prev.isalnum():
+        return _BONUS_NON_WORD
+    return 0
+
+
+def _fzf_score(name: str, pattern: str) -> int:
+    """fzf FuzzyMatchV2 文件名匹配评分（smart case + DP 最优对齐）。0 表示不匹配。
+
+    M[i][j] = 模式 p[:i+1] 匹配且 p[i] 恰落在 n[j] 的最优分；
+    连续命中走 M[i-1][j-1] + 连续加成；有间隙的转移用仿射 gap 惩罚
+    （GAP_START + GAP_EXT×(g-1)），经前缀最大值 H[i-1][j'] + (-GAP_EXT)×j'
+    折算成 O(m·n) 单遍——文件名长度量级下等价于 fzf 的滑窗实现。
+    """
+    if not pattern or not name:
+        return 0
+    p, n = pattern, name
+    if not any(c.isupper() for c in p):  # smart case：无大写则忽略大小写
+        p, n = p.lower(), n.lower()
+    m, ln = len(p), len(n)
+    if m > ln:
+        return 0
+    NEG = float("-inf")
+    prev_m: list[float] = [NEG] * ln   # 上一模式字符的 M 值（按 n 下标）
+    prev_h: list[float] = [NEG] * ln   # 上一行 M 的前缀最大值
+    prev_pm: list[float] = [NEG] * ln  # max_{j'≤k}(prev_h[j'] + j')，仿射 gap 用
+    for i in range(m):
+        pc = p[i]
+        cur_m: list[float] = [NEG] * ln
+        cur_h: list[float] = [NEG] * ln
+        for j in range(ln):
+            if n[j] != pc:
+                continue
+            if i == 0:
+                cur_m[j] = _SCORE_MATCH + \
+                    _match_bonus(n[j - 1] if j else None, n[j]) * _FIRST_CHAR_MULT
+            else:
+                best = NEG
+                if j >= 1 and prev_m[j - 1] != NEG:
+                    best = prev_m[j - 1] + _SCORE_MATCH + _BONUS_CONSECUTIVE
+                if j >= 2 and prev_pm[j - 2] != NEG:
+                    best = max(best, prev_pm[j - 2] + _GAP_START + 2 - j)
+                if best != NEG:
+                    cur_m[j] = best + _SCORE_MATCH + \
+                        _match_bonus(n[j - 1] if j else None, n[j])
+            if cur_m[j] != NEG:
+                cur_h[j] = max(cur_h[j - 1] if j else NEG, cur_m[j])
+        run = NEG
+        for j in range(ln):
+            if cur_h[j] != NEG:
+                run = max(run, cur_h[j] + j)
+            prev_pm[j] = run
+        prev_m, prev_h = cur_m, cur_h
+    best = max(prev_h) if ln else NEG
+    if best == NEG:
+        return 0
+    score = int(best)
+    if p == n:
+        score += _EXACT_CASE_BONUS
+    elif p == n.lower():
+        score += _EXACT_BONUS
+    return score
 _GB2312_SECTIONS = (
     (0xB0A1, 0xB0C4, "a"), (0xB0C5, 0xB2C0, "b"), (0xB2C1, 0xB4ED, "c"),
     (0xB4EE, 0xB6E9, "d"), (0xB6EA, 0xB7A1, "e"), (0xB7A2, 0xB8C0, "f"),
@@ -433,31 +618,6 @@ def pinyin_initials(text: str) -> str:
     return "".join(out)
 
 
-def _fzf_score(name: str, pattern: str) -> int:
-    """fzf 式文件名匹配评分：smart case + 连续匹配/段边界加分。0 表示不匹配。
-    借鉴 fzf 的常见场景优化：连续命中、路径段/词边界、全等大加分。"""
-    if not pattern or not name:
-        return 0
-    p, n = pattern, name
-    if not any(c.isupper() for c in p):  # smart case：无大写则忽略大小写
-        p, n = p.lower(), n.lower()
-    score, prev, i = 0, -2, 0
-    for ch in p:
-        idx = n.find(ch, i)
-        if idx < 0:
-            return 0
-        if prev >= 0 and idx == prev + 1:
-            score += 3        # 连续命中
-        elif idx == 0 or n[idx - 1] in "/._- " or not n[idx - 1].isalnum():
-            score += 4        # 路径段/词边界命中
-        else:
-            score += 1
-        prev, i = idx, idx + 1
-    if len(p) == len(n):
-        score += 5            # 全等
-    return score
-
-
 def _looks_like_pinyin_abbrev(q: str) -> bool:
     """疑似中文拼音缩写（如 xjj）：纯 ASCII 字母、2-4 位。"""
     q = (q or "").strip()
@@ -487,13 +647,32 @@ def _file_pinyin_bonus(path: str, query: str) -> int:
 
 
 def _rank_path_results(results, query: str):
-    """按文件名相关性排序：fzf 评分 + 拼音加分 + mtime 新优先。
-    仅用于「按文件定位」场景（--filename / --spotlight）；内容搜索保持原序。"""
+    """按文件名相关性排序：fzf V2 评分 + 拼音加分 + frecency（opt-in）+ mtime 新优先。
+
+    仅用于「按文件定位」场景（--filename / --spotlight）；内容命中的相关度
+    次序由 _rerank_content（BM25F）负责，不走这里。
+    """
+    frec_on, boost_fn = False, None
+    try:
+        import seek_frecency
+        frec_on, boost_fn = seek_frecency.enabled(), seek_frecency.boost
+    except Exception:
+        pass
+    now = time.time()
+
     def key(it):
         fp = it[0] if isinstance(it, (list, tuple)) else str(it)
         sc = _fzf_score(Path(fp).name, query)
         sc += _file_pinyin_bonus(fp, query)
-        sc += max(0, _fzf_score(fp, query.lower())) // 4  # 全路径段匹配也加分
+        # 全路径段匹配也加分。V2 的分数量级是旧手搓版的 ~4 倍（基分 16 vs 3-4），
+        # 除数同步 4→16，保持「路径段是文件名的从属信号」这一原比例——
+        # 不调的话全路径匹配会反超文件名匹配 + 拼音加成，排序语义就变了。
+        sc += max(0, _fzf_score(fp, query.lower())) // 16
+        if frec_on and boost_fn is not None:
+            try:
+                sc += boost_fn(fp, now)
+            except Exception:
+                pass
         try:
             mt = os.path.getmtime(fp)
         except OSError:
@@ -1176,6 +1355,17 @@ def run_query(argv=None, time_budget=None) -> tuple[str, int]:
     # 按文件定位场景（fd/spotlight）：fzf 相关性评分 + 拼音加分 + mtime 新优先排序
     if (args.filename or args.spotlight) and results:
         results = _rank_path_results(results, args.query)
+
+    # frecency 记录（opt-in，ARGO_SEEK_FRECENCY=1）：只记最终交付的 top 路径，
+    # 关闭时零 IO、零行为差异（见 seek_frecency.py）
+    if results:
+        try:
+            import seek_frecency
+            if seek_frecency.enabled():
+                seek_frecency.record([r[0] if isinstance(r, (list, tuple)) else str(r)
+                                      for r in results])
+        except Exception:
+            pass
 
     if err:
         return f"local-seek: {err}", 1
