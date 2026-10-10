@@ -1,10 +1,10 @@
 ---
 name: local-seek
-version: 1.5.0
+version: 1.6.0
 description: 本机文件与代码内容搜索（rg/fd/mdfind/grep 统一入口 seek.py，工具输出即答案）。与 argo 联网搜索互补：搜本机目录、代码符号、文件名、文档全文、文件结构。触发：搜本地、找文件、找代码、本机搜 xx、代码在哪、统计本地命中。
 ---
 
-# local-seek — 本地高效搜索（v1.5.0）
+# local-seek — 本地高效搜索（v1.6.0）
 
 搜本机文件和内容就从这里开始。**工具的输出就是答案**，不用再自己翻一遍。
 与 Argo（联网搜索）分工：Argo 搜网络，本技能搜本机。
@@ -23,15 +23,15 @@ description: 本机文件与代码内容搜索（rg/fd/mdfind/grep 统一入口 
 
 ## 统一入口
 
-所有搜索都走本技能里的 `scripts/seek.py`（相对 argo 根：`sub-skills/local-seek/scripts/seek.py`），
-由它决定用哪个工具，不要自己拼 rg/fd 参数：
+统一走 `scripts/seek.py`（相对 argo 根：`sub-skills/local-seek/scripts/seek.py`），
+由它选工具，不要自己拼 rg/fd 参数：
 
 ```bash
 # 以下以 argo 安装根为 cwd；或写死 $ARGO_HOME/sub-skills/local-seek/scripts/seek.py
 python3 sub-skills/local-seek/scripts/seek.py "查询词"                 # 默认：当前目录全文
 python3 sub-skills/local-seek/scripts/seek.py "查询词" --path ~/notes   # 指定目录
-python3 sub-skills/local-seek/scripts/seek.py "词" --path ~/.agents --dot  # 连以 . 开头的目录和软链一起搜；搜 ~/.agents、~/.zcode 时要加（Spotlight 收不到这类目录，--dot 对 --spotlight 没用）
-python3 sub-skills/local-seek/scripts/seek.py "词" --path . --include-noise  # repos/、tests/、tmp/、日期归档目录与真源平权（默认这些排在真源之后，但**仍然搜得到**）
+python3 sub-skills/local-seek/scripts/seek.py "词" --path ~/.agents --dot  # 连 . 开头目录与软链一起搜；搜 ~/.agents、~/.zcode 要加（Spotlight 收不到）
+python3 sub-skills/local-seek/scripts/seek.py "词" --path . --include-noise  # repos/、tests/ 等与真源平权（默认排真源之后，仍搜得到）
 python3 sub-skills/local-seek/scripts/seek.py "查询词" --count          # 先数命中，再决定是否深入
 python3 sub-skills/local-seek/scripts/seek.py "查询词" --filename       # 按文件名
 python3 sub-skills/local-seek/scripts/seek.py "查询词" --spotlight      # 全盘兜底（PDF/邮件/笔记）
@@ -46,18 +46,8 @@ python3 sub-skills/local-seek/scripts/seek.py --git-log 文件路径        # �
 python3 sub-skills/local-seek/scripts/seek.py --git-blame 12 文件路径   # 第 12 行的提交归属
 ```
 
-内置智能行为（无需手动指定）：
-
-- **固定字符串**：查询是纯字面量时自动用 rg -F；含 regex 元字符但解析失败
-  （如 interface{}）自动回退 -F。
-- **中文扩展**：中文查询先按原词精确匹配，没命中再拆成 2 字词（2-gram）放宽
-  （如「数据抓取」放宽到「数据」「抓取」），这样能多搜到一些；--exact 关闭。
-- **PCRE2 检测**：查询含 look-around 时检查本机 rg 是否支持，不支持给出
-  明确提示而非报错。
-- **结构搜索**：--structural 按语义检索代码模式（裸 except、空 catch、
-  装饰函数、函数/类定义），中英文别名都认，零安装（rg -U 多行实现）。
-- **Git 联动**：--git-log / --git-blame 直接回答「这行谁改的、最近动过什么」，
-  文件不在仓库或未跟踪时给出明确区分，不报错。
+内置智能行为（固定字符串回退、中文 2-gram 扩展、PCRE2 检测、结构搜索、
+git 联动等）自动生效，明细见 references/auto-behaviors.md。
 
 ## 工具选择（何时换工具）
 
@@ -65,7 +55,7 @@ python3 sub-skills/local-seek/scripts/seek.py --git-blame 12 文件路径   # �
 |------|-----|--------|
 | 搜代码/正文关键词 | rg（默认） | 毫秒级，尊重 .gitignore，自动排除 node_modules 等 |
 | 只记得文件名 | --filename（fd） | 按文件名模糊匹配 |
-| 搜 PDF/邮件/已归档内容 | --spotlight（mdfind） | 用 macOS 已经建好的系统索引，不额外花时间（Windows/Linux 上没有，改用 rg 搜正文） |
+| 搜 PDF/邮件/已归档内容 | --spotlight（mdfind） | 用系统已建好的索引，不额外花时间（Windows/Linux 无此工具，改用 rg） |
 | 找代码模式（裸except/空catch等） | --structural | 按语义不按字符串 |
 | 追文件历史/单行归属 | --git-log / --git-blame | 免开终端敲 git |
 | 当前目录搜不到 | 先扩大 --path，再 --spotlight | 先窄后宽 |
@@ -80,28 +70,27 @@ python3 sub-skills/local-seek/scripts/seek.py --git-blame 12 文件路径   # �
 5. **不读整个文件**：L3 精读用行号偏移局部读取，命中上下文不够再扩。
 6. **结果为空先换词**：换同义词/拆词/去大小写，再换工具（fd→mdfind），
    不要重复同一查询。
-7. **中文搜索**：rg 原生支持 UTF-8，直接搜中文；长中文词会自动放宽匹配，
-   多搜到一些，原词命中优先。
-8. **先结构后正文**：大文件先 --outline 看结构，再 --lines N-M 按需读取，
+7. **先结构后正文**：大文件先 --outline 看结构，再 --lines N-M 按需读取，
    禁止直接 read_file 整个文件。
-9. **结构搜索按语义**：找「是不是有裸 except」这类问题用 --structural，
+8. **结构搜索按语义**：找「是不是有裸 except」这类问题用 --structural，
    不要手写正则碰运气；可用语义清单见 references/structural-search.md。
-10. **git 只读标题**：--git-log 只给标题，够用就停；要看具体改动再手动 git show，
-    不让 seek.py 输出整段正文。
+9. **git 只读标题**：--git-log 只给标题，够用就停；要看具体改动再手动 git show。
 
-## 排序（v1.5.0 新增）
+## 排序与性能（v1.6.0）
 
-内容命中按 **BM25F 相关度重排**（文件名 2.0 / 目录 0.6 / 行文本 1.0 三字段，
-BM25+ 下界 + 逐字短语加成 + 文件级命中数先验），实现文件不再被文档顺带提及
-淹没；池子改为**按文件轮转配额**（每文件 ≤8 行），高频词查询下路径序靠后的
-文件也能进评分视野。确定性不变：与 rg 发射序无关，并列分按 (路径,行号)。
+内容命中按 **BM25F 相关度重排**（实现文件不再被文档顺带提及淹没），池子按
+**文件轮转配额**（每文件 ≤8 行）；文件名场景用 **fzf FuzzyMatchV2** 评分。
+确定性不变：与 rg 发射序无关，并列分按 (路径,行号)。
 
-文件名场景评分升级为 **fzf FuzzyMatchV2** 口径（驼峰/边界/gap 惩罚，DP 最优对齐）。
+大树上的内容搜索可开 **FTS5 索引快路**：`ARGO_LOCAL_FTS=1`（默认关），
+首次对该目录先跑 `scripts/seek_fts.py rebuild <目录>` 预热，之后毫秒级返回；
+rg 永远兜底（索引未建成/带正则/零命中时自动回退）。明细见
+references/auto-behaviors.md。
 
-逃生门与环境变量（默认行为已是最优，以下仅在需要回退/实验时使用）：
+逃生门（默认行为已是最优，仅在回退/实验时用）：
 - `ARGO_SEEK_CONTENT_RERANK=0` 关闭内容重排，恢复 (路径,行号) 原序
-- `ARGO_SEEK_FRECENCY=1` 开启访问频次加成（实验项，默认关——会引入跨运行差异）
-- 排序质量用 `scripts/eval_rank.py` 评测（MRR/耗时，支持 --compare 前后对比）
+- `ARGO_SEEK_FRECENCY=1` 开启访问频次加成（实验项，默认关）
+- 排序质量用 `scripts/eval_rank.py` 评测（MRR/耗时，支持 --compare）
 
 ## 配置
 
@@ -113,6 +102,7 @@ BM25+ 下界 + 逐字短语加成 + 文件级命中数先验），实现文件�
 按场景的完整命令配方（进阶，非常规操作再读）：
 
 - references/rg-recipes.md — rg 分场景配方（函数定义/跨文件引用/多词/正则）
+- references/auto-behaviors.md — 自动行为明细（重排/FTS/中文扩展/PCRE2/git）
 - references/fd-mdfind-recipes.md — fd 与 Spotlight 配方
 - references/strategies.md — 三层做法的详细说明，以及怎么少花 token
 - references/structural-search.md — 结构搜索手册（语义规则表/别名/扩展新规则）

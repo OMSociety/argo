@@ -387,10 +387,52 @@ def _select_pool(candidates, cap: int, per_file: int = 8) -> list:
     return out
 
 
+def _finish_content(candidates, raw_query, context, count, fixed,
+                    path, max_results, drop_noise):
+    """内容搜索的共用收尾：有界池 → 确定性排序 → BM25F 重排 → 噪声地板。
+
+    rg 路径与 FTS 快路（seek_fts）都必须走这里——两条来源、一套池化与
+    排序口径，输出 schema 才能逐位一致。
+    """
+    cap = max(max_results, min(max_results * 4, 400))
+    if _rerank_wanted(raw_query, context, count, fixed):
+        cap = max(cap, _POOL_CAP_MAX)  # 重排开启：池子放宽，深行进得了评分视野
+    out = _select_pool(candidates, cap)
+    out.sort()  # 基准序 = (路径,行号,内容)：重排关闭时与 2026-10-06 口径逐位一致
+    # BM25F 相关度重排（2026-10-07，方案甲）：池子的**选择**口径不变（与发射序
+    # 无关），变的只是池内**呈现次序**——基线实测多词查询的 top5 常被配置/
+    # 文档里的顺带提及占满，实现文件进不了前五。闸门与降级见 _rerank_content。
+    # 注意：这里刻意不写具体查询例——本文件就在被搜语料里，注释里出现
+    # 常见查询原词会给 eval 制造自污染（首轮实测踩过）。
+    out = _rerank_content(out, raw_query, context, count, fixed)
+    if drop_noise:
+        return _apply_noise_floor(out, path, max_results)
+    return out[:max_results]
+
+
 def rg_search(patterns, path, excludes, exts, context, count, max_results,
               fixed, raw_query="", dots=False, drop_noise=True, timeout=None,
               since_ts=None, until_ts=None):
     timeout = _RUN_DEFAULT_TIMEOUT_S if timeout is None else timeout
+
+    # FTS5 持久索引快路（opt-in，ARGO_LOCAL_FTS=1，2026-10-10 方案乙）：只在
+    # 「单模式 + 非 count/context」时尝试，正则元字符由 query_suitable 拦下
+    # （字面量标志 fixed 不参与判断——普通无元字符查询就是 fixed=True 进来的）。
+    # 索引不可用/未建成时返回 None，自然落到下面的 rg 主路；契约见
+    # seek_fts 模块 docstring（零命中回退、TTL 新鲜度、覆盖面对齐）。
+    if not count and context == 0 and len(patterns) == 1:
+        try:
+            import seek_fts
+        except ImportError:
+            seek_fts = None
+        if seek_fts is not None and seek_fts.query_suitable(patterns[0]):
+            rows = seek_fts.content_candidates(
+                patterns[0], path, dots=dots,
+                since_ts=since_ts, until_ts=until_ts)
+            if rows is not None:
+                return _finish_content(iter(rows), raw_query, context, count,
+                                       fixed, path, max_results,
+                                       drop_noise), None
 
     def build(fixed, drop_noise=True):
         cmd = ["rg", "--line-number", "--no-heading", "-i", "--color", "never"]
@@ -459,9 +501,7 @@ def rg_search(patterns, path, excludes, exts, context, count, max_results,
     # 审计遗留，2026-10-06 定性修复）。池子选择与发射序无关、内存有界、
     # 单遍流式（2026-10-07 升级为按文件轮转配额，见 _select_pool：修复
     # 「单文件高频命中挤占池位、路径序靠后文件整体出局」的多样性缺陷）。
-    cap = max(max_results, min(max_results * 4, 400))
-    if _rerank_wanted(raw_query, context, count, fixed):
-        cap = max(cap, _POOL_CAP_MAX)  # 重排开启：池子放宽，深行进得了评分视野
+    # 收尾（池化→排序→重排→噪声地板）在 _finish_content，与 FTS 快路共用。
     candidates = (
         (m.group(1), int(m.group(2)), truncate(m.group(3)))
         for line in proc.stdout.splitlines()
@@ -469,19 +509,8 @@ def rg_search(patterns, path, excludes, exts, context, count, max_results,
         # 时间窗在入池前过滤：窗外行不占上界名额（先截断后过滤会漏报）
         and _in_time_window(m.group(1), since_ts, until_ts)
     )
-    out = _select_pool(candidates, cap)
-    out.sort()  # 基准序 = (路径,行号,内容)：重排关闭时与 2026-10-06 口径逐位一致
-    # BM25F 相关度重排（2026-10-07，方案甲）：池子的**选择**口径不变（与发射序
-    # 无关），变的只是池内**呈现次序**——基线实测多词查询的 top5 常被配置/
-    # 文档里的顺带提及占满，实现文件进不了前五。闸门与降级见 _rerank_content。
-    # 注意：这里刻意不写具体查询例——本文件就在被搜语料里，注释里出现
-    # 常见查询原词会给 eval 制造自污染（首轮实测踩过）。
-    out = _rerank_content(out, raw_query, context, count, fixed)
-    if drop_noise:
-        out = _apply_noise_floor(out, path, max_results)
-    else:
-        out = out[:max_results]
-    return out, None
+    return _finish_content(candidates, raw_query, context, count, fixed,
+                           path, max_results, drop_noise), None
 
 
 # ── fzf FuzzyMatchV2 评分 + 拼音首字母（pypinyin 优先，GB2312 表保底）──────────
