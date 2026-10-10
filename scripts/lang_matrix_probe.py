@@ -29,6 +29,13 @@ argo 的对外宣称是「多语言检测与跨语言回退」，但实测发现
 
 from __future__ import annotations
 
+# 状态隔离（2026-10-10 方案甲）：走真实搜索路径的脚本会写生产状态（实测夹具
+# 引擎已混入 circuit_breaker/usage_log）。须先于 argo 状态模块导入重定向
+# （机制见 argo_paths.isolate_state_dir docstring）；被测试导入时不生效。
+if __name__ == "__main__":
+    from argo_paths import isolate_state_dir
+    isolate_state_dir("argo-bench")
+
 import argparse
 import json
 import logging

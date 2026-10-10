@@ -16,6 +16,8 @@
 
 from __future__ import annotations
 
+if __name__ == "__main__": from argo_paths import isolate_state_dir as _isol; _isol("argo-bench")  # 状态隔离(2026-10-10 方案甲)：真实搜索路径会写生产状态（夹具引擎已实测混入 circuit_breaker/usage_log），须先于 argo 状态模块导入，机制见 isolate_state_dir docstring
+
 import argparse
 import json
 import sys

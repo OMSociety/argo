@@ -12,6 +12,8 @@ import re
 import subprocess
 import sys
 import threading
+
+import serp_kill_log  # noqa: E402  守卫接线+误杀账本（2026-10-10 拆出，stdlib 级轻量）
 import time
 import urllib.error
 from contextlib import contextmanager
@@ -870,29 +872,15 @@ def _detect_anti_bot(html: str) -> bool:
 
 # SERP 垃圾结果守卫的引擎范围（冻结）：仅覆盖无 API 的网页 SERP 引擎——它们
 # 解析上游 HTML 页，最易被缓存 SERP / 无关结果静默命中；API 引擎结果自带结构化
-# 契约，不走这张表。判定规则与逃生门（ARGO_SERP_GUARD=0）在 serp_guard 单点。
-SERP_GUARD_ENGINES = frozenset({
-    "local_bing", "local_baidu", "local_sogou",
-})
+# 契约，不走这张表。判定规则与逃生门（ARGO_SERP_GUARD=0）在 serp_guard 单点；
+# 守卫接线与误杀账本 2026-10-10 拆到 serp_kill_log（本文件顶在尺寸上限，拆模块）。
+SERP_GUARD_ENGINES = serp_kill_log.SERP_GUARD_ENGINES
 
 
 def _serp_guard_apply(engine_name: str, query: str,
                       results: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """守卫接线：命中引擎且整页判垃圾 → 返回 []。
-
-    判垃圾是「结果无关」不是「引擎故障」：不写 note_failure（结果无关不该进
-    熔断归因），也不伪装成成功——返回诚实空。serp_guard 导入失败按不拦截处理
-    （fail-open）：守卫自身故障不能放大成搜索故障。
-    """
-    if not results or engine_name not in SERP_GUARD_ENGINES:
-        return results
-    try:
-        from serp_guard import is_junk_serp
-    except ImportError:
-        return results
-    if is_junk_serp(query, results):
-        return []
-    return results
+    """守卫接线（薄委托，契约与账本见 serp_kill_log 模块 docstring）。"""
+    return serp_kill_log.serp_guard_apply(engine_name, query, results)
 
 
 def _build_html_engine(spec: dict[str, Any]) -> Any:

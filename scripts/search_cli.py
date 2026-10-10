@@ -395,6 +395,26 @@ def main():
             print(dumps(names))
         return
 
+    # 入口级引擎名校验（2026-10-10 方案甲）：无效名字此前只在执行层补 errors，
+    # status 仍是 completed、--plan-only 连 errors 都没有——「失败伪装成空结果」
+    # （09-20 实踩、10-10 复测仍在，与 #12 静默失效同类）。判据单点复用
+    # unknown_requested_engines；did-you-mean 给最近名。只在显式点名时付
+    # engines 模块的导入成本（~115ms），auto 默认零开销。
+    if args.engine and args.engine != "auto":
+        from engines import unknown_requested_engines
+        _unknown = unknown_requested_engines(args.engine)
+        if _unknown:
+            import difflib
+            # 别名导入：main 里 list 分支的 except 也引用 available_engines，
+            # 同名局部导入会把它遮成 UnboundLocalError（test_local_import_
+            # shadows_global 同款），必须换名。
+            from engines import available_engines as _avail_engines
+            _catalog = _avail_engines()
+            _hint = "; ".join(
+                f"{u}（最接近: {', '.join(difflib.get_close_matches(u, _catalog, n=3, cutoff=0.4)) or '无'}）"
+                for u in _unknown)
+            parser.error(f"未知引擎: {_hint} —— 全量名单见 --list-engines")
+
     if not args.query:
         parser.error("必须提供搜索关键词")
 

@@ -830,7 +830,17 @@ def super_search(query: str, engine: str = "auto", n: int = 5, explain: bool = F
         extra_lim.append(
             "url-seed: seed URL was not fetched; results are related discovery only"
         )
-    if result.get("recovery"):
+    # 恢复链两种结局分开说（2026-10-10 方案甲）：「恢复成功换了引擎」与
+    # 「触发了但无可用策略」对消费者的含义完全不同——后者意味着空结果是
+    # 查询本身无召回（该改写查询），不是引擎故障（该重试）。
+    _rec_info = result.get("recovery") or {}
+    if isinstance(_rec_info, dict) and _rec_info.get("triggered") \
+            and not _rec_info.get("recovered"):
+        extra_lim.append(
+            "recovery triggered but no usable strategy ("
+            f"{_rec_info.get('note') or 'no note'}); empty results likely mean "
+            "the query had no recall — try rephrasing")
+    elif result.get("recovery"):
         extra_lim.append("recovery used; engine fallback may differ from primary route")
     # 执行归因：把「为什么只有这么几条 / 为什么只跑了一个源」写进随答案一起
     # 到达的局限声明。此前这类问题只能靠翻 engine_outcomes 与 early_stopped
@@ -891,6 +901,20 @@ def super_search(query: str, engine: str = "auto", n: int = 5, explain: bool = F
         exclude_domains=exclude_domains, include_local=include_local, n=n,
         run_local_seek=_local_seek_wrapper,
     ), result)
+
+    # serp_guard 整页误杀外露（2026-10-10 方案甲）：_serp_guard_apply 返回 []
+    # 是「诚实空」，但对调用方等价于「没搜到」——误杀类缺陷（搜狗跳转壳
+    # 10-06、百家号 10-08）都在这里静默过。引擎执行完统一 drain 进 errors，
+    # 让误杀可见、可归因（ARGO_SERP_GUARD=0 可复核）；空账不产生任何输出。
+    try:
+        from serp_kill_log import drain_serp_guard_kills
+        for _kill in drain_serp_guard_kills():
+            result.setdefault("errors", []).append(
+                f"serp_guard: {_kill['engine']} 整页判垃圾被拦下"
+                f"（{_kill['results']} 条，疑似 SERP/跳转壳占比高）——"
+                "如需复核可设 ARGO_SERP_GUARD=0 重跑")
+    except ImportError:
+        pass
 
     for _name in _unknown_engines:
         result.setdefault("errors", []).append(
