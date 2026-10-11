@@ -22,6 +22,13 @@ rrf_merge + local_five_dim_rerank 的评测落成可跑的数字。
   MRR@10          1 / 首个相关（grade≥2）结果的位次，无则 0
   nDCG@10         标准 graded DCG / IDCG（gain = 2^grade - 1）
   consensus_rank  consensus_url 在最终序中的 1 基位次（无则 null）
+
+口径说明（2026-10-11 拍板）
+  金标是合成引擎输出、排序管线对它确定性——MRR/nDCG 地板=1.0 是正常态，
+  不是评测失效。floor 的价值在回归报警：任何排序改动跌破 1.0 即刻暴露，
+  「地板仍为 1.0」本身也是重排管线未被破坏的断言。真实查询的排序质量由
+  badcase 账本（scripts/badcase_ledger.py）与交错 A/B（scripts/ab_eval.py）
+  补充度量，两者不受本地板口径影响。
 """
 
 from __future__ import annotations
