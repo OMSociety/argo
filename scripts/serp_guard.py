@@ -146,12 +146,23 @@ def is_serp_or_jump_url(url: str) -> bool:
     if not url:
         return True
     low = url.lower()
+    host = _normalize_domain(url)
+
+    # 白名单：百度子域（百家号、网盘等）不是 SERP，即使 path 为 /s 也不应误杀。
+    # 必须最先检查，否则 serp_url_patterns 中的 baidu.com/s? 会误匹配
+    # baijiahao.baidu.com/s?id= 百家号文章页。
+    _serp_whitelist = ("baijiahao.baidu.com", "pan.baidu.com", "tieba.baidu.com",
+                       "zhidao.baidu.com", "wenku.baidu.com")
+    host_bare = host[4:] if host.startswith("www.") else host
+    if host in _serp_whitelist or host_bare in _serp_whitelist:
+        return False
+
     cfg = _load_cn_source_types()
     for pat in cfg.get("serp_url_patterns") or []:
         if pat.lower() in low:
             return True
     # 显式搜索/跳转模式
-    if re.search(r"baidu\.com/s\?", low):
+    if re.search(r"(?:^|\.)baidu\.com/s\?", low):
         return True
     if "baidu.com/link" in low or "baidu.com/baidu.php" in low:
         return True
@@ -163,7 +174,6 @@ def is_serp_or_jump_url(url: str) -> bool:
         return True
     if "weixin.sogou.com/weixin" in low:
         return True
-    host = _normalize_domain(url)
     try:
         path = urlparse(url).path or ""
         query = urlparse(url).query or ""
@@ -179,7 +189,6 @@ def is_serp_or_jump_url(url: str) -> bool:
     # search.brave.com），而 _normalize_domain 只去 www.，子域会原样保留。
     # 等值比较下每上一个新入口就得往表里再补一条——那正是这份表原本在漏的。
     serp_hosts = tuple(cfg.get("serp_host_markers") or ())
-    host_bare = host[4:] if host.startswith("www.") else host
     _hit = any(
         host_bare == m or host == m
         or host_bare.endswith("." + m) or host.endswith("." + m)
