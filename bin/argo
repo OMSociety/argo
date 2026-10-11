@@ -296,6 +296,7 @@ Usage:
   argo crawl     "url"            站点爬取（sitemap/BFS，多页抓取）
   argo extract   "url"            结构化提取（表格/Meta/JSON-LD）
   argo article   "url"            微信公众号文章全文抓取（标题/正文/图片）
+  argo wx        "url"            微信文章多级降级抓取（HTTP→CDP→搜狗；推荐）
   argo screenshot "url"           网页截图（--full-page 整页 / --output 指定路径）
   argo auth      {{login|status|logout}}  浏览器登录态（自持持久 profile；登录一次抓取带会话）
   argo pdf       "url"            PDF 正文提取（--pages 1-5 / --password 口令）
@@ -386,6 +387,8 @@ def main():
         "crawl":     ("crawl.py",      []),
         "extract":   ("extract.py",    []),
         "article":   ("article.py",    ["--json"]),
+        # wx：微信文章多级降级（HTTP→CDP→搜狗），article 的升级版
+        "wx":        ("wechat_article.py", ["--json"]),
         # screenshot/pdf 对应 MCP 的 argo_screenshot / argo_pdf：CLI 与 MCP 工具面
         # 保持一一对应，少一个入口就意味着该能力只能靠 MCP（默认关）够得着
         "screenshot": ("screenshot.py", []),
