@@ -616,7 +616,7 @@ def _print_rows(rows: list[dict]) -> None:
     print(yaml.safe_dump(rows, allow_unicode=True, sort_keys=False))
 
 
-def _run_tickets(text: str, n: int) -> int:
+def _run_tickets(text: str, n: int, debug: bool = False) -> int:
     q = _parse_query(text)
     if not q:
         print("无法解析起止站：请用「出发站 到 到达站」的格式，如：上海到北京", file=sys.stderr)
@@ -632,6 +632,13 @@ def _run_tickets(text: str, n: int) -> int:
 
     cookie = _get_cookie()
     raw = _query_api(frm["station_code"], to["station_code"], q["date"], cookie)
+    if debug and raw:
+        # 调试模式：输出第一行的所有字段及其索引，便于分析票价位置
+        first_row = raw[0]
+        print(f"[DEBUG] queryG 返回 {len(raw)} 行，每行 {len(first_row)} 个字段", file=sys.stderr)
+        for i, val in enumerate(first_row):
+            if val and val.strip():
+                print(f"  [{i:2d}] {val}", file=sys.stderr)
     tickets = [_parse_ticket(f, data) for f in raw]
     if q["type"]:
         tickets = [t for t in tickets if t["trainCode"].startswith(q["type"])]
@@ -713,6 +720,8 @@ def main() -> int:
                         help="余票：上海到北京 · 中转：北京到拉萨 中转（可「经西宁」指定换乘站）"
                              " · 经停：G2 经停")
     parser.add_argument("--n", type=int, default=5, help="最多返回条数")
+    parser.add_argument("--debug", action="store_true",
+                        help="调试模式：dump queryG 原始字段到 stderr")
     args = parser.parse_args()
 
     raw = " ".join(args.query).strip()
@@ -721,7 +730,7 @@ def main() -> int:
         return _run_route(raw)
     if mode == "transfer":
         return _run_transfer(raw, args.n)
-    return _run_tickets(raw, args.n)
+    return _run_tickets(raw, args.n, debug=args.debug)
 
 
 if __name__ == "__main__":
