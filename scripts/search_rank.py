@@ -887,7 +887,7 @@ def _attach_selection_signals(merged: list[dict[str, Any]], mode: str,
     if not merged or mode == "fast" or depth == "fast":
         return
     try:
-        from evidence import score_authority, score_freshness
+        from evidence import score_authority, score_freshness, score_traceability
         from content_signals import score_evidence_density
         for r in merged:
             url = r.get("url", "")
@@ -917,8 +917,10 @@ def _attach_selection_signals(merged: list[dict[str, Any]], mode: str,
                 "is_serp": bool(auth.get("is_serp")),
                 "consensus": len(cons),
             }
+            trace = score_traceability(r)
+            r["traceability"] = trace["score"]
             r["credibility_fast"] = round(
-                selection * 0.40 + absorption * 0.35 + fresh["score"] * 0.15 + orig * 0.10,
+                selection * 0.35 + absorption * 0.30 + fresh["score"] * 0.15 + orig * 0.10 + trace["score"] * 0.10,
                 3,
             )
     except ImportError:

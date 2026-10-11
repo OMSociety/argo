@@ -190,6 +190,7 @@ def result_to_candidate(
             "selection": item.get("selection"),
             "absorption": item.get("absorption"),
             "consensus_engines": item.get("consensus_engines"),
+            "traceability": item.get("traceability"),
         },
         "limitations": limitations,
     }

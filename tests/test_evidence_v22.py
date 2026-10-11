@@ -15,6 +15,7 @@ from evidence import (  # noqa: E402
     is_serp_or_jump_url,
     score_authority,
     score_freshness,
+    score_traceability,
 )
 
 
@@ -133,7 +134,7 @@ class TestTwoStageCredibility(unittest.TestCase):
             },
         ]
         report = compute_credibility(results, "2026公募基金二季报持仓")
-        self.assertEqual(report["framework"], "selection_x_absorption_v2.2")
+        self.assertEqual(report["framework"], "selection_x_absorption_v2.3_traceability")
         best = report["results"][0]
         self.assertIn("eastmoney", best["url"])
         self.assertGreaterEqual(best["credibility"]["final"], 0.5)
@@ -185,6 +186,207 @@ class TestCnPortalAuthorityParity(unittest.TestCase):
         parent_auth = score_authority(
             "https://news.sina.com.cn/c/2026-10-01/doc-abc.shtml")
         self.assertLess(k_auth["score"], parent_auth["score"])
+
+
+class TestTraceability(unittest.TestCase):
+    """Test traceability scoring for different source types.
+
+    借鉴 doubao-sentiment-tracker 的溯源四场景方法论：
+    - 一手信源（用户直接发布的原始帖子）：高分
+    - 原始媒体报道（新闻机构原创报道）：高分
+    - 综合报道/评论（引用了原始来源）：中分
+    - 二手转述/洗稿：低分
+    - 无法判断：中性分
+    """
+
+    def test_social_post_is_primary(self):
+        """社交媒体原帖应得高分（一手信源）。"""
+        r = {
+            "title": "用户使用体验分享",
+            "snippet": "这个产品真的很好用，推荐给大家。",
+            "url": "https://weibo.com/1234567890/ABC123",
+            "source": "anysearch",
+        }
+        t = score_traceability(r)
+        self.assertTrue(t["is_primary"])
+        self.assertGreaterEqual(t["score"], 0.85)
+        self.assertEqual(t["platform_type"], "primary")
+
+    def test_zhihu_answer_is_primary(self):
+        """知乎回答应得高分（一手信源）。"""
+        r = {
+            "title": "如何评价某产品？",
+            "snippet": "作为一名从业者，我认为...",
+            "url": "https://www.zhihu.com/question/123/answer/456",
+            "source": "anysearch",
+        }
+        t = score_traceability(r)
+        self.assertTrue(t["is_primary"])
+        self.assertGreaterEqual(t["score"], 0.85)
+
+    def test_github_issue_is_primary(self):
+        """GitHub issue 应得高分（一手信源）。"""
+        r = {
+            "title": "Bug: something doesn't work",
+            "snippet": "Steps to reproduce: ...",
+            "url": "https://github.com/user/repo/issues/123",
+            "source": "anysearch",
+        }
+        t = score_traceability(r)
+        self.assertTrue(t["is_primary"])
+        self.assertGreaterEqual(t["score"], 0.85)
+
+    def test_original_news_report(self):
+        """原始媒体报道应得高分。"""
+        r = {
+            "title": "某公司发布新产品",
+            "snippet": "本报讯（记者XXX）某公司今日发布...",
+            "url": "https://www.xinhuanet.com/tech/20260101/abc.html",
+            "source": "anysearch",
+        }
+        t = score_traceability(r)
+        self.assertTrue(t["is_primary"])
+        self.assertGreaterEqual(t["score"], 0.90)
+        self.assertEqual(t["platform_type"], "official_media")
+
+    def test_reuters_report(self):
+        """路透社报道应得高分。"""
+        r = {
+            "title": "Company X launches new product",
+            "snippet": "By Jane Doe, Reuters",
+            "url": "https://www.reuters.com/technology/2026/01/01/abc",
+            "source": "anysearch",
+        }
+        t = score_traceability(r)
+        self.assertTrue(t["is_primary"])
+        self.assertGreaterEqual(t["score"], 0.90)
+
+    def test_aggregator_is_secondary(self):
+        """聚合/二手平台应得低分。"""
+        r = {
+            "title": "某产品使用体验",
+            "snippet": "最近在用某产品，感觉还不错...",
+            "url": "https://baijiahao.baidu.com/s?id=123456",
+            "source": "anysearch",
+        }
+        t = score_traceability(r)
+        self.assertFalse(t["is_primary"])
+        self.assertLessEqual(t["score"], 0.45)
+        self.assertEqual(t["platform_type"], "aggregator")
+
+    def test_toutiao_is_secondary(self):
+        """头条号应得低分。"""
+        r = {
+            "title": "某事件分析",
+            "snippet": "近日，某事件引发关注...",
+            "url": "https://www.toutiao.com/article/123456/",
+            "source": "anysearch",
+        }
+        t = score_traceability(r)
+        self.assertFalse(t["is_primary"])
+        self.assertLessEqual(t["score"], 0.45)
+
+    def test_repost_marker_lowers_score(self):
+        """含转载标记的内容应得低分。"""
+        r = {
+            "title": "某新闻转载",
+            "snippet": "转载：某公司今日发布新产品...",
+            "url": "https://weibo.com/1234567890/ABC123",
+            "source": "anysearch",
+        }
+        t = score_traceability(r)
+        self.assertFalse(t["is_primary"])
+        self.assertLessEqual(t["score"], 0.50)
+
+    def test_serp_url_is_untraceable(self):
+        """SERP URL 应得最低分。"""
+        r = {
+            "title": "搜索结果",
+            "snippet": "",
+            "url": "https://www.baidu.com/s?wd=test",
+            "source": "local_baidu",
+        }
+        t = score_traceability(r)
+        self.assertFalse(t["is_primary"])
+        self.assertLessEqual(t["score"], 0.15)
+        self.assertEqual(t["platform_type"], "serp")
+
+    def test_unknown_source_is_neutral(self):
+        """未知来源应得中性分。"""
+        r = {
+            "title": "某网页内容",
+            "snippet": "这是一些内容...",
+            "url": "https://www.example.com/page123",
+            "source": "anysearch",
+        }
+        t = score_traceability(r)
+        self.assertFalse(t["is_primary"])
+        self.assertAlmostEqual(t["score"], 0.50, places=2)
+        self.assertEqual(t["platform_type"], "unknown")
+
+    def test_social_meta_boosts_score(self):
+        """有 social_meta 的内容应得高分。"""
+        r = {
+            "title": "用户分享",
+            "snippet": "这个产品真的很好用",
+            "url": "https://www.example.com/share/123",
+            "source": "anysearch",
+            "content_type": "social_post",
+            "social_meta": {"author": "user123", "likes": 100},
+        }
+        t = score_traceability(r)
+        self.assertTrue(t["is_primary"])
+        self.assertGreaterEqual(t["score"], 0.70)
+
+    def test_traceability_in_credibility(self):
+        """Traceability 应被包含在最终 credibility 计算中。"""
+        results = [
+            {
+                "title": "微博原帖",
+                "url": "https://weibo.com/1234567890/ABC123",
+                "snippet": "这个产品真的很好用，推荐给大家。",
+                "score": 0.5,
+                "source": "anysearch",
+            },
+            {
+                "title": "百家号转载",
+                "url": "https://baijiahao.baidu.com/s?id=123456",
+                "snippet": "这个产品真的很好用，推荐给大家。",
+                "score": 0.5,
+                "source": "anysearch",
+            },
+        ]
+        report = compute_credibility(results, "产品评价")
+        self.assertEqual(report["framework"], "selection_x_absorption_v2.3_traceability")
+        # 微博原帖应排在百家号转载之前
+        best = report["results"][0]
+        self.assertIn("weibo.com", best["url"])
+        # 验证 traceability 字段存在
+        self.assertIn("traceability", best["credibility"])
+        self.assertIn("is_primary", best["credibility"]["traceability"])
+
+    def test_traceability_improves_ranking(self):
+        """一手信源应排在二手源之前（即使其他维度相同）。"""
+        results = [
+            {
+                "title": "聚合平台内容",
+                "url": "https://baijiahao.baidu.com/s?id=123456",
+                "snippet": "截至2026年，某产品市场占有率达30%，同比增长15%。",
+                "score": 0.5,
+                "source": "anysearch",
+            },
+            {
+                "title": "微博原帖",
+                "url": "https://weibo.com/1234567890/ABC123",
+                "snippet": "截至2026年，某产品市场占有率达30%，同比增长15%。",
+                "score": 0.5,
+                "source": "anysearch",
+            },
+        ]
+        report = compute_credibility(results, "产品市场占有率")
+        # 微博原帖（一手信源）应排在百家号（二手源）之前
+        best = report["results"][0]
+        self.assertIn("weibo.com", best["url"])
 
 
 if __name__ == "__main__":

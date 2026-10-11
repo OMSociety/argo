@@ -1,4 +1,4 @@
-# Argo 架构与原理（v2.8.0）
+# Argo 架构与原理（v2.8.0 + traceability v2.3）
 
 ## 文件结构
 
@@ -57,19 +57,32 @@ Query
   ├─ Search Selection（引擎召回 + 域名权威 + SERP 剔除）
   ├─ Absorption（数字/定义/对比/披露密度；fetch 后 quality）
   ├─ Freshness（发布年；忽略「2015年以来」历史对比年）
+  ├─ Traceability（可溯源性：一手信源 vs 二手转载）
   └─ Consensus（多可吸收域名佐证；社交仅叙事）
 ```
 
-四块互不重叠、合起来覆盖「能不能用这条结果」。Argo 的产出是「证据候选 + 可信度分解」，不是「链接清单」。
+五块互不重叠、合起来覆盖「能不能用这条结果」。Argo 的产出是「证据候选 + 可信度分解」，不是「链接清单」。
 
-## 量化公式（evidence v2.2）
+## 量化公式（evidence v2.3 + traceability）
 
 ```
-selection  = authority_score（SERP/跳转链 ≤ 0.15）
-absorption = evidence_density（has_numbers/definition/comparison/howto/disclose − qa）
-freshness  = 发布年/URL年/完整日期
-final      = 0.40·selection + 0.35·absorption + 0.15·freshness + 0.10·engine_score
+selection    = authority_score（SERP/跳转链 ≤ 0.15）
+absorption   = evidence_density（has_numbers/definition/comparison/howto/disclose − qa）
+freshness    = 发布年/URL年/完整日期
+traceability = 可溯源性（一手信源 0.85-0.95 / 二手转载 0.30-0.45 / 未知 0.50）
+final        = 0.35·selection + 0.30·absorption + 0.15·freshness + 0.10·engine_score + 0.10·traceability
 ```
+
+**Traceability 评分规则**（借鉴 doubao-sentiment-tracker 溯源四场景方法论）：
+
+| 来源类型 | 评分 | 示例 |
+|---------|------|------|
+| 一手信源（社交原帖） | 0.80-0.95 | 微博原帖、知乎回答、GitHub issue |
+| 原始媒体报道 | 0.70-0.95 | 新华社、路透社、财新 |
+| 综合报道/评论 | 0.50-0.65 | 引用了原始来源的评论 |
+| 二手转述/洗稿 | 0.30-0.45 | 百家号、头条号 |
+| 无法判断 | 0.50 | 未知域名 |
+| SERP/跳转链 | 0.10 | 百度搜索结果页 |
 
 完整交叉验证：`python3 scripts/evidence.py --stdin --json`。
 

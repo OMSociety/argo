@@ -128,14 +128,16 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "同日 +12：POST curl fallback 补 resolve_proxy（POST 代理缝隙）+ "
               "Set-Cookie 解析失败 debug 留痕（最高频静默点）"),
     "scripts/search_rank.py": (
-        1022, "RRF 融合 + minhash 去重 + 五维重排；"
+        1024, "RRF 融合 + minhash 去重 + 五维重排；"
               "2026-09-27 +18：_weight_cache/_rel_factor_cache 加 TTL+大小限制（_evict_cache）；"
               "2026-09-28 +4：语言调整失败不写 _weight_cache（防 30s 固化降级权重）；"
               "2026-09-29 −3：RRF 加权开关收编到 env_flag（第五套真值表消亡，"
               "try/except 双路径与本地真值表一并删除）；"
               "2026-09-29 +4：_apply_consensus_and_sort 夹非负 max_results"
               "（1 行代码 + 3 行注释：负数切片从尾部截，10 条给 7 条，"
-              "且 MCP/库调用绕开 argparse，兜底必须落在切片点）"),
+              "且 MCP/库调用绕开 argparse，兜底必须落在切片点）；"
+              "2026-10-08 +2：traceability 评分接入快速路径"
+              "（score_traceability 调用 + 权重调整 0.40→0.35/0.35→0.30）"),
     "scripts/search_pipeline.py": (
         1000, "搜索编排主管线（路由→分派→融合→恢复→漏斗输出）；"
               "2026-09-30 +2：恢复链与变体召回补透传 --domain/--sub_domain"

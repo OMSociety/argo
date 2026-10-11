@@ -433,6 +433,201 @@ def cross_validate(results: list[dict[str, Any]], query: str) -> dict[str, Any]:
     }
 
 
+# ── 可溯源性评分 ──────────────────────────────────────────────────────────────
+
+# 一手信源平台特征（用户直接发布的原始内容）
+_PRIMARY_PLATFORM_PATTERNS = {
+    "weibo.com": 0.95,       # 微博原帖
+    "zhihu.com": 0.90,       # 知乎回答/文章
+    "github.com": 0.90,      # GitHub issue/PR/commit
+    "stackoverflow.com": 0.90,
+    "xiaohongshu.com": 0.85, # 小红书笔记
+    "bilibili.com": 0.85,    # B站视频/动态
+    "twitter.com": 0.85,     # X/Twitter 原帖
+    "x.com": 0.85,
+    "youtube.com": 0.85,    # YouTube 视频
+    "reddit.com": 0.80,      # Reddit 原帖
+    "medium.com": 0.80,      # Medium 原文
+    "dev.to": 0.80,
+    "juejin.cn": 0.75,       # 掘金原文
+    "cnblogs.com": 0.75,     # 博客园原文
+}
+
+# 原始媒体报道（新闻机构原创报道）
+_ORIGINAL_MEDIA_PATTERNS = {
+    "xinhuanet.com": 0.95,   # 新华社
+    "people.com.cn": 0.95,   # 人民网
+    "reuters.com": 0.95,     # 路透社
+    "bloomberg.com": 0.95,   # 彭博社
+    "wsj.com": 0.95,         # 华尔街日报
+    "caixin.com": 0.90,      # 财新
+    "yicai.com": 0.88,       # 第一财经
+    "wallstreetcn.com": 0.88,# 华尔街见闻
+    "cls.cn": 0.88,          # 财联社
+    "cs.com.cn": 0.90,       # 中证网
+    "stcn.com": 0.85,        # 证券时报
+    "cnr.cn": 0.88,          # 央广网
+    "thepaper.cn": 0.82,     # 澎湃新闻
+    "jiemian.com": 0.80,     # 界面新闻
+    "36kr.com": 0.75,        # 36氪
+    "eastmoney.com": 0.80,   # 东方财富
+    "163.com": 0.70,         # 网易新闻
+    "sohu.com": 0.70,        # 搜狐新闻
+    "sina.com.cn": 0.70,     # 新浪新闻
+}
+
+# 二手/聚合/洗稿平台特征
+_SECONDARY_PLATFORM_PATTERNS = {
+    "baijiahao.baidu.com": 0.35,  # 百家号（自媒体洗稿重灾区）
+    "toutiao.com": 0.35,          # 头条号（聚合+洗稿）
+    "weixin.qq.com": 0.40,        # 微信公众号（质量参差不齐）
+    "guba.eastmoney.com": 0.30,    # 股吧（UGC 讨论）
+    "zhuanlan.zhihu.com": 0.55,   # 知乎专栏（部分原创部分转载）
+    "k.sina.com.cn": 0.40,        # 新浪博客/聚合
+}
+
+# 转载/引用标记（出现在标题或 snippet 中）
+_REPOST_MARKERS = [
+    "转载", "转自", "摘自", "编译自", "译自", "综合自",
+    "来源：", "来源:", "原文：", "原文:", "援引", "据援引",
+    "reposted", "via@", "via @", "credit:", "courtesy",
+]
+
+
+def score_traceability(result: dict[str, Any]) -> dict[str, Any]:
+    """评估搜索结果的可溯源性（Traceability）。
+
+    借鉴 doubao-sentiment-tracker 的溯源四场景方法论，将「能否追溯到原始
+    来源」量化为 0-1 评分。与 Selection（域名权威）正交：一个结果可以
+    权威但不可溯源（如聚合媒体的转载稿），也可以不权威但可溯源（如个人
+    微博原帖）。
+
+    评分规则：
+    - 一手信源（用户直接发布的原始帖子）：0.80-0.95
+    - 原始媒体报道（新闻机构原创报道）：0.70-0.95
+    - 综合报道/评论（引用了原始来源）：0.50-0.65
+    - 二手转述/洗稿：0.30-0.45
+    - 无法判断：0.50（中性）
+
+    Returns:
+        {"score": float, "reason": str, "is_primary": bool, "platform_type": str}
+    """
+    url = result.get("url", "") or ""
+    title = result.get("title", "") or ""
+    snippet = result.get("snippet", "") or ""
+    source = result.get("source", "") or ""
+    content_type = result.get("content_type", "") or ""
+    social_meta = result.get("social_meta")
+    text = f"{title} {snippet}"
+
+    if not url:
+        return {
+            "score": 0.5,
+            "reason": "无 URL，无法判断可溯源性",
+            "is_primary": False,
+            "platform_type": "unknown",
+        }
+
+    domain = _normalize_domain(url)
+
+    # 1) 检查是否为 SERP/跳转 URL（不可溯源）
+    if is_serp_or_jump_url(url):
+        return {
+            "score": 0.10,
+            "reason": "搜索结果页/跳转链，非原始内容",
+            "is_primary": False,
+            "platform_type": "serp",
+        }
+
+    # 2) 检查是否为一手信源平台
+    best_primary_score = 0.0
+    best_primary_domain = ""
+    for pattern, score in _PRIMARY_PLATFORM_PATTERNS.items():
+        if domain == pattern or domain.endswith("." + pattern):
+            if score > best_primary_score:
+                best_primary_score = score
+                best_primary_domain = pattern
+
+    if best_primary_score > 0:
+        # 检查是否有转载标记（即使是原帖平台，也可能是转载）
+        has_repost = any(marker in text for marker in _REPOST_MARKERS)
+        if has_repost:
+            return {
+                "score": 0.45,
+                "reason": f"原帖平台（{best_primary_domain}）但含转载标记",
+                "is_primary": False,
+                "platform_type": "repost_on_primary",
+            }
+        return {
+            "score": best_primary_score,
+            "reason": f"一手信源（{best_primary_domain}）",
+            "is_primary": True,
+            "platform_type": "primary",
+        }
+
+    # 3) 检查是否为原始媒体报道
+    best_media_score = 0.0
+    best_media_domain = ""
+    for pattern, score in _ORIGINAL_MEDIA_PATTERNS.items():
+        if domain == pattern or domain.endswith("." + pattern):
+            if score > best_media_score:
+                best_media_score = score
+                best_media_domain = pattern
+
+    if best_media_score > 0:
+        has_repost = any(marker in text for marker in _REPOST_MARKERS)
+        if has_repost:
+            return {
+                "score": 0.55,
+                "reason": f"媒体平台（{best_media_domain}）但含转载标记",
+                "is_primary": False,
+                "platform_type": "media_repost",
+            }
+        return {
+            "score": best_media_score,
+            "reason": f"原始媒体报道（{best_media_domain}）",
+            "is_primary": True,
+            "platform_type": "official_media",
+        }
+
+    # 4) 检查是否为二手/聚合平台
+    for pattern, score in _SECONDARY_PLATFORM_PATTERNS.items():
+        if domain == pattern or domain.endswith("." + pattern):
+            return {
+                "score": score,
+                "reason": f"二手/聚合平台（{pattern}）",
+                "is_primary": False,
+                "platform_type": "aggregator",
+            }
+
+    # 5) 检查 content_type 和 social_meta
+    if content_type == "social_post" or social_meta:
+        return {
+            "score": 0.75,
+            "reason": "社交帖子（content_type=social_post）",
+            "is_primary": True,
+            "platform_type": "social_post",
+        }
+
+    # 6) 检查转载标记
+    has_repost = any(marker in text for marker in _REPOST_MARKERS)
+    if has_repost:
+        return {
+            "score": 0.40,
+            "reason": "含转载/引用标记",
+            "is_primary": False,
+            "platform_type": "repost",
+        }
+
+    # 7) 无法判断（中性）
+    return {
+        "score": 0.50,
+        "reason": "无法判断可溯源性（默认中性）",
+        "is_primary": False,
+        "platform_type": "unknown",
+    }
+
+
 # ── 综合可信度 ────────────────────────────────────────────────────────────────
 
 def compute_credibility(
@@ -471,12 +666,16 @@ def compute_credibility(
                 original_score = float(original_score)
             except (TypeError, ValueError):
                 original_score = 0.5
-        # MECE 加权（量化）
+        # Traceability：可溯源性
+        trace = score_traceability(r)
+
+        # MECE 加权（量化）— 五维度
         credibility = (
-            selection * 0.40
-            + absorption * 0.35
+            selection * 0.35
+            + absorption * 0.30
             + fresh["score"] * 0.15
             + float(original_score) * 0.10
+            + trace["score"] * 0.10
         )
 
         scored_results.append({
@@ -492,6 +691,7 @@ def compute_credibility(
                 "freshness": fresh,
                 "evidence_density": density,
                 "original_score": original_score,
+                "traceability": trace,
             },
         })
 
@@ -515,7 +715,7 @@ def compute_credibility(
 
     return {
         "query": query,
-        "framework": "selection_x_absorption_v2.2",
+        "framework": "selection_x_absorption_v2.3_traceability",
         "results": scored_results,
         "cross_validation": cross,
         "summary": {
