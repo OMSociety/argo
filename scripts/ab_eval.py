@@ -29,6 +29,7 @@ import argparse
 import json
 import os
 import random
+import shlex
 import statistics
 import subprocess
 import sys
@@ -38,7 +39,9 @@ _RUN_TIMEOUT_S = 120
 
 
 def _run_once(cmd: str, query: str, keep_usage: bool) -> dict:
-    substituted = cmd.replace("{query}", query)
+    # {query} 由本函数负责加引号（shlex.quote）：含空格查询此前会把命令拆成
+    # 多个 argv，argparse 直接 rc=2——占位符两侧不要再自行加引号。
+    substituted = cmd.replace("{query}", shlex.quote(query))
     env = dict(os.environ)
     if not keep_usage:
         env["ARGO_USAGE_LOG"] = "0"

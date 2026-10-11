@@ -54,3 +54,16 @@ def test_failed_pair_excluded_but_accounted():
                               "q", pairs=2, seed=1, keep_usage=False)
     s = report["stats"]
     assert s["valid_pairs"] == 0 and s["failed_pairs"] == 2
+
+
+def test_spaced_query_reaches_cmd_as_single_arg():
+    # 回归（2026-10-11）：{query} 替换须整体加引号——含空格查询此前被
+    # shell 拆成多个 argv，argparse rc=2，全部 pair 失败。
+    probe = ("python3 -c \"import json,sys;print(json.dumps("
+             "{'count': len(sys.argv)-1, 'argv': sys.argv[1:], "
+             "'timing': {'elapsed_ms': 1}}))\" {query}")
+    report = ab_eval.evaluate(probe, probe, "webassembly 性能对比",
+                              pairs=1, seed=1, keep_usage=False)
+    pair = report["per_pair"][0]
+    assert pair["a"]["ok"] and pair["b"]["ok"], (pair["a"], pair["b"])
+    assert pair["a"]["count"] == 1  # 完整查询串是唯一 argv，未被拆散
