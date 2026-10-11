@@ -430,6 +430,16 @@
     "cost_tier": "free",
     "priority": 52
   },
+  "digup": {
+    "label": "本地文件语义搜索",
+    "qps": 2,
+    "limit": null,
+    "period": "second",
+    "cost_per_call": 0.0,
+    "cost_unit": "free",
+    "cost_tier": "free",
+    "priority": 50
+  },
   "dnb": {
     "label": "DNB 德国国家图书馆",
     "qps": 2,

@@ -1,6 +1,6 @@
 _generated: 由 scripts/sync_backends.py 从运行时引擎声明派生，勿手工修改。
 version: 2
-last_updated: '2026-10-06'
+last_updated: '2026-10-11'
 engines:
 - name: aljazeera
   tier: T1
@@ -543,6 +543,17 @@ engines:
   recommended: true
   explicit_only: false
   desc: DEV.to 技术文章搜索（免认证）
+- name: digup
+  tier: T1
+  type: cli
+  coverage:
+  - general
+  latency_ms: 2000
+  cost: free
+  status: disabled
+  recommended: true
+  explicit_only: false
+  desc: DigUp（EmbeddingGemma 2 本地多模态嵌入，全程离线）——照片/截图/PDF/文档/音视频按内容检索
 - name: dnb
   tier: T1
   type: dnb
