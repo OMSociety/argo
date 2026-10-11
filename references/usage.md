@@ -3,7 +3,7 @@
 > 本文受门禁保护（tests/test_usage_doc_gates.py）：文中命令必须存在于
 > bin/argo 分发表、`ARGO_*` 开关必须代码实存。改命令先改代码，本文随行。
 
-## 命令总览（21 个，唯一事实=bin/argo 分发表）
+## 命令总览（22 个，唯一事实=bin/argo 分发表）
 
 | 命令 | 一句话 |
 |------|--------|
@@ -27,10 +27,32 @@
 | `argo cite` | DOI 引用条目（四格式） |
 | `argo mcp` | 多客户端 MCP 注入/诊断/还原 |
 | `argo paths` | 路径自省与状态目录自检 |
+| `argo daemon` | 常驻进程管理（search 自动走 UDS 快路径，见「argo daemon」节） |
 | `argo stats` | 使用日志与反馈状态（本地使用日志只读出口） |
 | `argo local-image` | 本地图片检索（Vision 索引；默认关，见「图片检索」节） |
 
 > SKILL.md 只留核心命令；本页是参数大全与输出字段说明。
+
+## argo daemon — 常驻进程与 UDS 快路径（2026-10）
+
+`argo search` 每次冷调用要付「解释器启动 + engines 全家 import」约 85–100ms
+固定成本；agent 循环一次研究任务调 15–20 次，这笔成本放大成 1.5–2s。daemon
+把 import 付一次，此后每笔 search 走 UDS 快路径（本地零 import 直达常驻进程）。
+
+```bash
+argo daemon start     # 后台启动（socket/pid/指针文件落状态根，见 argo paths）
+argo daemon status    # 运行状态
+argo daemon stop      # 停止并清场
+```
+
+- 快路径自动生效：daemon 在位时 `argo search ...` 直达常驻进程；不在位或
+  任何失败时静默回退常态执行，CLI 行为不变。`ARGO_NO_DAEMON=1` 显式关闭。
+- 第一笔请求多付 ~100ms（daemon 内首次 import search 全家），此后全热路径。
+- daemon 空闲 1800s 自杀退出（`start --idle-exit N` 调整，0=常驻）；
+  SIGTERM 同样清场。
+- 请求串行执行（stdout 重定向是进程级全局态）；argo 内部引擎并发不受影响。
+- socket 路径超 AF_UNIX 104 字节上限时自动落 `/tmp/argo-daemon-<uid>/`
+  短路径哈希位，客户端经指针文件 `.daemon_sock` 发现，无需感知。
 
 ## search 完整参数
 
@@ -484,15 +506,17 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 | `ARGO_YDC_API_KEY` | 对应引擎/服务的凭据（you.com） | 缺密钥=该源跳过或降级 |
 | `ARGO_ZHIHU_ACCESS_SECRET` | 对应引擎/服务的凭据 | 缺密钥=该源跳过或降级 |
 
-### 行为调参（10）
+### 行为调参（12）
 
 | 变量 | 作用 | 默认/备注 |
 |------|------|----------|
 | `ARGO_ADAPTIVE_GRACE` | 对冲宽限窗按主引擎历史 P75 自适应收窄（只缩不放） | 默认关；=1 开启（v2 冻结 A/B 未证实收益，保留作实验臂） |
 | `ARGO_ADMISSION_TTL_S` | 行为阈值/预算调参 | 默认经实测校准，勿轻动 |
+| `ARGO_DAEMON_TIMEOUT` | daemon 快路径客户端等待上限（秒） | 默认 120；deep 长查询可调大 |
 | `ARGO_FETCH_DEADLINE_S` | 行为阈值/预算调参 | 默认经实测校准，勿轻动 |
 | `ARGO_LOCAL_SEEK_GRACE_S` | 本地命中并入的宽限窗秒数 | 默认 0.25；覆盖 seek 常规 60~140ms |
 | `ARGO_MINHASH_THRESHOLD` | 行为阈值/预算调参 | 默认经实测校准，勿轻动 |
+| `ARGO_NO_DAEMON` | 关闭 UDS 快路径，search 恒走常态冷进程 | 默认开快路径；=1 关闭 |
 | `ARGO_RELEVANCE_V2` | ('相关性算子：CJK 二元组覆盖率', '默认开；=0 退回单字覆盖率') | 见 rank_signals.py docstring |
 | `ARGO_ROUTE_SAMPLE_RATE` | 行为阈值/预算调参 | 默认经实测校准，勿轻动 |
 | `ARGO_SERIAL_STAGGER_S` | 行为阈值/预算调参 | 默认经实测校准，勿轻动 |

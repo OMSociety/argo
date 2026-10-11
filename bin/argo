@@ -217,6 +217,73 @@ def _self_capable() -> bool:
     return _util.find_spec("yaml") is not None
 
 
+def _daemon_run(rest) -> bool:
+    """UDS 快路径：daemon 在位时零 import 直达常驻进程执行 search。
+
+    收益来源是消「解释器启动 + engines 全家 import」约 85–100ms/次的固定成本
+    （详见 scripts/daemon.py 模块注释），不是快在语言。任何失败——无指针文件、
+    连不上、响应异常、非 ok——都静默返回 False 走常态路径：daemon 是加速器
+    不是依赖，坏了 CLI 照常能跑，这里绝不打印错误（会污染 agent 的 stdout 契约）。
+
+    ARGO_NO_DAEMON=1 显式关掉；ARGO_DAEMON_TIMEOUT 覆盖客户端等待上限（秒）。
+    指针文件 .daemon_sock 由 daemon 写在 _default_cache_root() 下（bin 不读
+    yaml、不 import scripts 就能算出的位置），内容是真实 socket 路径——两端
+    状态根解析不一致时退化为快路径永不命中，不会错。
+    """
+    if os.environ.get("ARGO_NO_DAEMON", "").strip().lower() in ("1", "true", "yes"):
+        return False
+    root = os.environ.get("ARGO_STATE_DIR", "").strip() or _default_cache_root()
+    pointer = os.path.join(root, ".daemon_sock")
+    try:
+        with open(pointer, encoding="utf-8") as f:
+            sock = f.read().strip()
+    except OSError:
+        return False
+    if not sock or not os.path.exists(sock):
+        return False
+    try:
+        tmo = float(os.environ.get("ARGO_DAEMON_TIMEOUT", "").strip() or 120)
+    except ValueError:
+        tmo = 120.0
+    import socket
+    req = {"op": "run", "script": "search", "args": rest, "cwd": os.getcwd()}
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        s.settimeout(tmo + 5)
+        s.connect(sock)
+        s.sendall((json.dumps(req) + "\n").encode("utf-8"))
+        buf = b""
+        while not buf.endswith(b"\n"):
+            chunk = s.recv(65536)
+            if not chunk:
+                break
+            buf += chunk
+    except Exception:
+        return False
+    finally:
+        try:
+            s.close()
+        except OSError:
+            pass
+    if not buf:
+        return False
+    try:
+        resp = json.loads(buf.decode("utf-8", "replace"))
+    except ValueError:
+        return False
+    if not resp.get("ok"):
+        return False
+    out = resp.get("stdout") or ""
+    err = resp.get("stderr") or ""
+    if out:
+        sys.stdout.write(out)
+        sys.stdout.flush()
+    if err:
+        sys.stderr.write(err)
+        sys.stderr.flush()
+    sys.exit(int(resp.get("exit_code") or 0))
+
+
 def _engine_count():
     """收录的引擎数（config.yaml + engines/specs/*.yaml 合并口径，单一真源）。
 
@@ -312,6 +379,7 @@ Usage:
   argo local-image stats            索引概况
   argo mcp       {{status|inject|undo}}   多客户端 MCP 一键注入/诊断/还原
   argo paths [--check] [--migrate]     路径自省 / 本机自检 / 搬历史状态到惯例目录
+  argo daemon    {{start|status|stop}}   常驻进程（search 自动走 UDS 快路径，消每次 ~85ms 启动+import；ARGO_NO_DAEMON=1 关）
   argo stats [-n N]                    使用日志与反馈状态（本地使用日志只读出口）
 
 Common flags: --json --mode {{fast|auto|deep|budget}} --max-results N --depth {{fast|balanced|deep}}
@@ -413,6 +481,9 @@ def main():
         # paths：路径自省（状态目录/密钥文件到底解析到了哪里）。支持类问题的
         # 第一问，且不必进 MCP 工具面（与 answer/watch 同类）。
         "paths":     ("argo_paths.py", []),
+        # daemon：常驻进程管理（start/status/stop）。search 已自动走 UDS 快路径
+        # （_daemon_run），这里管生命周期；详见 scripts/daemon.py 模块注释。
+        "daemon":    ("daemon.py", []),
         # cite：DOI → 引用条目（GB/T 7714/APA/BibTeX，Crossref+OpenAlex，免 key）
         "cite":     ("cite_cli.py",  []),
         # local-image：本地图片检索（Vision 索引 + 以图找相似 + 联络表）。
@@ -477,6 +548,16 @@ def main():
         defaults.remove("--json")
 
     args = defaults + rest
+
+    # daemon 快路径：search 是被 agent 循环调用最密的子命令，「解释器启动 +
+    # engines 全家 import」~85ms 固定成本放大最狠。命中常驻进程时把拼好的
+    # args 原样发过去（daemon 侧 runpy 语义与这里的原地路径一字不差），本地
+    # 只付 stdio/env 同步/_self_capable 约 20ms。--help 不走快路径（argparse
+    # 本地直接答）。任何失败在 _daemon_run 内部静默退回常态，绝不污染输出。
+    if sub == "search" and not any(a in ("-h", "--help") for a in rest):
+        if _daemon_run(args):
+            return
+
     if inplace:
         # 原地执行：省一次解释器启动，并复用本进程已 import 的模块。
         # runpy 会正确设置 __file__ / __name__，目标脚本的
