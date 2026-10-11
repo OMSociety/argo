@@ -506,13 +506,22 @@ def postprocess(req: _SearchRequest, run: _SearchRun, hooks: Any) -> _SearchRun:
     _recovery_engines: set[str] = set()
     if not merged:
         # ── 恢复链 L0：early-stop 误判时补跑被跳过的同域引擎 ──
-        # （同域优先于 L3 换跨域引擎；实现在 recovery_l0）
+        # （同域优先于 L3 换跨域引擎；实现在 recovery_l0）。死线 = 用户
+        # 声明的整体超时扣掉 dispatch 已耗墙钟——补跑不得把总时长推出
+        # 用户预算（语义见 recovery_l0 模块 docstring 的死线约束）。
         try:
+            import time as _time
             from recovery_l0 import maybe_retry_skipped
+            try:
+                _l0_deadline = _time.monotonic() + max(
+                    0.0, float(req.timeout or 0)
+                    - float(run.budget_used_ms or 0) / 1000.0)
+            except (TypeError, ValueError):
+                _l0_deadline = None
             _l0_merged, _l0_info = maybe_retry_skipped(
                 run.early_stopped, engines_combo, raw_results,
                 available_engines, query, _run_one, _ingest,
-                max_results, _emit_usage)
+                max_results, _emit_usage, deadline=_l0_deadline)
         except SHAPE_BENIGN:
             _l0_merged, _l0_info = [], None
         if _l0_merged and _l0_info:
@@ -630,7 +639,14 @@ def postprocess(req: _SearchRequest, run: _SearchRun, hooks: Any) -> _SearchRun:
                 except SHAPE_BENIGN:  # 使用日志记录失败不影响恢复结果本身
                     pass
             if rec_results:
-                merged = deduplicate_by_url(rec_results)[:max_results]
+                # 恢复结果复检壳口径：主链的壳过滤跑在恢复链之前，恢复产出
+                # 是唯一可能把壳带回最终输出的入口（唯一出口在
+                # serp_guard.drop_shell_urls，L0/L3/充分性三处共用）。
+                try:
+                    from recovery_l0 import finalize_l3_results
+                    merged = finalize_l3_results(rec_results, max_results)
+                except ImportError:
+                    merged = deduplicate_by_url(rec_results)[:max_results]
                 # 恢复引擎按引擎分组记回 raw_results：engines_used 此前不含
                 # 救援引擎（provenance 断链，实测恢复成功后 engines_used 仍
                 # 只列原 combo），自适应学习也看不到恢复成功信号。

@@ -11,13 +11,55 @@ L0 是恢复决策树的第 0 级：补跑本 combo 的 skipped 引擎，非空
 即采用；失败才落 L3 换引擎。执行器由调用方注入（search_pipeline
 的 _run_one/_ingest 闭包），本模块不依赖编排状态，与 recovery.py
 的 L1–L4 决策树职责分离。
+
+两条硬约束（2026-10-11 甲轮收口）：
+
+  - **壳不算「交付」**：补跑结果与充分性判定（query_signals）、
+    漏斗壳过滤共用 serp_guard.drop_shell_urls 同一口径——被跳过的
+    引擎若也交壳，不算恢复成功，落 L3。否则壳经 L0 绕过主链壳过滤
+    直送最终输出（主链过滤跑在恢复链之前）。
+  - **死线**：deadline（monotonic 秒）之后不再点火新引擎；剩余不足
+    _MIN_USEFUL_SLICE_S（口径：近 72h 真实 P50=1430ms，低于它新起
+    的引擎大概率白烧一次调用）也不点火。补跑是串行的，无此约束时
+    最坏 |skipped| × 单引擎超时，把已失败的查询再拖出几十秒。
 """
 
 from __future__ import annotations
 
+import time
 from typing import Any, Callable
 
 from search_rank import deduplicate_by_url, rrf_merge
+
+# 点火下限：剩余窗口低于一个真实 P50 时，新引擎大概率来不及交付。
+_MIN_USEFUL_SLICE_S = 1.5
+
+
+def _deliverable(res: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """无 error 且非壳的结果才算「交付」（壳口径唯一出口：serp_guard）。"""
+    goods = [r for r in res if isinstance(r, dict) and "error" not in r]
+    try:
+        from serp_guard import drop_shell_urls
+    except ImportError:
+        return goods  # 守卫不可用 → 壳不过滤（fail-open，与模块容错一致）
+    return drop_shell_urls(goods)
+
+
+def finalize_l3_results(rec_results: list[dict[str, Any]],
+                        max_results: int) -> list[dict[str, Any]]:
+    """L3 恢复结果收口：去重 → 壳过滤 → 截断。
+
+    主链的壳过滤跑在恢复链之前，恢复产出（L0/L3）是唯一可能把壳带回
+    最终输出的入口——L0 在 _deliverable 判定处过滤，L3 在此统一收口。
+    """
+    merged = deduplicate_by_url(rec_results)
+    try:
+        from serp_guard import drop_shell_urls
+    except ImportError:
+        pass
+    else:
+        merged = drop_shell_urls(merged)
+    return merged[:max_results]
 
 
 def maybe_retry_skipped(
@@ -30,6 +72,7 @@ def maybe_retry_skipped(
     ingest: Callable[..., None],
     max_results: int,
     emit_usage: Callable[[str, dict[str, Any]], bool] | None,
+    deadline: float | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     """early-stop 误判后的 L0 恢复：补跑被跳过的同域引擎。
 
@@ -37,6 +80,9 @@ def maybe_retry_skipped(
     结论随顶层 recovery 字段输出；为空返回 ([], None)，调用方
     落 L3 换引擎。补跑结果按引擎记回 raw_results（provenance
     与自适应学习可见），并按恢复流发射使用日志。
+
+    deadline：monotonic 秒（与 time.monotonic() 同钟）；None = 不限
+    （仅测试用，生产调用方必须给——见模块 docstring 死线约束）。
     """
     if not early_stopped:
         return [], None
@@ -49,14 +95,21 @@ def maybe_retry_skipped(
         available = None
     lists: list[list[dict[str, Any]]] = []
     for eng in skipped:
+        if deadline is not None:
+            remain = deadline - time.monotonic()
+            if remain <= 0 or remain < _MIN_USEFUL_SLICE_S:
+                break
         if available is not None and eng not in available:
             continue
         try:
             _e, res, _out, _lat = run_one(eng)
             ingest(_e, res, _out, _lat)
-            goods = [r for r in res
-                     if isinstance(r, dict) and "error" not in r]
+            goods = _deliverable(res)
             if goods:
+                # _engine 戳记与恢复执行器同约定：provenance 记回
+                # raw_results（by_eng 分组）依赖它，缺失即静默丢账。
+                for r in goods:
+                    r.setdefault("_engine", eng)
                 lists.append(goods)
         except Exception:
             continue

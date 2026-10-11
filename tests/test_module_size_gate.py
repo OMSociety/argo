@@ -139,16 +139,21 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "2026-10-08 +2：traceability 评分接入快速路径"
               "（score_traceability 调用 + 权重调整 0.40→0.35/0.35→0.30）"),
     "scripts/search_pipeline.py": (
-        1014, "搜索编排主管线（路由→分派→融合→恢复→漏斗输出）；"
+        1030, "搜索编排主管线（路由→分派→融合→恢复→漏斗输出）；"
               "2026-09-30 +2：恢复链与变体召回补透传 --domain/--sub_domain"
               "（用户域约束此前被两条辅路旁路）+ variant_recalled/phrase_dropped"
               " 观测补账（变体条目不进漏斗 returned 口径，不补账会出现"
               "「deduped > returned」的矛盾账）；拆分候选：恢复执行器"
               "_recovery_executor 可独立成 recovery_runner；"
               "2026-10-11 +15：恢复链 L0（early-stop 误判时补跑被跳过的"
-              "同域引擎）拆为独立模块 recovery_l0.py（107 行，执行器注入、"
-              "不依赖编排状态），本文件仅留 15 行调用点胶水——L0 主逻辑"
-              "已不在主管线；下一步拆 _recovery_executor（L3）后本文件"
+              "同域引擎）拆为独立模块 recovery_l0.py（执行器注入、"
+              "不依赖编排状态），本文件仅留调用点胶水——L0 主逻辑"
+              "已不在主管线；"
+              "2026-10-11 甲轮收口 +15：L0 死线（补跑不得推出用户超时预算，"
+              "语义在 recovery_l0）+ L3 恢复结果壳口径复检（恢复产出是主链"
+              "壳过滤之后的唯一壳回流入口，过滤逻辑在 recovery_l0."
+              "finalize_l3_results，判定唯一出口 serp_guard.drop_shell_urls）；"
+              "下一步拆 _recovery_executor（L3）后本文件"
               "可回落到 1000 行内"),
     "scripts/job.py": (
         1186, "招聘多平台聚合，各平台解析各成一段（数据表性质）；"

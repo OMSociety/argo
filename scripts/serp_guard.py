@@ -204,3 +204,25 @@ def is_serp_or_jump_url(url: str) -> bool:
                 or _query_has_param(query, "q") or _query_has_param(query, "wd"):
             return True
     return False
+
+
+def drop_shell_urls(results: list) -> list:
+    """过滤结果列表里的 SERP/跳转壳条目——壳判定的唯一过滤出口。
+
+    为什么必须是本模块的共用函数而不是各处内联：壳判定有多个消费点
+    （充分性判定 query_signals——壳不算「够数」；恢复链 L0——壳不算
+    「交付」，否则误判恢复成功；L3 恢复结果收口——主链的壳过滤跑在
+    恢复链之前，恢复产出是唯一可能把壳带回最终输出的入口）。判定规则
+    演进过多次（百度子域白名单、网盘 /s/<id> 误杀），每处内联一份就多
+    一处漏改点；2026-10-11 热榜壳链事故的根因之一正是充分性与漏斗
+    两处口径漂移。无 url 的结构化快照（行情/天气）不受影响。
+    """
+    kept = []
+    for r in results:
+        if not isinstance(r, dict):
+            continue
+        u = r.get("url")
+        if isinstance(u, str) and u and is_serp_or_jump_url(u):
+            continue
+        kept.append(r)
+    return kept

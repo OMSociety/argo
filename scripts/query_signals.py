@@ -218,18 +218,15 @@ def _sufficient_internal(
     结构化快照（行情/天气）不受影响——壳判定只看 URL。
     """
     try:
-        from serp_guard import is_serp_or_jump_url as _is_serp
+        from serp_guard import drop_shell_urls as _drop_shells
     except ImportError:
-        _is_serp = None  # 守卫不可用 → 壳不过滤（fail-open，与模块容错一致）
-    goods: list[dict[str, Any]] = []
-    for r in results:
-        if not isinstance(r, dict) or "error" in r:
-            continue
-        url = r.get("url")
-        if isinstance(url, str) and url and _is_serp is not None \
-                and _is_serp(url):
-            continue
-        goods.append(r)
+        _drop_shells = None  # 守卫不可用 → 壳不过滤（fail-open，与模块容错一致）
+    goods: list[dict[str, Any]] = [
+        r for r in results if isinstance(r, dict) and "error" not in r]
+    if _drop_shells is not None:
+        # 壳过滤唯一出口（serp_guard.drop_shell_urls）：与下游漏斗过滤、
+        # 恢复链 L0/L3 收口共用同一判定，口径不再各自内联漂移。
+        goods = _drop_shells(goods)
     if not goods:
         return False
     with_snippet = sum(
