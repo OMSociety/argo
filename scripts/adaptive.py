@@ -286,6 +286,49 @@ class AdaptiveLearner:
         """判断引擎是否值得使用（分数高于阈值）。"""
         return self.get_score(engine) >= threshold
 
+    def latency_percentile(self, engine: str, p: float = 0.75,
+                           min_samples: int = 5) -> Optional[float]:
+        """窗口内「正常交付」延迟的分位数（毫秒）；样本不足/过时/无数据 → None。
+
+        口径比 `get_score` 的 judged 更严（judged 仅 empty=0，这里是
+        其子集）：只统计 **success=1 且 empty=0** 的
+        行——「这个源在它能回答的查询上多快」。空结果的低延迟会把分位数拉低，
+        但空结果并不解决对冲竞速（sufficiency 判据不放行），把它算进来会让
+        宽限窗对「只会秒回空结果」的源收得过紧，反而多发对冲调用。
+
+        用途（2026-10-11，调度微手术）：给对冲宽限窗一个「快引擎收窄、慢引擎
+        不动」的自适应窗，见 engine_dispatch._adaptive_grace。只做读侧，不缓存
+        ——每次编排至多一次查询（窗口内样本量小，全量取回后本地排序，免去依赖
+        SQLite 版本的 percentile 扩展）。
+        """
+        if not engine:
+            return None
+        try:
+            q = float(p)
+        except (TypeError, ValueError):
+            return None
+        if not 0.0 < q < 1.0:
+            return None
+        now = time.time()
+        cutoff = now - WINDOW_DAYS * 86400
+        with self._lock:
+            conn = self._connect()
+            rows = conn.execute(
+                "SELECT latency_ms, created_at FROM engine_perf "
+                "WHERE engine = ? AND created_at > ? "
+                "  AND success = 1 AND empty = 0",
+                (engine, cutoff),
+            ).fetchall()
+        if not rows or len(rows) < max(1, int(min_samples)):
+            return None
+        # 数据过时恢复：与 get_score 同判据——窗口内有行但最近一次调用距今
+        # 过久，说明这张快照已不能代表引擎现状（可能已恢复/已换网络环境）。
+        if (now - max(float(ts) for _, ts in rows)) > STALE_AFTER_SECONDS:
+            return None
+        lats = sorted(float(lat) for lat, _ in rows)
+        idx = min(len(lats) - 1, max(0, int(round(q * (len(lats) - 1)))))
+        return lats[idx]
+
 
 # ── 模块级单例 ─────────────────────────────────────────────────────────────────
 

@@ -83,6 +83,50 @@ def _max_parallel_engines(*, depth: str | None = None) -> int:
         return _DEFAULT_MAX_PARALLEL
     return n if n >= 1 else _DEFAULT_MAX_PARALLEL
 
+
+def _adaptive_grace(engine: str, base_grace_s: float) -> float:
+    """对冲宽限窗的自适应收窄：快引擎收窄到自己的 P75，慢引擎不动（只缩不放）。
+
+    窗口语义不变（见 search._PRIMARY_GRACE_S）：「先给首选引擎多久，没回来才
+    补发备选源」。变的只是窗的取值来源——固定 0.8s 对快引擎（redskill P75
+    236ms、eastmoney 258ms）太钝：主引擎异常挂住时要多等 0.5s 才有人救场；
+    而对慢引擎（anysearch P75 2.6s）0.8s 已经是「几乎必补发」，放宽它只是
+    把尾延迟换成调用量，方向不对（用户取舍：稳定性 > 尾延迟 > 成本）。
+
+    所以这里**只缩不放**：grace = max(0.3, min(base, P75(引擎)))，上界仍是
+    base（默认 0.8s），下界 0.3s 与 wave-1 的既有 floor 同源。快引擎的对冲
+    提前到「比它平时明显慢」的时刻点火，尾部有人救场；慢引擎行为逐位不变。
+
+    口径与失败处理：
+    - P75 取 adaptive.latency_percentile（7 天窗、仅 success 且非空的交付），
+      样本不足 5 条或快照过时（STALE_AFTER_SECONDS）→ 不收窄，回到 base。
+    - 任何异常（学习库损坏/被锁/缺模块）一律 fail-open 回 base，观测层不阻断
+      调度主路径（同 file_lock / 熔断器的契约）。
+    - `ARGO_ADAPTIVE_GRACE=1` 整体开启（**默认关**——v2 冻结状态
+      A/B 未证实收益：hedge 率与引擎调度逐位不变，p90/max 略差
+      且统计不显著；开启即实验臂 / 消融对照）。
+    """
+    try:
+        from engine_env import env_flag
+        if not env_flag("ARGO_ADAPTIVE_GRACE", False):
+            return base_grace_s
+    except Exception:
+        return base_grace_s
+    try:
+        base = float(base_grace_s)
+    except (TypeError, ValueError):
+        return base_grace_s
+    if base <= 0.3 or not engine:
+        return base_grace_s
+    try:
+        from adaptive import get_learner
+        p75_ms = get_learner().latency_percentile(engine, 0.75)
+    except Exception:
+        return base_grace_s
+    if not p75_ms or p75_ms <= 0:
+        return base_grace_s
+    return max(0.3, min(base, float(p75_ms) / 1000.0))
+
 # 拦截页特征词（唯一来源）：error 文本里出现即判 blocked。HTML 引擎的反爬
 # 命中没有 error 文本（静默空结果），走 engines_base 的归因寄存器；
 # 这张表兜住「error 结果里带拦截页字样」的可见路径。
@@ -783,6 +827,10 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
         # 逻辑的两个拷贝（收尸、宽限窗、轮询间隔全都要各维护一遍）。现在两者
         # 是同一函数的两次配置，改一处即改两处。
         grace = max(0.3, min(primary_grace_s, net_timeout * 0.25))
+        # 自适应收窄（2026-10-11，调度微手术）：快引擎的窗收到自己的历史 P75
+        # （异常慢时更早有人救场），慢引擎不动；只缩不放，语义与失败处理见
+        # _adaptive_grace。ARGO_ADAPTIVE_GRACE=0 消融对照（A/B 基线臂）。
+        grace = _adaptive_grace(to_run[0], grace)
         if _now() + grace > _deadline:
             grace = max(0.0, _deadline - _now())
 
@@ -865,6 +913,10 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
             return early_min is None and query_coverage_ok(goods, query)
 
         stagger = max(0.0, serial_stagger_s)
+        # 与 wave-1 同一个窗语义（见 _adaptive_grace 的自适应收窄）。显式给
+        # 更大的值是「消融对照 / 完全退回严格串行」的逃生门，原样尊重不收窄。
+        if stagger <= primary_grace_s:
+            stagger = _adaptive_grace(to_run[0], stagger)
         # 等待上限：给「最晚起步的那个引擎」留足它自己的单引擎预算。
         # 旧语义等价于 n × 单引擎预算；对冲把引擎错开起步，所以是
         # (n-1) × stagger + 单引擎预算——差的正是要消灭的那段串行拖尾。

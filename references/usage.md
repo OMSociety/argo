@@ -483,10 +483,11 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 | `ARGO_YDC_API_KEY` | 对应引擎/服务的凭据（you.com） | 缺密钥=该源跳过或降级 |
 | `ARGO_ZHIHU_ACCESS_SECRET` | 对应引擎/服务的凭据 | 缺密钥=该源跳过或降级 |
 
-### 行为调参（9）
+### 行为调参（10）
 
 | 变量 | 作用 | 默认/备注 |
 |------|------|----------|
+| `ARGO_ADAPTIVE_GRACE` | 对冲宽限窗按主引擎历史 P75 自适应收窄（只缩不放） | 默认关；=1 开启（v2 冻结 A/B 未证实收益，保留作实验臂） |
 | `ARGO_ADMISSION_TTL_S` | 行为阈值/预算调参 | 默认经实测校准，勿轻动 |
 | `ARGO_FETCH_DEADLINE_S` | 行为阈值/预算调参 | 默认经实测校准，勿轻动 |
 | `ARGO_LOCAL_SEEK_GRACE_S` | 本地命中并入的宽限窗秒数 | 默认 0.25；覆盖 seek 常规 60~140ms |

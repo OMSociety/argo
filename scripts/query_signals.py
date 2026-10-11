@@ -50,6 +50,8 @@ def cumulative_sufficient(raw_results: dict[str, list[dict[str, Any]]],
 
     与 results_sufficient 同阈值，但把 raw_results 里所有已完成的
     引擎结果合并成一条列表再判，避免单一引擎不足时重复等待慢源。
+    壳链不算「够数」的口径在 _sufficient_internal 统一定义
+    （2026-10-11 热榜实测，判定与下游 serp_guard 过滤对齐）。
     """
     merged: list[dict[str, Any]] = []
     for res in raw_results.values():
@@ -204,8 +206,30 @@ def _sufficient_internal(
         无交集时不许早停
       - 两条路径都叠加平坦分守卫（score_clarity_ok）：计数恰好压线且
         分数无区分度时不许早停
+
+    壳链不算「够数」（2026-10-11 热榜实测）：early-stop 的两条调用
+    路径（wave-1 的 _wave1_stop → results_sufficient、wave-2 的
+    cumulative_sufficient）都在此判定，与下游 serp_guard 过滤共用
+    同一口径。此前壳链被算作有效结果——wave-1「先合格者赢」时
+    baidu_hot 交 10 条 baidu.com/s?wd= 壳即触发早停、同域真榜单
+    引擎（toutiao_hot）被 cancelled，壳随后被 serp_guard 整批过滤
+    清零、merged 归零触发 2.3s 恢复链。判定与过滤对齐后：壳从一
+    开始就不算「够」，早停只在交付真结果的引擎上触发。无 url 的
+    结构化快照（行情/天气）不受影响——壳判定只看 URL。
     """
-    goods = [r for r in results if isinstance(r, dict) and "error" not in r]
+    try:
+        from serp_guard import is_serp_or_jump_url as _is_serp
+    except ImportError:
+        _is_serp = None  # 守卫不可用 → 壳不过滤（fail-open，与模块容错一致）
+    goods: list[dict[str, Any]] = []
+    for r in results:
+        if not isinstance(r, dict) or "error" in r:
+            continue
+        url = r.get("url")
+        if isinstance(url, str) and url and _is_serp is not None \
+                and _is_serp(url):
+            continue
+        goods.append(r)
     if not goods:
         return False
     with_snippet = sum(

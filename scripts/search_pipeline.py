@@ -505,6 +505,20 @@ def postprocess(req: _SearchRequest, run: _SearchRun, hooks: Any) -> _SearchRun:
     _tk_recovery = _tick(timing)
     _recovery_engines: set[str] = set()
     if not merged:
+        # ── 恢复链 L0：early-stop 误判时补跑被跳过的同域引擎 ──
+        # （同域优先于 L3 换跨域引擎；实现在 recovery_l0）
+        try:
+            from recovery_l0 import maybe_retry_skipped
+            _l0_merged, _l0_info = maybe_retry_skipped(
+                run.early_stopped, engines_combo, raw_results,
+                available_engines, query, _run_one, _ingest,
+                max_results, _emit_usage)
+        except SHAPE_BENIGN:
+            _l0_merged, _l0_info = [], None
+        if _l0_merged and _l0_info:
+            recovery_info = _l0_info
+            merged = _l0_merged
+    if not merged:
         try:
             from recovery import run_recovery
             tried = list(raw_results.keys()) or list(engines)
@@ -979,15 +993,15 @@ def finalize(req: _SearchRequest, run: _SearchRun, hooks: Any) -> dict[str, Any]
         out["timing"]["dispatch"] = {
             # 用 dispatch 自己那口单调钟量出来的墙钟（budget_used_ms），不用外层
             # 这笔 time.time() 差值：useful/wasted 都是单调钟算的，混用两种钟会
-            # 让「useful + wasted ≡ wall」只在毫秒取整恰好对齐时成立——而这条
-            # 恒等式正是测试与文档承诺的「唯一自洽的墙钟分解」。
+            # 对不上账。注意 2026-10-10 记账改版起 useful + wasted 与 wall 没有
+            # 恒等式关系，别再按恒等式读仪表（口径真源：engine_dispatch 记账注释）。
             "wall_ms": budget_used_ms,
             "engines_run": len(engine_latency),
             "engine_sum_ms": eng_sum,
             "parallel_efficiency": (round(eng_sum / budget_used_ms, 2)
                                     if budget_used_ms else None),
-            # useful_ms + wasted_ms ≡ wall_ms（唯一自洽的墙钟分解）。
-            # useful = 最后一个有效贡献引擎完成的时刻，wasted = 此后还在等。
+            # useful = 最后一个贡献结果引擎的完成时刻；wasted = 被编排主动弃置
+            # 的引擎已花墙钟之和。与 wall 无恒等式（真源：engine_dispatch 记账注释）。
             "useful_ms": useful_ms,
             "wasted_ms": wasted_ms,
             "early_stopped": early_stopped,
