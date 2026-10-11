@@ -25,7 +25,7 @@
   <img alt="license" src="https://img.shields.io/badge/license-MIT-blue">
   <img alt="python" src="https://img.shields.io/badge/python-3.9+-green">
   <img alt="version" src="https://img.shields.io/badge/version-2.9.3-informational">
-  <img alt="engines" src="https://img.shields.io/badge/engines-264-orange">
+  <img alt="engines" src="https://img.shields.io/badge/engines-265-orange">
   <img alt="mcp" src="https://img.shields.io/badge/MCP-19%20tools-purple">
 </p>
 
@@ -305,7 +305,7 @@ python3 -m pytest tests/test_unit.py -q             # 单测（可选）
 
 **1. 通用搜索 + 垂直搜索，双管齐下**
 
-日常问题走通用网页搜索；一问到行情、影视、体育、宏观这类「有标准答案」的问题，自动切到垂直源直接给答案，而不是扔给你一堆链接。目前 264 个源（229 个免密钥开箱可用）、94 个业务域，金融 / 宏观 / 影视 / 体育 / 地理 / 组织 / 媒体 / 化学 / 学术 / 代码等都有专门的路。
+日常问题走通用网页搜索；一问到行情、影视、体育、宏观这类「有标准答案」的问题，自动切到垂直源直接给答案，而不是扔给你一堆链接。目前 265 个源（229 个免密钥开箱可用）、94 个业务域，金融 / 宏观 / 影视 / 体育 / 地理 / 组织 / 媒体 / 化学 / 学术 / 代码等都有专门的路。
 
 **2. 缓存：不重复花冤枉钱**
 
@@ -388,7 +388,7 @@ python3 -m pytest tests/test_unit.py -q             # 单测（可选）
 - **求职搜索 v3（v2.8.0 升级）**：`argo job` 结构化字段 + 增量监控 + 指纹去重，新增 Ashby ATS 免 Key 后端与北京高校就业源
 - **天气双源并行（v2.8.0 升级）**：wttr.in + Open-Meteo 双源，地理编码 + 空气质量，问天气不落空
 - **通用搜索增强（v2.8.0 新增）**：Parallel 搜索（长文摘录、多路召回）与 You.com（网页+新闻合并、时效动态化），无 Key 优雅降级
-- **264 个搜索源（229 个免密钥开箱可用）、94 个业务域**：通用网页 + 金融 / 宏观 / 影视 / 体育 / 地理 / 组织 / 媒体 / 化学 / 学术 / 代码等（来源：`config.yaml` 与 `engines/specs/*.yaml`）。**逐源清单（费用 / 密钥 / 状态 / 域组合 / 特别能力）见 [搜索源使用文档](docs/ENGINE_CATALOG.md)**，该文档由脚本从声明生成、有检查防漂移；选源判断与语义分工见 `references/engines.md`
+- **265 个搜索源（229 个免密钥开箱可用）、94 个业务域**：通用网页 + 金融 / 宏观 / 影视 / 体育 / 地理 / 组织 / 媒体 / 化学 / 学术 / 代码等（来源：`config.yaml` 与 `engines/specs/*.yaml`）。**逐源清单（费用 / 密钥 / 状态 / 域组合 / 特别能力）见 [搜索源使用文档](docs/ENGINE_CATALOG.md)**，该文档由脚本从声明生成、有检查防漂移；选源判断与语义分工见 `references/engines.md`
 - **双层缓存**：内存 LRU + SQLite 持久化，时效性弱的内容不重复打 API；登录态结果单独隔离，不污染公共缓存
 - **为 Agent 节省 Token**：MCP 响应可紧凑裁剪、snippet 可控，输出为精简 JSON 而非整页文本
 - **19 个 MCP 工具**（与 CLI 能力面对齐）：搜索、研究、证据、消歧、抓取、截图、PDF、社交舆情、本地文件搜索、站点爬取、本地预览、可复算、公众号文章全文、招聘聚合、结构化提取、URL 批量预检、直答、网页变化监控、DOI 引用条目
@@ -405,7 +405,7 @@ python3 -m pytest tests/test_unit.py -q             # 单测（可选）
 
 ## 引擎与路由
 
-当前配置 **264** 个源（**229** 个免密钥开箱可用）、**94** 个业务域（以 `config.yaml` 与 `--list-engines` 为准）。
+当前配置 **265** 个源（**229** 个免密钥开箱可用）、**94** 个业务域（以 `config.yaml` 与 `--list-engines` 为准）。
 
 ### 直连与垂类（节选）
 

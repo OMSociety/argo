@@ -27,7 +27,7 @@ triggers:
 # Argo — 统一搜索与证据核验
 
 > 不止「帮你搜到」，还要「帮你核到」：高后果问题标 `fetch_required`、结果标
-> `fetch_suggested`，`--verify` 核验正文并回填证据分。收录 264 个源、229 个免密钥开箱可用；另有 1 个默认关闭的本地引擎 digup（本地文件语义搜索，照片/PDF/音视频按内容检索），启用见 engines/specs/digup.yaml 文件头。
+> `fetch_suggested`，`--verify` 核验正文并回填证据分。收录 265 个源、229 个免密钥开箱可用；另有 1 个默认关的本地引擎 digup（按内容搜本机文件/音视频），启用见 engines/specs/digup.yaml。
 
 ## 快速上手
 
@@ -41,7 +41,7 @@ python3 scripts/research.py "复杂问题" --json            # 取证包（扩�
 默认不附归档用的 candidates/sources；`--fields agent` 剥遥测只留答案（Agent 消费档，~4.3 KB）；
 要来源追溯或归档才加 `--envelope`（`--archive` 自动带上）。
 
-深度研究只此一条。机器产出**取证包（dossier）**：来源、覆盖、缺口、是否达标，不是判断稿。Agent 先读 `references/research-protocol.md`（含多轨道「广泛研究」节），写出工作包再取证；判断按事实/推断/建议写。不要另装「专业深度研究」skill。
+深度研究只此一条。机器产出**取证包（dossier）**：来源、覆盖、缺口、是否达标，不是判断稿。Agent 先读 `references/research-protocol.md`，写出工作包再取证；判断按事实/推断/建议写。不要另装「专业深度研究」skill。
 
 ## 核心命令
 
@@ -50,12 +50,12 @@ python3 scripts/research.py "复杂问题" --json            # 取证包（扩�
 | 参数 | 说明 |
 |------|------|
 | `--engine <name>` | 强制引擎（anysearch/byted/bocha/exa/tavily/eastmoney/zhihu/arxiv/pypi/mdn/hackernews/v2ex/redskill…，全量见 `--list-engines`） |
-| `--local-first` | 本地零成本聚合优先（local_search 29 引擎，27 默认启用） |
+| `--local-first` | 本地零成本聚合优先（local_search 29 引擎） |
 | `--include-local` / `--no-local` | 本机文件命中（source=local_files，score 0.9/0.7）：fast/budget 默认开，auto/deep 显式 |
 | `--mode fast|auto|deep|budget` | fast 免费优先 / auto 成本感知（默认）/ deep 质量优先 / budget 配额控制 |
 | `--explain` | 解释路由决策（含 TF-IDF 分数） |
 | `--no-cache` / `--depth fast|balanced|deep` | 跳过缓存 / 搜索深度 |
-| `--academic-deep` | 学术多源模式：自动设置 depth=deep + domain=academic，禁用 early-stop 让所有学术源参与（arxiv/openalex/local_pubmed/core 等），适合深度研究场景 |
+| `--academic-deep` | 学术多源模式：自动设置 depth=deep + domain=academic，禁用 early-stop 让所有学术源参与（arxiv/openalex/local_pubmed/core 等） |
 | `--since 7d|2026-08-01` `--until` `--sort relevance|newest|oldest` | 时间窗过滤 + 时间排序 |
 | `--verify [N]` | 对 top-N 未核验结果 fetch 正文，回填证据分（URL→证据分缓存，同 URL 二次搜索自动复用） |
 | `--domain` `--sub_domain` | 垂直域 / 子域限定 |
@@ -63,7 +63,7 @@ python3 scripts/research.py "复杂问题" --json            # 取证包（扩�
 ### 图片检索
 
 网络图走 `search`（`image_search` 域自动命中）；本地素材走 `argo local-image`
-（Vision 索引 + `--similar-to` 找相似图 + `--sheet` 出联络表交多模态模型判断）。
+（Vision 索引 + `--similar-to` 找相似图 + `--sheet` 出联络表）。
 **本地图默认关闭**，需 `ARGO_LOCAL_IMAGE=1`；详见 `references/usage.md`。
 
 ### 增强三工具
@@ -112,7 +112,7 @@ argo watch add|check|list|remove   # 观察模式（--json 供 cron）
 - **`--envelope` 与 `--fields agent` 别同给**：后者会把 envelope 的增量剥成 0 字节——以为拿到了 provenance、实际没有。要 provenance 就去掉 `--fields agent`。
 - **结果异常少**：看 `funnel` 六格阶段计数，哪格归零即塌陷点。
 - **慢查询**：看 `timing.dispatch` 的 `useful_ms`/`wasted_ms`，区分「等答案」与「白等」。
-- **`--list-engines` 别直接 `--all`**：全量 ~54 KB 会灌爆版面；默认摘要 ~2.5 KB 够用。
+- **`--list-engines` 别直接 `--all`**：全量 ~54 KB 灌爆版面，默认摘要够用。
 - **`-n` 超 10 无收益**。
 
 ## 按需读取（低频操作细节）

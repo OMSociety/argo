@@ -15,6 +15,7 @@
 | `argo crawl` | 站点爬取（sitemap/BFS 多页） |
 | `argo extract` | 结构化提取（表格/Meta/JSON-LD） |
 | `argo article` | 公众号文章全文（标题/正文/图片） |
+| `argo wx` | 微信文章多级降级抓取（HTTP→CDP→搜狗兜底，仅 mp.weixin.qq.com 链接） |
 | `argo screenshot` | 网页截图（`--full-page`/`--output`） |
 | `argo pdf` | PDF 正文提取（`--pages`/`--password`，`--outline`/`--section` 分节读取） |
 | `argo paper` | arXiv 论文深读（`--outline`/`--section`/`--latex`/`--cited-by`） |

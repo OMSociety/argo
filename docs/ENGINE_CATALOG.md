@@ -6,11 +6,11 @@
 
 ## 一、总量与口径
 
-- **收录 264 个源**（config.yaml + `engines/specs/*.yaml` 声明合并后的总数）
+- **收录 265 个源**（config.yaml + `engines/specs/*.yaml` 声明合并后的总数）
 - **开箱可用 229 个**：不需要你配任何密钥或装额外工具，自动路由就会用上
 - **需自备密钥 21 个**：`bocha`、`bocha_ai`、`byted`、`em_miaoxiang`、`exa`、`keenable`、`octen`、`parallel`、`qweather`、`seltz`、`tavily`、`tinyfish`、`tinyfish_news`、`tinyfish_paper`、`unpaywall`、`weread`、`you`、`zhihu`、`zhihu_global`、`zhihu_hot`、`zhihu_user`（没配也不影响搜索，路由会跳过）
 - **需装后端工具 3 个**：`reddit`、`twitter`、`xiaohongshu`（装好并登录后即可用）
-- **已停用 11 个**：`brave`、`europeana`、`felo`、`jikan`、`local_goodreads`、`metaso`、`nbs_stats`、`realtime_index`、`searxng`、`soilgrids`、`wolframalpha`
+- **已停用 12 个**：`brave`、`digup`、`europeana`、`felo`、`jikan`、`local_goodreads`、`metaso`、`nbs_stats`、`realtime_index`、`searxng`、`soilgrids`、`wolframalpha`
 - **显式专用 15 个**：`bing_rss`、`datagov_uk`、`doi`、`ecosia`、`gdelt`、`opencitations`、`qwant`、`tineye`、`tinyfish`、`tinyfish_news`、`tinyfish_paper`、`twitter_syndication`、`unpaywall`、`x_trending`、`zbmath`（设计上不进自动路由，按 `--engine` 或交接提示调用）
 
 自己核一遍（口径不同，别混用）：
@@ -26,7 +26,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 
 ## 二、费用与密钥：哪些白用、哪些要钱
 
-- **免费档 251 个**（含已停用）：无需密钥，或只需免费注册的密钥；其中 13 个要自备密钥（免费额度）：em_miaoxiang、keenable、qweather、searxng、tinyfish、tinyfish_news、tinyfish_paper、unpaywall、weread、wolframalpha、zhihu、zhihu_hot、zhihu_user
+- **免费档 252 个**（含已停用）：无需密钥，或只需免费注册的密钥；其中 13 个要自备密钥（免费额度）：em_miaoxiang、keenable、qweather、searxng、tinyfish、tinyfish_news、tinyfish_paper、unpaywall、weread、wolframalpha、zhihu、zhihu_hot、zhihu_user
 - **计费档 13 个**（下表逐个列出，档位取自各源自己的 `cost_tier` 声明）
 
 | 引擎 | 档位 | 是否进自动路由 | 需自备密钥 |
@@ -76,7 +76,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 
 状态含义：**可直接用** = 自动路由会用上；**需自配密钥 / 需装后端工具** = 配好后即可用；**被上游封锁** = 源站当前拒绝；**已停用** = 配置层面关闭。
 
-### 全网搜索（33）
+### 全网搜索（34）
 
 | 引擎 | 状态 | 费用 | 频率上限 | 需自备密钥 | 什么时候用到 | 说明 |
 |---|---|---|---|---|---|---|
@@ -100,6 +100,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 | `bocha` | 需自备密钥 | 低价计费 | 10000/月 | ARGO_BOCHA_API_KEY | 域 chinese_general、域 local_chinese、域 modal_card、语义画像命中 | 博查搜索 API（中文，freshness 按查询时效动态化） |
 | `brave` | 已停用 | 低价计费 | 不限 | ARGO_BRAVE_API_KEY | 域 semantic_discovery | Brave Search API |
 | `byted` | 需自备密钥 | 低价计费 | 不限 | ARGO_BYTED_API_KEY | 域 chinese_general、域 chinese_tech_deep、域 fact_check、域 financial_news、域 legal、域 local_news、域 news_realtime、域 weather_query、语义画像命中 | 字节搜索 API，中文通用/news |
+| `digup` | 已停用 | 免费 | 不限 | — | 已停用 | DigUp（EmbeddingGemma 2 本地多模态嵌入，全程离线）——照片/截图/PDF/文档/音视频按内容检索 |
 | `ecosia` | 显式专用 | 免费 | 不限 | — | 显式调用（--engine） | Ecosia（ecosia.org HTML 解析），环保隐私取向通用网页 |
 | `exa` | 需自备密钥 | 按调用计费 | 1000/月 | ARGO_EXA_API_KEY | 域 english_tech、域 semantic_discovery、域 us_stock、深度研究 boost | Exa 语义搜索（embedding 匹配 + 内容摘要，新户 $20 赠金 + 每月 $10 赠金） |
 | `felo` | 已停用 | 付费 | 不限 | ARGO_FELO_API_KEY | 域 semantic_discovery、语义画像命中 | Felo AI 搜索 API |
@@ -554,7 +555,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 ## 七、怎么自己查当前状态
 
 ```bash
-argo search --list-engines --detail | python3 -m json.tool | less   # 全部 264 个源的详情
+argo search --list-engines --detail | python3 -m json.tool | less   # 全部 265 个源的详情
 argo search --list-engines --detail --routable-only              # 只看现在能用的
 python3 scripts/matrix_search_eval.py --offline                   # 可达性门：有没有死源
 python3 scripts/engine_validate.py --engine <名> --stage all       # 单个源的健康+质量双阶段体检

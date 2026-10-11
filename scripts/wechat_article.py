@@ -32,6 +32,13 @@ from article import strip_tags, fetch_article
 # 复用 fetch_browser.py 的 CDP 通道
 from fetch_browser import browser_fetch
 
+# urllib 出口唯一入口（issue #13）：代理解析集中在一处；YAML 解析同理
+from net_proxy import open_url
+from yaml_load import loads
+
+# 本脚本所在目录：子进程脚本路径必须绝对（本模块可能从任意 CWD 调起）
+_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+
 
 def _http_fetch(url: str, timeout: int = 5) -> dict:
     """通道1: HTTP 直取（article.py 逻辑，短超时快速失败）。"""
@@ -84,6 +91,12 @@ def _cdp_fetch(url: str, timeout: int = 15) -> dict:
         return {"ok": False, "error": f"CDP 通道异常: {e}"}
 
 
+def _sogou_cmd(title: str) -> list:
+    """搜狗兜底的子进程命令——脚本路径绝对化，与调用方 CWD 无关。"""
+    return [sys.executable, os.path.join(_SCRIPTS_DIR, "sogou_weixin_browser.py"),
+            title, "--n", "3"]
+
+
 def _sogou_fallback(url: str) -> dict:
     """通道3: 搜狗微信搜索兜底（通过标题间接获取）。"""
     try:
@@ -93,7 +106,7 @@ def _sogou_fallback(url: str) -> dict:
                 "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
                               "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
             })
-            with urllib.request.urlopen(req, timeout=5) as r:
+            with open_url(req, timeout=5) as r:
                 raw = r.read().decode("utf-8", errors="ignore")
                 m = re.search(r'<meta property="og:title" content="([^"]+)"', raw)
                 if m:
@@ -105,16 +118,15 @@ def _sogou_fallback(url: str) -> dict:
             return {"ok": False, "error": "无法获取标题，搜狗兜底失败"}
 
         result = subprocess.run(
-            [sys.executable, "sogou_weixin_browser.py", title, "--n", "3"],
+            _sogou_cmd(title),
             capture_output=True, text=True, timeout=30,
             encoding="utf-8", errors="replace"
         )
         if result.returncode != 0:
             return {"ok": False, "error": f"搜狗搜索失败: {result.stderr[:200]}"}
 
-        import yaml
         try:
-            items = yaml.safe_load(result.stdout)
+            items = loads(result.stdout)
         except Exception:
             return {"ok": False, "error": "搜狗搜索结果解析失败"}
 

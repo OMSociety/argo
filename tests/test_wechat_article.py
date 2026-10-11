@@ -128,6 +128,90 @@ def test_all_channels_fail():
                 assert "所有通道均失败" in result["error"]
 
 
+# ── 通道3: 搜狗兜底 ────────────────────────────────────────────────────────
+
+def _fake_og_response(title: str = "测试标题"):
+    """open_url 的上下文管理器替身：返回带 og:title 的页面。"""
+    resp = MagicMock()
+    inner = MagicMock()
+    inner.read.return_value = (
+        f'<html><meta property="og:title" content="{title}"></html>'.encode())
+    resp.__enter__.return_value = inner
+    resp.__exit__.return_value = False
+    return resp
+
+
+def test_sogou_cmd_absolute_script_path():
+    """子进程脚本路径必须绝对（曾用裸相对路径，非仓根 CWD 调用即断）。"""
+    from wechat_article import _sogou_cmd
+    cmd = _sogou_cmd("标题")
+    assert Path(cmd[1]).is_absolute(), f"脚本路径必须绝对：{cmd[1]}"
+    assert cmd[1].endswith("sogou_weixin_browser.py")
+    assert Path(cmd[1]).is_file(), "指向的脚本必须真实存在"
+
+
+def test_sogou_fallback_cwd_independent(tmp_path, monkeypatch):
+    """CWD 换到任意目录，子进程仍拿到绝对脚本路径。"""
+    import wechat_article
+
+    captured = {}
+
+    def fake_run(cmd, **kw):
+        captured["cmd"] = cmd
+        m = MagicMock()
+        m.returncode = 1
+        m.stderr = "boom"
+        return m
+
+    monkeypatch.chdir(tmp_path)
+    with patch("wechat_article.open_url", return_value=_fake_og_response()), \
+            patch.object(wechat_article.subprocess, "run", side_effect=fake_run):
+        out = wechat_article._sogou_fallback("https://mp.weixin.qq.com/s/x")
+    assert Path(captured["cmd"][1]).is_absolute()
+    assert not out["ok"]
+    assert "搜狗搜索失败" in out["error"]
+
+
+def test_sogou_fallback_parses_yaml_list(tmp_path, monkeypatch):
+    """搜狗返回 YAML 列表时取首条并回填结构化字段（走集中 loader）。"""
+    import wechat_article
+
+    def fake_run(cmd, **kw):
+        m = MagicMock()
+        m.returncode = 0
+        m.stdout = (
+            "- url: https://mp.weixin.qq.com/s/fallback\n"
+            "  title: 搜狗兜底标题\n"
+            "  snippet: 兜底摘要内容\n")
+        return m
+
+    monkeypatch.chdir(tmp_path)
+    with patch("wechat_article.open_url", return_value=_fake_og_response()), \
+            patch.object(wechat_article.subprocess, "run", side_effect=fake_run):
+        out = wechat_article._sogou_fallback("https://mp.weixin.qq.com/s/x")
+    assert out["ok"]
+    assert out["title"] == "搜狗兜底标题"
+    assert out["fetch_method"] == "sogou_fallback"
+    assert out["content"] == "兜底摘要内容"
+
+
+def test_sogou_fallback_without_title_fails_fast():
+    """取不到 og:title 时结构化报错，不发起搜狗子进程。"""
+    import wechat_article
+
+    resp = MagicMock()
+    inner = MagicMock()
+    inner.read.return_value = b"<html>no title</html>"
+    resp.__enter__.return_value = inner
+    resp.__exit__.return_value = False
+    with patch("wechat_article.open_url", return_value=resp), \
+            patch.object(wechat_article.subprocess, "run") as fake_run:
+        out = wechat_article._sogou_fallback("https://mp.weixin.qq.com/s/x")
+    assert not out["ok"]
+    assert "无法获取标题" in out["error"]
+    fake_run.assert_not_called()
+
+
 # ── 输出格式 ───────────────────────────────────────────────────────────────
 
 def test_output_contains_required_fields():

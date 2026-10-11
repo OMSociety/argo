@@ -20,6 +20,7 @@
 engine_id: digup
 type: cli
 enabled: false         # ← 默认关；开启步骤见文件头
+disabled_reason: 按需启用的本地引擎——需先装 digup CLI 并建索引（文件头三步），装好把 enabled 改 true 后跑 engine_validate 健康门；本机不装不影响任何主链功能
 cost_tier: free
 label: 本地文件语义搜索
 desc: DigUp（EmbeddingGemma 2 本地多模态嵌入，全程离线）——照片/截图/PDF/文档/音视频按内容检索
