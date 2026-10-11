@@ -175,6 +175,31 @@ def test_large_body_capped(fts_env):
     assert [r[2] for r in rows] == ["needle in head"]
 
 
+def test_oversized_file_skipped_entirely(fts_env, monkeypatch):
+    """超过 _MAX_FILE_BYTES 的文件整体不入索引（2026-10-11：992MB 索引主因
+    是 9-33MB 会话转写被全文入库）；限额调小便于测试，正文行 rg 兜底。"""
+    _state, tree = fts_env
+    monkeypatch.setattr(seek_fts, "_MAX_FILE_BYTES", 64)
+    _write(tree, "small.py", "needle small\n")
+    _write(tree, "rollout.jsonl", "x" * 200 + "\nneedle hidden\n")
+    _build(tree)
+    assert seek_fts.content_candidates("needle", str(tree)) == [
+        (str(tree / "small.py"), 1, "needle small")]
+
+
+def test_machine_output_dirs_excluded(fts_env):
+    """rollout/logs/backups 目录不入索引（机器输出非知识文件，rg 主路仍在）。"""
+    _state, tree = fts_env
+    _write(tree, "keep.md", "needle kept\n")
+    _write(tree, "cli/rollout/sess.jsonl", "needle rollout\n")
+    _write(tree, "cli/log/app.jsonl", "needle log\n")
+    _write(tree, "v2/logs/run.txt", "needle logs\n")
+    _write(tree, "backups/dump.sql", "needle backup\n")
+    _build(tree)
+    assert seek_fts.content_candidates("needle", str(tree)) == [
+        (str(tree / "keep.md"), 1, "needle kept")]
+
+
 # ── 一致性与健壮性 ───────────────────────────────────────────────────────────
 
 def test_determinism_two_runs_same_order(fts_env):

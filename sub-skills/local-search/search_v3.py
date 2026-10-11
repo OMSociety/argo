@@ -56,6 +56,17 @@ if not logger.handlers:
     logger.setLevel(logging.WARNING)
     logger.addHandler(logging.StreamHandler(sys.stderr))
 
+# BM25 重排（D1）在导入期绑死，不走函数内惰性导入：主链进程内 builder
+# （engines._sys_path_tmp）导入完本模块就撤掉临时路径，函数内 `from bm25
+# import` 依赖「本目录仍在 sys.path」的残留，一撤即 No module named 'bm25'
+# → 主链 local_search 全路径静默退化位次分（2026-10-11 实锤复现）。
+# 导入期本目录必然在场：直接执行时 =sys.path[0]，进程内导入时临时路径未撤。
+try:
+    from bm25 import rerank as _bm25_rerank
+except ImportError as _bm25_err:  # 与本文件同目录，缺阵=部署残缺
+    _bm25_rerank = None
+    logger.warning(f"bm25 模块缺失，BM25 重排全路径停用: {_bm25_err}")
+
 CONFIG_PATH = SKILL_DIR / "config.yaml"
 PARSE_MAPS_PATH = SKILL_DIR / "parse_maps.yaml"
 
@@ -1399,12 +1410,13 @@ def search_engines(
     # score 排序（此前 B3 的 score/_rrf_score 双键分裂随之消解——score
     # 只有「混合相关度」一个含义）。
     # Fail-soft：查询无 token 或全部文档零词面重叠时退化为位次序，与升级前
-    # 逐位一致（见 bm25.rerank docstring）；bm25 模块缺失时整段跳过。
-    try:
-        from bm25 import rerank as _bm25_rerank
-        _bm25_rerank(by_engine, query)
-    except Exception as e:
-        logger.warning(f"BM25 重排不可用，保持位次分: {e}")
+    # 逐位一致（见 bm25.rerank docstring）；_bm25_rerank 为 None（模块缺失，
+    # 导入期已告警过一次）时整段跳过，不再逐查询告警。
+    if _bm25_rerank is not None:
+        try:
+            _bm25_rerank(by_engine, query)
+        except Exception as e:
+            logger.warning(f"BM25 重排不可用，保持位次分: {e}")
 
     # 融合：多引擎时接主仓唯一来源 rrf_merge——WG-RRF 引擎加权 +
     # canonical URL 跨引擎去重合并 + consensus_engines 标注。此前是

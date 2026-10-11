@@ -15,8 +15,9 @@ rg 每次全树扫描，大范围（万级文件）内容搜索要 0.9-1.3s；�
      hidden/follow 旗标）；二进制（8KB 探测含 NUL）与 rg 搜索期行为一致地跳过。
   4. 建成门槛：索引「完整建成」前一律回退 rg（宁可慢不可漏）；建成后 TTL 内
      新建/修改的文件是已知的新鲜度缺口，零命中时自动回 rg 兜底。
-  5. 已知偏差（opt-in 换速的明码标价，SKILL.md 同步）：超大文件索引正文截到
-     _MAX_BODY_BYTES，更深行只有 rg 能找到；文件集合按 bm25 相关度取前
+  5. 已知偏差（opt-in 换速的明码标价，SKILL.md 同步）：超过 _MAX_FILE_BYTES
+     的文件整体不入索引、索引正文截到 _MAX_BODY_BYTES——更深行与更大文件
+     只有 rg 能找到；文件集合按 bm25 相关度取前
      _MAX_FILES_PER_QUERY 个（rg 是全集合）——「相关性优先于遍历序」的有意
      偏差，最终次序仍由 seek 的重排层定。
 
@@ -47,17 +48,23 @@ _TTL_S = 120.0            # 索引新鲜度窗口；过期才做增量刷新
 _REFRESH_BUDGET_S = 1.5   # 查询路径上单次刷新的墙钟上界（清单 + 改动文件重读）
 _REBUILD_BUDGET_S = 30.0  # 显式 rebuild 的墙钟上界（大树没建完就再跑一次续做）
 _MAX_BODY_BYTES = 512 * 1024    # 单文件索引正文上限（更深行只有 rg 能搜到）
+_MAX_FILE_BYTES = 2 * 1024 * 1024  # 超过即整体不入索引：会话转写/运行日志类
+                                   # （实测单个 9-33MB、mtime 天天变反复重建），
+                                   # 检索价值低；同样只有 rg 能搜到
 _MAX_FILES_PER_QUERY = 160      # MATCH 按相关度取前 N 个文件再抽行
 _MAX_LINES_PER_FILE = 200       # 单文件最多贡献的行（防单文件挤占）
 _MAX_LINES_TOTAL = 4000         # 候选行总量上限（喂给池选择前的有界池）
 _BUSY_TIMEOUT_MS = 8000
 
 # rg --files 已尊重 .gitignore；这里只补 --hidden 场景下无搜索价值的系统目录，
-# 防止清单与索引用量被工具链缓存拖爆
+# 防止清单与索引用量被工具链缓存拖爆。log/logs/rollout/backups 是机器输出
+# 目录（会话转写、运行日志、备份转储），不是知识文件（2026-10-11：992MB
+# 索引里最大正文全是这几类）；同名知识目录被误伤时 rg 主路仍可搜。
 _SKIP_DIRS = frozenset({
     ".git", "node_modules", "__pycache__", ".venv", "venv", ".tox",
     ".mypy_cache", ".ruff_cache", ".pytest_cache", ".trash", "dist",
     "build", "target", ".gradle", ".idea", ".vscode", ".mimosa",
+    "rollout", "logs", "log", "backups",
 })
 
 _TEXT_SNIFF_BYTES = 8192
@@ -218,7 +225,7 @@ def refresh(root: str, dots: bool = False, budget_s: float | None = None,
             mtime, size = st.st_mtime, st.st_size
             if not force and p in old and abs(old[p] - mtime) < 1e-6:
                 continue
-            if size == 0:
+            if size == 0 or size > _MAX_FILE_BYTES:
                 continue
             path_obj = Path(p)
             if _is_binary(path_obj):
