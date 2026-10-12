@@ -3,7 +3,7 @@
 > 本页承接 SKILL.md 已下沉的低频**操作型**细节：工具清单、MCP/DSH 接入、配额、子技能、本地打通、工程纪律。
 > 只在需要「配置 MCP / 接入 DSH 插件 / 用子技能 / 改引擎」时读，日常搜索/抓取/深度研究不必读。
 
-## MCP 工具清单（14 个）
+## MCP 工具清单（19 个）
 
 `tools/list` 默认只注入 `argo_search` / `argo_fetch` / `argo_local_search`（约 3.6KB/轮）。全量设 `ARGO_MCP_TOOLS=all`（或逗号名单）。`execute_tool` / `--call` 不受此限。URL 在 `results[].url`，默认不生成 `sources`。
 
@@ -18,11 +18,16 @@
 | `argo_clarify` | 意图消歧 |
 | `argo_crawl` | 站点级爬取（sitemap/BFS） |
 | `argo_fetch` | 智能抓取（mode=extract 结构化提取） |
+| `argo_extract` | 网页结构化提取（表格 / Meta / JSON-LD） |
 | `argo_screenshot` | 网页截图 |
 | `argo_pdf` | PDF 结构化提取 |
 | `argo_social_search` | 社交平台搜索（mode=sentiment 舆情聚合） |
 | `argo_article` | 微信公众号文章全文 |
 | `argo_job` | 招聘岗位多平台聚合 |
+| `argo_preflight` | 批量 URL 预检（可用 / 登录墙 / 已失效） |
+| `argo_answer` | 直答（带引用的合成答案） |
+| `argo_watch` | 网页变化监控（add / check / list / remove） |
+| `argo_cite` | DOI → 引用条目（GB/T 7714 / APA / BibTeX） |
 
 ## MCP 服务
 

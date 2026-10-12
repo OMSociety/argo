@@ -49,8 +49,9 @@ dsh plugin --profile web add "github:taxueseek/argo#main&path:packages/dsh-plugi
     maxTracks: 9
     # 原生一等工具（可选调整）：默认只注册 argo_search / argo_fetch（高频路径，
     # 零常驻 token 开销）。全部长尾工具（article / job / social_search / pdf /
-    # crawl / evidence / clarify / screenshot / local_* / recompute / local_read /
-    # local_search，共 13 个，schema 自动派生自 MCP 真源）都可按需追加，例如：
+    # crawl / extract / evidence / clarify / screenshot / preflight / answer /
+    # watch / cite / local_search / local_read / recompute，共 16 个，schema
+    # 自动派生自 MCP 真源）都可按需追加，例如：
     # nativeTools: ['argo_search', 'argo_fetch', 'argo_pdf', 'argo_article']
     # nativeTools: []                               # 空数组关闭
     # nativeTimeoutMs: 60000                        # 单次进程超时（ms）

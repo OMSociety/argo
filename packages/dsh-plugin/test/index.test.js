@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { normalizeTracks, stageTracks, evaluateGates, normalizeSource, mapArgoToWebResult, buildLocalSources, parseJsonArray, parseJsonObject, extractValues, resolveNativeSpawn, makeNativeTool, buildChildToolFilters, apply, nativeViaMcpPool, disposeSharedMcp } from '../dsh/index.js'
+import { NATIVE_TOOLS } from '../dsh/native-tools.mjs'
 
 test('mapArgoToWebResult maps compact argo payload to web sources', () => {
   const mapped = mapArgoToWebResult({
@@ -284,6 +285,14 @@ test('resolveNativeSpawn: local mcp_server.py mode uses --call flag', () => {
   assert.deepEqual(spec.args, ['/opt/argo/scripts/mcp_server.py', '--call', 'argo_fetch', '{"url":"https://x"}'])
 })
 
+test('resolveNativeSpawn: mcp_server.py mode detected with extra args, not just a single arg', () => {
+  // 旧实现按 args.length===1 判定本机模式，searchArgs 一带附加参数就静默走错
+  // 分支（把 call 当脚本参数喂给 python）。现按「是否出现 mcp_server.py」判定。
+  const config = { searchCommand: 'python3', searchArgs: ['-u', '/opt/argo/scripts/mcp_server.py'] }
+  const spec = resolveNativeSpawn(config, 'argo_search', '{}')
+  assert.deepEqual(spec.args, ['-u', '/opt/argo/scripts/mcp_server.py', '--call', 'argo_search', '{}'])
+})
+
 test('resolveNativeSpawn: empty config falls back to defaults with call tail', () => {
   // DEFAULTS.searchCommand 读环境变量，不硬断言具体命令值；
   // 两种部署路径的 args 尾部统一是 [tool, payload]。
@@ -421,6 +430,32 @@ test('buildChildToolFilters: explicit list filters blocked names and dedupes', (
     childToolAllow: ['argo_search', 'argo_search', 'mcp__argo__argo_research', 'web_search'],
   }, 'wide_research')
   assert.deepEqual(allow, ['argo_search', 'web_search'])
+})
+
+test('buildChildToolFilters: default MCP allow list covers the full tool face (minus argo_research)', () => {
+  // 门禁：worker 白名单的 MCP 侧必须等于原生规格表。native-tools.mjs 是
+  // mcp_tools.py 的生成产物（= 全量面去掉 argo_research，由
+  // tests/test_native_tools_sync.py 把关），因此这条断言把插件白名单与
+  // MCP 真源串成一条链——此前手写列表在工具面涨到 19 后漏掉了 5 个。
+  const { allow } = buildChildToolFilters({}, 'wide_research')
+  const mcpInAllow = allow.filter(tool => tool.startsWith('mcp__argo__'))
+  assert.deepEqual(
+    mcpInAllow,
+    Object.keys(NATIVE_TOOLS).map(name => `mcp__argo__${name}`),
+    'worker 白名单的 MCP 侧必须等于原生规格表（= mcp_tools.py 全量面 − argo_research）',
+  )
+  assert.ok(!allow.includes('mcp__argo__argo_research'), '研究不套研究')
+})
+
+test('buildChildToolFilters: deny entries are subtracted from the allow list', () => {
+  // allow 非空时调用方只把 allow 交给宿主 toolFilter（单一键），deny 必须
+  // 在这里就扣除，否则用户同时设 allow + deny 时 deny 被静默忽略。
+  const { allow, deny } = buildChildToolFilters(
+    { childToolDeny: ['argo_search', 'mcp__argo__argo_pdf'] }, 'wide_research')
+  assert.ok(!allow.includes('argo_search'))
+  assert.ok(!allow.includes('mcp__argo__argo_pdf'))
+  assert.ok(deny.includes('argo_search'))
+  assert.ok(allow.includes('argo_fetch'), '未被 deny 的工具应保留')
 })
 
 // ── 连接池（真实 stdio 桩）─────────────────────────────────────────────────

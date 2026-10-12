@@ -24,9 +24,9 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 // 原生工具规格表：由 scripts/gen_native_tools.py 从 schema 唯一真源
 // （scripts/mcp_tools.py）生成，勿手改；漂移由
-// tests/test_native_tools_sync.py 把关。除 argo_research 外全部 13 个工具
-// 都可经 nativeTools 配置按需启用为原生一等工具（默认只注册 search/fetch，
-// 零常驻 token 开销）。
+// tests/test_native_tools_sync.py 把关。除 argo_research（分钟级编排，不入
+// 单发表）外全部 18 个工具都可经 nativeTools 配置按需启用为原生一等工具
+// （默认只注册 search/fetch，零常驻 token 开销）。
 import { NATIVE_TOOLS as NATIVE_TOOL_SPECS } from './native-tools.mjs'
 
 /**
@@ -60,25 +60,20 @@ export const name = 'wide-research'
 export const inject = ['tools', 'subagents', 'systemPrompt']
 
 // worker 取证工具白名单（allow 语义，非「必须存在」）：mcp__argo__* 与原生
-// 一等工具双写 → MCP 形态开/关两态自洽。MCP 在时 worker 可用 19 工具全量面
+// 一等工具双写 → MCP 形态开/关两态自洽。MCP 在时 worker 可用全量工具面
 // （argo_research 除外，注册处硬排除）；MCP 缺席（默认）时自动落到原生
 // argo_search/argo_fetch 与宿主内置 web_search/web_fetch。
+//
+// MCP 一侧**从原生规格表派生**，不再手写：native-tools.mjs 是 mcp_tools.py 的
+// 生成产物（= 全量面去掉 argo_research，由 tests/test_native_tools_sync.py 把关），
+// 据此派生后 worker 白名单的 MCP 侧不可能再与真实工具面漂移——此前手写的 13 条
+// 在工具面涨到 19 后，漏掉了 extract/preflight/answer/watch/cite 五个。
+const MCP_CHILD_TOOLS = Object.keys(NATIVE_TOOL_SPECS).map(name => `mcp__argo__${name}`)
+
 const DEFAULT_CHILD_TOOLS = Object.freeze([
-  // MCP 形态（mcp-argo bundle 按需挂载时可用；与 mcp_tools.py 全量面对齐，
-  // 仅排除 argo_research——研究不套研究）
-  'mcp__argo__argo_search',
-  'mcp__argo__argo_evidence',
-  'mcp__argo__argo_fetch',
-  'mcp__argo__argo_crawl',
-  'mcp__argo__argo_article',
-  'mcp__argo__argo_job',
-  'mcp__argo__argo_local_search',
-  'mcp__argo__argo_local_read',
-  'mcp__argo__argo_recompute',
-  'mcp__argo__argo_social_search',
-  'mcp__argo__argo_clarify',
-  'mcp__argo__argo_pdf',
-  'mcp__argo__argo_screenshot',
+  // MCP 形态（mcp-argo bundle 按需挂载时可用；派生自 NATIVE_TOOL_SPECS，
+  // 覆盖全量面——仅排除 argo_research，研究不套研究）
+  ...MCP_CHILD_TOOLS,
   // 原生一等工具（本 bundle 默认注册，不依赖 MCP 连接）
   'argo_search',
   'argo_fetch',
@@ -91,12 +86,17 @@ const DEFAULT_CHILD_TOOLS = Object.freeze([
  * worker 工具过滤（allow 语义，非「必须存在」）：未配置时用双写默认集
  * （MCP 与原生两态自洽）；显式数组（含空数组=放弃 allow 走 deny）原样
  * 尊重。任何路径都硬排除 wide_research 自身与 argo_research（研究不套研究）。
+ *
+ * childToolDeny 同样从 allow 里减去：调用方在 allow 非空时只把 allow 交给
+ * 宿主的 toolFilter（单一键），若不在此处扣除，用户同时设 allow + deny 时
+ * deny 会被静默忽略。
  */
 export function buildChildToolFilters(config, toolName) {
   const base = Array.isArray(config.childToolAllow) ? config.childToolAllow : DEFAULT_CHILD_TOOLS
   const blocked = new Set([toolName, 'mcp__argo__argo_research'])
-  const allow = [...new Set(asStringArray(base, 100).filter(tool => !blocked.has(tool)))]
   const deny = [...new Set([toolName, ...asStringArray(config.childToolDeny, 100)])]
+  const denySet = new Set(deny)
+  const allow = [...new Set(asStringArray(base, 100).filter(tool => !blocked.has(tool) && !denySet.has(tool)))]
   return { allow, deny }
 }
 
@@ -154,9 +154,10 @@ const asStringArray = (value, maximum) => Array.isArray(value)
 
 // --- 原生 web_search provider：经 stdio MCP 调 argo_search ---
 // 与 mcp-argo 同一条 MCP 入口（command + args），NDJSON 帧协议（该入口
-// 首帧为 NDJSON 时自动切 NDJSON 响应）。入口不再硬编码本机路径：
-// 优先环境变量 ARGO_SEARCH_PYTHON / ARGO_SEARCH_MCP_SERVER，其次
-// 从本文件位置向上解析到仓库 scripts/mcp_server.py，最后回退 npx。
+// 首帧为 NDJSON 时自动切 NDJSON 响应）。入口不再硬编码本机路径：优先
+// 环境变量 ARGO_SEARCH_PYTHON / ARGO_SEARCH_MCP_SERVER，未设时回退 npx
+// （拉取已发布包）。本机部署需在用户层 patch 覆盖 searchCommand/searchArgs
+// 指向仓库 scripts/mcp_server.py——插件**不**做「向上查找仓库」的自动解析。
 // 每次搜索 spawn 一个进程，搜索本身是网络请求，进程启动成本可忽略；
 // 超时与 abort 都会杀进程。
 
@@ -783,6 +784,29 @@ function normalizeSource(value) {
   }
 }
 
+/**
+ * 来源 URL 归一化（**仅用于去重**）：去掉 fragment、尾斜杠与纯跟踪参数
+ * （utm_ 前缀、fbclid、gclid、spm）。跟踪参数不改变页面内容，却会让同一页面按不同
+ * query 重复入账、虚增 sourceCount（进而影响门禁阈值）。只剔除公认的跟踪键，
+ * 其余 query 原样保留——?id=1 与 ?id=2 是不同页面，一律剥掉 query 会把不同
+ * 来源并成一个、反而丢证据。
+ */
+function normalizeSourceUrl(raw) {
+  const url = String(raw)
+  try {
+    const parsed = new URL(url)
+    parsed.hash = ''
+    for (const key of [...parsed.searchParams.keys()]) {
+      if (/^(utm_.+|fbclid|gclid|spm)$/i.test(key)) parsed.searchParams.delete(key)
+    }
+    let out = parsed.toString().toLowerCase()
+    if (out.endsWith('/')) out = out.slice(0, -1)
+    return out
+  } catch {
+    return url.toLowerCase().replace(/#.*$/, '').replace(/\/$/, '')
+  }
+}
+
 function normalizeResearch(value, track, maximumSources) {
   const record = isObject(value) ? value : {}
   const sources = []
@@ -1069,8 +1093,11 @@ export function resolveNativeSpawn(config, tool, payload) {
   const args = Array.isArray(config.searchArgs) && config.searchArgs.length > 0
     ? config.searchArgs
     : DEFAULTS.searchArgs
-  if (args.length === 1 && args[0].endsWith('mcp_server.py')) {
-    return { command, args: [args[0], '--call', tool, payload] }
+  // 按「args 里是否出现 mcp_server.py」判定本机模式，而不是按 args.length===1：
+  // 后者在 searchArgs 带任何附加参数（如 ['-u', '…/mcp_server.py'] 或
+  // ['…/mcp_server.py', '--verbose']）时会静默走错分支，把 call 当脚本参数喂给 python。
+  if (args.some(arg => typeof arg === 'string' && arg.endsWith('mcp_server.py'))) {
+    return { command, args: [...args, '--call', tool, payload] }
   }
   return { command, args: [...args, 'call', tool, payload] }
 }
@@ -1402,7 +1429,7 @@ export function apply(ctx, providedConfig = {}) {
       const researchLedger = completed.map(outcome => {
         const sourceKeys = []
         for (const source of outcome.result.sources) {
-          const normalizedUrl = source.url.toLowerCase().replace(/#.*$/, '').replace(/\/$/, '')
+          const normalizedUrl = normalizeSourceUrl(source.url)
           if (seenUrls.has(normalizedUrl)) continue
           seenUrls.add(normalizedUrl)
           const key = `S${sources.length + 1}`
