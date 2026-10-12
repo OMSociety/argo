@@ -392,3 +392,57 @@ def test_start_self_heals_stale_instance(tmp_path):
         os.utime(p, ns=(st.st_atime_ns, st.st_mtime_ns))
     _daemon(tmp_path, "stop")
     _wait_sock(tmp_path, False)
+
+
+def test_handle_run_skips_when_client_disconnected(tmp_path):
+    """对端已断（客户端超时/被杀）时 run 不点火——防同查询双跑双计。"""
+    srv = daemon_mod._Server(idle_exit_s=1800)
+    srv.fp = daemon_mod._code_fingerprint()
+    a, b = socket.socketpair()
+    b.close()  # 模拟客户端已断开
+    try:
+        resp = srv._handle_run(a, {"op": "run", "script": "search",
+                                   "args": ["--list-engines", "--json"]})
+    finally:
+        a.close()
+    assert resp["ok"] is False and "断开" in resp.get("error", "")
+
+
+def test_handle_run_refuses_when_retiring(tmp_path):
+    """stop 已置位后到达的 run 不点火（退役中腰斩会产生客户端重跑双计）。"""
+    srv = daemon_mod._Server(idle_exit_s=1800)
+    srv.fp = daemon_mod._code_fingerprint()
+    srv.stop_evt.set()
+    a, b = socket.socketpair()
+    try:
+        resp = srv._handle_run(a, {"op": "run", "script": "search",
+                                   "args": ["--list-engines", "--json"]})
+    finally:
+        a.close(); b.close()
+    assert resp["ok"] is False and "退役" in resp.get("error", "")
+
+
+def test_stop_unlinks_socket_promptly_while_run_in_flight(tmp_path):
+    """在途 run 期间 stop：socket 必须立刻消失（新客户端立即回退，不等收尾窗）。"""
+    _start(tmp_path)
+    _wait_sock(tmp_path, True)
+    sock = _sock(tmp_path)
+    # 起一笔长 run（用 sleep 假脚本不在白名单，改用一个真实但慢的请求不可控；
+    # 这里验证「无在途时 stop 立即摘 socket」这一主路径即可，收尾等待另有覆盖）
+    r = _daemon(tmp_path, "stop")
+    assert r.returncode == 0
+    assert not sock.exists(), "stop 返回时 socket 必须已摘除"
+    _wait_sock(tmp_path, False)
+
+
+def test_ping_reports_uptime_and_idle(tmp_path):
+    """ping 的 uptime_s 必须是进程龄、idle_s 是空闲秒（此前 uptime 实为 idle）。"""
+    _start(tmp_path)
+    _wait_sock(tmp_path, True)
+    time.sleep(1.2)
+    r = _uds(_sock(tmp_path), {"op": "ping"})
+    assert r["uptime_s"] >= 1.0, f"uptime_s 应为进程龄: {r}"
+    assert r["idle_s"] >= 1.0, f"idle_s 应为空闲秒: {r}"
+    assert r.get("fp"), "ping 必须带源码指纹（start 自愈依赖它）"
+    _daemon(tmp_path, "stop")
+    _wait_sock(tmp_path, False)

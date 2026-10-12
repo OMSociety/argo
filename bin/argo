@@ -330,6 +330,11 @@ def _daemon_run(rest, py="") -> bool:
     except Exception:
         # 整段（含 socket 创建）静默回退：契约是「任何失败不打断 search」，
         # 此前 socket() 在 try 外，创建失败会穿出 main 直接 traceback。
+        # 顺带自愈：daemon 被 kill -9/OOM 后 socket 文件还在、connect 恒
+        # ECONNREFUSED，而清理陈尸只发生在 daemon 自己的 _alive()/start 里，
+        # 客户端从不调用它——不补这一手，快路径会一直失效到有人手跑
+        # `argo daemon start/status/stop`（2026-10-12 审查发现 4）。
+        _daemon_autostart(root, py)
         return False
     if not buf:
         return False

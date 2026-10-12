@@ -72,29 +72,35 @@ RUNNABLE = {
 
 
 def _code_fingerprint() -> str:
-    """仓库 Python 源码指纹：scripts/*.py 的 (路径, mtime_ns, size) 汇总哈希。
+    """仓库 Python 源码指纹：scripts/*.py + sub-skills 关键子技能 + bin/argo。
 
     为什么需要它：daemon 是长驻进程，但 `runpy.run_module` 只重执行脚本顶层，
     首次请求 import 进 sys.modules 的整棵依赖树（search_cli/search/search_pipeline/
-    engines* …）**不会被刷新**（2026-10-12 审计实证：顶层体重执行、依赖仍是旧
-    对象）。于是 `git pull` / 改动脚本后，daemon 存活期内每次 search 都在静默
-    跑旧代码，最长到空闲自杀（默认 30 分钟）；若新版脚本 import 了旧模块里不
-    存在的符号，顶层 ImportError 还会变成「ok=True + exit 1」的硬失败。
+    engines*/sub-skills/local-search/search_v3 …）**不会被刷新**（2026-10-12
+    审计实证：顶层体重执行、依赖仍是旧对象）。于是 `git pull` / 改动脚本后，
+    daemon 存活期内每次 search 都在静默跑旧代码，最长到空闲自杀（默认 30
+    分钟）；若新版脚本 import 了旧模块里不存在的符号，顶层 ImportError 还会
+    变成「ok=True + exit 1」的硬失败。
+    覆盖面必须包含 sub-skills：daemon 进程内经 engines.py 把 search_v3 固化
+    进 sys.modules，只 hash scripts/ 会让「只改子技能」的变更漏出保护面。
     指纹不一致时客户端必须回退冷路径（见 _daemon_run），daemon 自身也退出，
     下一笔冷调用会按需重启新代码。
     """
     import hashlib
     h = hashlib.sha1()
-    try:
-        for p in sorted(glob.glob(os.path.join(SCRIPTS_DIR, "*.py"))):
-            try:
-                st = os.stat(p)
-            except OSError:
-                continue
-            h.update(f"{os.path.basename(p)}:{st.st_mtime_ns}:{st.st_size}\n"
-                     .encode("utf-8"))
-    except Exception:
-        return ""
+    targets: list[str] = sorted(glob.glob(os.path.join(SCRIPTS_DIR, "*.py")))
+    base = os.path.dirname(SCRIPTS_DIR)
+    for rel in ("sub-skills/local-search", "sub-skills/local-seek",
+                "sub-skills/ego-search"):
+        targets.extend(sorted(glob.glob(os.path.join(base, rel, "**", "*.py"),
+                                        recursive=True)))
+    for p in targets:
+        try:
+            st = os.stat(p)
+        except OSError:
+            continue
+        h.update(f"{os.path.relpath(p, base)}:{st.st_mtime_ns}:{st.st_size}\n"
+                 .encode("utf-8"))
     # bin/argo 也在热路径上（客户端自己读），变更同样必须触发回退
     try:
         st = os.stat(os.path.join(ARGO_HOME, "bin", "argo"))
@@ -245,27 +251,10 @@ def _alive() -> dict | None:
 _EXEC_LOCK = threading.Lock()
 _EXEC_WAIT_S = 0.2
 
-# 环境变量透传白名单判据（客户端 → 请求级覆盖，请求结束即还原）：
-# ARGO_* 全量 + 常见密钥命名。为什么需要：daemon 启动时同步一次 env 文件，
-# 此后 `SERPER_API_KEY=x argo search` 这类按次覆盖在快路径被静默忽略
-# （冷路径生效、热路径不生效，同一命令两种行为）。只透传「客户端有值」的
-# 键，请求结束后还原 daemon 自己的环境，不污染后续请求。
-_ENV_KEY_SUFFIXES = ("_KEY", "_TOKEN", "_SECRET", "_PASSWORD", "_APIKEY")
+# 环境变量透传白名单判据在客户端（bin/argo._daemon_env）：daemon 侧只负责
+# 应用/还原请求携带的覆盖。此处不再放第二份挑选规则——双份实现必然漂移，
+# 且 daemon 侧那份此前全仓无人调用（2026-10-12 审查发现）。
 _MAX_ENV_OVERRIDE_BYTES = 32768
-
-
-def _env_overrides() -> dict:
-    """客户端侧调用：挑出需要透传给 daemon 的环境变量。"""
-    out: dict = {}
-    size = 0
-    for k, v in os.environ.items():
-        if not (k.startswith("ARGO_") or k.endswith(_ENV_KEY_SUFFIXES)):
-            continue
-        size += len(k) + len(v)
-        if size > _MAX_ENV_OVERRIDE_BYTES:
-            return {}
-        out[k] = v
-    return out
 
 
 def _apply_env_overrides(overrides) -> dict:
@@ -273,9 +262,13 @@ def _apply_env_overrides(overrides) -> dict:
     saved: dict = {}
     if not isinstance(overrides, dict):
         return saved
+    total = 0
     for k, v in overrides.items():
         if not isinstance(k, str) or not isinstance(v, str) or not k:
             continue
+        total += len(k) + len(v)
+        if total > _MAX_ENV_OVERRIDE_BYTES:
+            return saved  # 超限拒绝（防畸形请求灌爆环境）；已应用的不回滚
         saved[k] = os.environ.get(k)
         os.environ[k] = v
     return saved
@@ -427,6 +420,10 @@ class _Server:
             return {"ok": False, "busy": True,
                     "error": "daemon 正忙（客户端应回退冷路径）"}
         try:
+            if self.stop_evt.is_set():
+                # 已进入退役：不再点火（点火后进程退出会把它腰斩，客户端
+                # 拿不到响应只能冷跑重来——正是本次要消除的双跑）。
+                return {"ok": False, "error": "daemon 退役中（客户端应回退冷路径）"}
             fp = _code_fingerprint()
             if self.fp and fp and fp != self.fp:
                 self.stop_evt.set()  # 旧代码 daemon 退役，下次冷调用按需起新
@@ -467,13 +464,6 @@ class _Server:
         _atomic_write(_pid_path(), f"{os.getpid()}\n")
         _atomic_write(_pointer_path(), sp + "\n")
 
-        def _cleanup() -> None:
-            with contextlib.suppress(OSError):
-                listen_sock.close()
-            for p in (_sock_path(), _pointer_path(), _pid_path()):
-                with contextlib.suppress(OSError):
-                    os.unlink(p)
-
         def _on_term(_sig, _frm) -> None:
             self.stop_evt.set()
 
@@ -497,14 +487,23 @@ class _Server:
                 except socket.timeout:
                     continue
                 threading.Thread(target=self.handle, args=(conn,), daemon=True).start()
-            # stop 请求的响应要送达、在途 run 要收尾：等在途执行结束（上限
-            # _STOP_GRACE_S）——腰斩已开始的执行会逼客户端回退冷跑、同查询双计。
-            # 无在途执行时立即退出（常见路径零成本）。
+            # 收尾第一步：立刻关闭并摘除监听 socket——退役期间新客户端不再
+            # 连进 backlog 干等（旧实现把 listen_sock 开到退出才关，
+            # stop 后紧跟的 search 要等整个收尾窗口才拿到 RST）。此后新连接
+            # 立即 ECONNREFUSED → 客户端静默回退冷路径。
+            with contextlib.suppress(OSError):
+                listen_sock.close()
+            for p in (_sock_path(), _pointer_path()):
+                with contextlib.suppress(OSError):
+                    os.unlink(p)
+            # 第二步：等在途 run 收尾（上限 _STOP_GRACE_S）——腰斩已开始的
+            # 执行会逼客户端回退冷跑、同查询双计。无在途执行时立即退出。
             deadline = time.monotonic() + _STOP_GRACE_S
             while time.monotonic() < deadline and self.in_run > 0:
                 time.sleep(0.05)
         finally:
-            _cleanup()
+            with contextlib.suppress(OSError):
+                os.unlink(_pid_path())
             print("[daemon] 已退出", flush=True)
 
 
@@ -515,6 +514,9 @@ def _quiet_stop(sp: str) -> bool:
     """向在跑 daemon 发 stop 并等 socket 消失；成功 True。
 
     用于 start 的陈旧自愈：指纹不符的旧实例先请走，再起新代码的实例。
+    connect 失败不再直接判失败——旧实例可能恰在自行退役（accept 循环已退出、
+    socket 文件尚未清理），此时「连不上」= 已在停，视同成功（2026-10-12
+    审查：假阴性会让陈旧自愈在最需要它的时刻拒绝启动）。
     """
     try:
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -523,7 +525,8 @@ def _quiet_stop(sp: str) -> bool:
         s.sendall(b'{"op":"stop"}\n')
         s.close()
     except OSError:
-        return False
+        # 连不上：确认它确实不在响应（_alive 为 None）即视同已停
+        return _alive() is None
     deadline = time.time() + 10
     while time.time() < deadline:
         if not os.path.exists(sp):
@@ -567,33 +570,41 @@ def _start(args: argparse.Namespace) -> int:
         os.makedirs(os.path.dirname(stub), exist_ok=True)
     except OSError:
         pass
-    try:
-        fd = os.open(stub, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-        os.close(fd)
-    except FileExistsError:
-        # 旧 stub 可能是上次崩溃残留（>20s 视为陈尸，抢过来继续）
+    acquired = False
+    for _attempt in range(3):
         try:
-            if time.time() - os.stat(stub).st_mtime > 20:
-                os.unlink(stub)
+            fd = os.open(stub, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            os.close(fd)
+            acquired = True
+            break
+        except FileExistsError:
+            # 旧 stub 可能是上次崩溃残留（>20s 视为陈尸）：清掉后立刻重抢
+            try:
+                if time.time() - os.stat(stub).st_mtime > 20:
+                    os.unlink(stub)
+                    continue
+            except OSError:
+                pass
+            # 活着的启动者：等它把 daemon 拉起来（或它中途放行 stub）
+            deadline = time.time() + 10
+            while time.time() < deadline:
+                info = _alive()
+                if info:
+                    print(json.dumps({"ok": True, "already_running": True, **info},
+                                     ensure_ascii=False) if args.json
+                          else f"argo daemon 已在运行 pid={info.get('pid')}")
+                    return 0
+                if not os.path.exists(stub):
+                    break  # 对方放行：回到循环重抢 stub
+                time.sleep(0.1)
         except OSError:
-            pass
-        deadline = time.time() + 10
-        while time.time() < deadline:
-            info = _alive()
-            if info:
-                print(json.dumps({"ok": True, "already_running": True, **info},
-                                 ensure_ascii=False) if args.json
-                      else f"argo daemon 已在运行 pid={info.get('pid')}")
-                return 0
-            if not os.path.exists(stub):
-                break  # 另一进程放行：重走本函数（递归深度受 stub 生命周期约束）
-            time.sleep(0.1)
+            break  # stub 建不了（只读状态目录等）：退回无互斥的老路，不阻断启动
+    else:
+        # 三次都没抢到：对方仍在启动流程里，如实报告
         print(json.dumps({"ok": False, "error": "另一进程正在启动 daemon，等待超时"},
                          ensure_ascii=False) if args.json
               else "另一进程正在启动 argo daemon（等待超时）", file=sys.stderr)
         return 1
-    except OSError:
-        pass  # stub 建不了（只读状态目录等）：退回无互斥的老路，不阻断启动
 
     try:
         # socket 还在但 ping 不通：可能是在途请求把 GIL 占满的活 daemon。
@@ -675,11 +686,29 @@ def _stop(args: argparse.Namespace) -> int:
                 break
             buf += chunk
         s.close()
+        # 等 socket 文件消失（退役第一步就会 unlink，正常毫秒级）；socket 消
+        # 失后再给在途 run 一个收尾观察窗——文档口径是「上限 20s」，此前只
+        # 等 5s 就无条件报成功，在途收尾还没完时紧随的 start 会因 socket
+        # 仍在而报「先 stop」（用户被指回刚跑过的命令）。
         deadline = time.time() + 5
         while time.time() < deadline and os.path.exists(sp):
             time.sleep(0.05)
-        print(json.dumps({"ok": True, "stopped": True}, ensure_ascii=False) if args.json
-              else "argo daemon 已停止")
+        pid = None
+        try:
+            with open(_pid_path(), encoding="utf-8") as f:
+                pid = int(f.read().strip())
+        except (OSError, ValueError):
+            pass
+        if pid:
+            grace = time.time() + _STOP_GRACE_S
+            while time.time() < grace:
+                try:
+                    os.kill(pid, 0)
+                except OSError:
+                    break  # 进程已退出：真停
+                time.sleep(0.1)
+        print(json.dumps({"ok": True, "stopped": True, "pid": pid}, ensure_ascii=False)
+              if args.json else "argo daemon 已停止")
         return 0
     except Exception:
         # socket 已死：靠 pid 文件兜底补刀，避免进程活着却没有入口的孤儿态。

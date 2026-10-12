@@ -166,8 +166,14 @@ def _has_content(result: dict) -> bool:
     2026-10-12 实测两形态：①被删/不存在的 URL 走 HTTP 直取拿到 HTTP 200 的
     空壳（ok=True、char_count=0）；②CDP 通道会渲染微信「参数错误」提示页
     （char_count=4、title 空）。两者此前都被当成功直接交付（失败伪装成成功），
-    后续通道也拿不到机会。判据：正文非空 + 非错误页特征 + （有标题或有图或
-    正文有实际长度）——正常文章这三者至少居其一。
+    后续通道也拿不到机会。
+
+    判据三层（从强到弱）：
+      1) 空正文直接失败；
+      2) 错误页特征串出现在**正文开头**（前 20 字）即失败——微信提示页都是
+         短页、特征串居首；正文中部引用这些词（如讲「环境异常」的文章）
+         不误杀，所以不做全文匹配；
+      3) 短正文（<60 字）必须至少有一项支撑（标题或图片），否则视为空壳。
     """
     if not result.get("ok"):
         return False
@@ -177,8 +183,9 @@ def _has_content(result: dict) -> bool:
         n = len(content)
     if n <= 0:
         return False
+    head = content[:20]
     for marker in _WECHAT_ERROR_MARKERS:
-        if marker in content and len(content) < 60:
+        if marker in head:
             return False
     title = (result.get("title") or "").strip()
     if not title and not result.get("images") and len(content) < 60:

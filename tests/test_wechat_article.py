@@ -279,6 +279,13 @@ def test_error_page_not_treated_as_success():
     # 无标题但有图（图集型文章）
     assert _has_content({"ok": True, "title": "", "content": "abc",
                          "char_count": 3, "images": ["u"]})
-    # 错误页特征串出现在长正文里（正常文章引用了这个词）不误杀
-    assert _has_content({"ok": True, "title": "T", "content": "参数错误" + "y" * 80,
-                         "char_count": 84, "images": []})
+    # 特征串出现在正文中部（正常文章讨论该话题）不误杀——判据只看开头 20 字
+    prefix = "今天我们聊一个技术话题，关于公众号风控机制的原理与应对方式。"
+    assert len(prefix) > 20
+    mid = prefix + "参数错误" + "y" * 40
+    assert _has_content({"ok": True, "title": "T", "content": mid,
+                         "char_count": len(mid), "images": []})
+    # 特征串居首 + 有标题的长页仍判失败（CDP 错误页带 title 的形态）
+    head = "环境异常" + "z" * 100
+    assert not _has_content({"ok": True, "title": "访问受限", "content": head,
+                             "char_count": len(head), "images": []})

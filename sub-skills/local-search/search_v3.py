@@ -792,6 +792,27 @@ def _run_cli_engine(spec: dict[str, Any], query: str, n: int, timeout: float,
     # ConnectError 均实测存在），且 9.14.4 起这些错误在 rc=0 时打到 stdout，
     # 输出文件为 0 字节。逐次尝试：识别错误信号 → 重试 1 次 → 明确错误。
     last_err = ""
+    try:
+        return _attempt_loop(cmd, cli_cmd, key, tmp_path, timeout)
+    finally:
+        # 函数级兜底：覆盖 helper 内全部早退路径（timeout/FileNotFound/异常/
+        # 正常返回），保证临时文件与登记表条目都被清（2026-10-12 审查：
+        # 早退分支此前直接 return，daemon 常驻期间在 /tmp 累积输出文件）。
+        if tmp_path is not None:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            _TMP_FILES.discard(tmp_path)
+
+
+def _attempt_loop(cmd: list[str], cli_cmd: str, key: str,
+                  tmp_path: str | None, timeout: float):
+    """CLI 引擎的单引擎尝试循环（从 _run_cli_engine 提取，便于统一收尾）。
+
+    返回 (results, err)；临时文件的清理由调用方 finally 统一负责。
+    """
+    last_err = ""
     for attempt in range(_CLI_RETRIES + 1):
         t_attempt = time.monotonic()
         try:
@@ -830,11 +851,14 @@ def _run_cli_engine(spec: dict[str, Any], query: str, n: int, timeout: float,
             except (OSError, ValueError):
                 json_ok = False
             finally:
+                # 逐次 unlink：防重试读到上一轮的陈旧输出文件。登记表条目
+                # 不在这里摘——重试第二次会把同一路径重新写出来，若那次
+                # 超时/异常，登记表仍持有路径，atexit 与调用方 finally 都能
+                # 兜住（2026-10-12 审查：提前 discard 会让它失去双重兜底）。
                 try:
                     os.unlink(tmp_path)
                 except OSError:
                     pass
-                _TMP_FILES.discard(tmp_path)
             if json_ok:
                 return [], ""
         else:
@@ -1363,11 +1387,15 @@ def search_engines(
     # bounded_run.py（research/social/crawl/fetch 已迁移）和 mcp_transport 的
     # os._exit 硬退是同一套办法，这里是最后一个未推平的孤点。
     # worker 内仍持有各自引擎的 HTTP/subprocess 超时，弃置线程会自然结束；
-    # 输出收集走 holder + 轮询，与「已完成即收」逐位一致。
+    # 输出收集走 holder + 完成事件唤醒，与「已完成即收」逐位一致。
     enough = mode in ("fast", "auto")
     running: list[tuple[threading.Thread, str, dict]] = []
     waiting: list[str] = list(engines)
     slots = max(1, min(len(engines), max_parallel))
+    # 完成唤醒事件：worker 结束即 set，主循环 wait 立刻醒——等价旧实现
+    # wait(FIRST_COMPLETED) 的「完成即收」；纯 sleep 网格会把 53ms 的快引擎
+    # 拖到 250ms+（2026-10-12 审查实测）。完成与否仍以 is_alive() 判定。
+    done_evt = threading.Event()
 
     def _start_worker(name: str) -> None:
         holder: dict = {}
@@ -1377,6 +1405,8 @@ def search_engines(
                 holder["r"] = _task(name)
             except BaseException as e:  # noqa: BLE001 - 单引擎异常不得炸整组
                 holder["r"] = (name, [], f"{name}: {e}")
+            finally:
+                done_evt.set()  # 完成即唤醒主循环（见下方等待注释）
 
         t = threading.Thread(target=_work, daemon=True)
         t.start()
@@ -1394,12 +1424,10 @@ def search_engines(
             errors.append(err)
 
     try:
-        # 轮询取代 as_completed：宽限是「时间到点即放行」而非「下一个
-        # 完成事件才检查」——后者在慢引擎未完成时永远等不到检查时机，
-        # 宽限形同虚设（实测场景 yahoo 4s 完成才触发判定，墙钟不变）。
         enough_at: float | None = None
         hit_budget = False
         while running or waiting:
+            done_evt.clear()
             # 完成即收：退出运行的线程先入账，再补位排队任务（保持并发上限）
             for entry in list(running):
                 if not entry[0].is_alive():
@@ -1424,7 +1452,11 @@ def search_engines(
                 hit_budget = True
                 break
             if running:
-                time.sleep(_CONSENSUS_POLL_S)
+                # 完成事件即唤醒（不要 sleep 网格：实测 53ms 的快引擎会被
+                # 0.25s 网格拖到 318ms——2026-10-12 审查阻塞项）。
+                # 无完成事件时按 _CONSENSUS_POLL_S 节拍醒来复核宽限/预算
+                # （宽限是「时间到点即放行」，不能被长任务拖过）。
+                done_evt.wait(_CONSENSUS_POLL_S)
         # 收尾前置：末次轮询后完成的补收（不丢结果）——此时 running 里只剩
         # 真正还在跑的；已完成者入账后不再出现在后续统计里。
         for entry in list(running):

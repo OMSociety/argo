@@ -67,3 +67,38 @@ def test_per_engine_timeout_independent_of_budget(monkeypatch):
         "测试", engines=["only"], n=5, skip_cache=True, mode="auto",
         timeout=1.5, total_budget=10)
     assert out["results"], "单引擎超时与总预算被混用，1s 引擎被误杀"
+
+
+def test_fast_single_engine_no_poll_grid_penalty(monkeypatch):
+    """快引擎（毫秒级返回）不得被 0.25s 轮询网格拖慢——完成事件即唤醒。
+
+    回归（2026-10-12 审查）：daemon 线程改写后主循环用 sleep(0.25) 收尸，
+    1 引擎/53ms 的场景退化成 ≥250ms。Event 唤醒后应回到接近真实的几十 ms。
+    """
+    def fake_search_one(name, query, n=5, timeout=None, since=None, until=None):
+        time.sleep(0.03)
+        return [{"title": "r", "url": f"https://x.example.com/{name}"}], None
+    monkeypatch.setattr(search_v3, "_search_one", fake_search_one)
+    t0 = time.time()
+    out = search_v3.search_engines("测试", engines=["fast1"], n=5, skip_cache=True,
+                                   mode="auto", total_budget=5.0)
+    elapsed = time.time() - t0
+    assert out["results"], "快引擎结果必须收到"
+    assert elapsed < 0.2, f"快引擎被轮询网格拖慢：{elapsed:.3f}s（应 <0.2s）"
+
+
+def test_early_stop_does_not_wait_slow_engine(monkeypatch):
+    """够数早停立即返回，不 join 慢引擎（daemon 线程语义）。"""
+    def fake_search_one(name, query, n=5, timeout=None, since=None, until=None):
+        if name == "slow":
+            time.sleep(3.0)
+            return [{"title": "s", "url": "https://s.example.com"}], None
+        return [{"title": f"r{i}", "url": f"https://f.example.com/{i}"}
+                for i in range(5)], None
+    monkeypatch.setattr(search_v3, "_search_one", fake_search_one)
+    t0 = time.time()
+    out = search_v3.search_engines("测试", engines=["fast1", "slow"], n=5,
+                                   skip_cache=True, mode="auto", total_budget=30.0)
+    elapsed = time.time() - t0
+    assert elapsed < 2.0, f"早停未生效（在等慢引擎）：{elapsed:.2f}s"
+    assert out["results"], "快引擎结果必须保留"
