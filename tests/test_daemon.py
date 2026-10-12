@@ -446,3 +446,40 @@ def test_ping_reports_uptime_and_idle(tmp_path):
     assert r.get("fp"), "ping 必须带源码指纹（start 自愈依赖它）"
     _daemon(tmp_path, "stop")
     _wait_sock(tmp_path, False)
+
+
+def test_pid_is_daemon_recognizes_both_launch_forms(monkeypatch):
+    """_pid_is_daemon 必须同时认两种启动形态。
+
+    形态 B（`./bin/argo daemon start`）此前漏判：bin/argo 经 runpy 原地执行时
+    Python 改的是 sys.argv，内核 argv 不变，ps 里始终显示 bin/argo——正是
+    「谁漏判谁就会在 stop 兜底路径留下孤儿进程」（2026-10-13 实测发现）。
+    """
+    import subprocess as _sp
+
+    def fake_ps(cmd):
+        out = cmd  # 测试把「ps 输出」直接当参数传
+        def run(argv, **kw):
+            m = type("R", (), {})()
+            m.stdout = out + "\n"
+            return m
+        return run
+
+    cases_true = [
+        f"/opt/homebrew/bin/python3 {ROOT}/scripts/daemon.py start --json",
+        "/Users/x/agents/skills/argo/bin/argo daemon start",
+        "./bin/argo daemon start",
+        "argo daemon start",
+    ]
+    cases_false = [
+        "vim /Users/x/agents/skills/argo/scripts/daemon.py",  # 编辑器，无 start
+        "/usr/bin/python3 /other/repo/scripts/daemon.py start",  # 他仓
+        "/Applications/Some.app/Contents/MacOS/Python daemon start",  # 无 argo/daemon.py
+        "./bin/argo search --list-engines",  # argo 但非 daemon
+    ]
+    for out in cases_true:
+        monkeypatch.setattr(_sp, "run", fake_ps(out))
+        assert daemon_mod._pid_is_daemon(1234) is True, f"应识别: {out}"
+    for out in cases_false:
+        monkeypatch.setattr(_sp, "run", fake_ps(out))
+        assert daemon_mod._pid_is_daemon(1234) is False, f"不应识别: {out}"

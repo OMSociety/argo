@@ -166,8 +166,13 @@ def _pid_is_daemon(pid: int) -> bool:
 
     误杀的代价不对称：漏杀只是留一个下次 start 时 ping 不到、自己会空闲退出的
     进程；错杀是 SIGTERM 一个无关进程。所以判据从紧——单独出现 "daemon.py"
-    子串不够（编辑器/别仓同名脚本都会中），必须同时命中本仓 scripts 目录的
-    绝对路径（daemon 的启动命令行就是 python <绝对路径>/daemon.py start）。
+    子串不够（编辑器/别仓同名脚本都会中）。
+
+    必须识别两种启动形态（2026-10-13 实测发现第二种此前漏判）：
+      A. `python <本仓>/scripts/daemon.py start`——直接调用与 autostart 派生；
+      B. `./bin/argo daemon start`——bin/argo 经 runpy 原地执行时，Python 层的
+         sys.argv 被改写但**内核记录的 argv 不变**，ps 里始终是 bin/argo 形态。
+         此前只认 A，B 形态下 stop 的 pid 兜底补刀会漏判，留孤儿进程。
     """
     if os.name == "nt":
         return False
@@ -176,10 +181,20 @@ def _pid_is_daemon(pid: int) -> bool:
         r = subprocess.run(["ps", "-p", str(pid), "-o", "command="],
                            capture_output=True, text=True, timeout=5,
                            encoding="utf-8", errors="replace")
-        cmd = r.stdout or ""
-        return "daemon.py" in cmd and SCRIPTS_DIR in cmd
+        cmd = (r.stdout or "").strip()
     except Exception:
         return False
+    if not cmd:
+        return False
+    toks = cmd.split()
+    if "start" not in toks:  # 两种形态都以 start 收尾；无 start 一律排除
+        return False
+    if any(t.endswith("daemon.py") for t in toks) and SCRIPTS_DIR in cmd:
+        return True  # 形态 A
+    # 形态 B：bin/argo 入口（绝对/相对路径均可能，按 basename 认）
+    has_argo = any(os.path.basename(t.strip("'\"")) in ("argo", "argo.exe")
+                   for t in toks)
+    return has_argo and "daemon" in toks
 
 
 def _log_path() -> str:
