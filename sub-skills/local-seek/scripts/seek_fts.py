@@ -374,9 +374,23 @@ def _covering_meta(con: sqlite3.Connection, root_abs: str):
 
 
 def _like_prefix(root_abs: str) -> str:
-    """路径前缀的 LIKE 模式；把 LIKE 通配与转义符按 SQLite 语义转义。"""
+    """路径前缀的 LIKE 模式；把 LIKE 通配与转义符按 SQLite 语义转义。
+
+    目录根必须是**目录前缀**（尾随 /），否则 `/a/b` 会误配兄弟树
+    `/a/bc/x.py`（2026-10-12 修复）；根路径 `/` 特判为 `/%`——旧实现产出
+    `//%`，永不匹配任何绝对路径，表现为「索引完整 → 真没有」的静默假空。
+    目标是单个文件时按精确路径匹配（rg 接受文件做搜索根，目录语义会落空）。
+    """
     esc = root_abs.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    return esc + ("/" if root_abs.endswith(os.sep) else "") + "%"
+    try:
+        is_dir = os.path.isdir(root_abs)
+    except OSError:
+        is_dir = True  # 判不了按目录处理：宁多不少，零命中仍可回退 rg
+    if not is_dir:
+        return esc
+    if esc.endswith(os.sep):
+        return esc + "%"  # 文件系统根（或调用方传入的尾随分隔符）：直接挂 %
+    return esc + os.sep + "%"
 
 
 # ── 独立 CLI：预热 / 状态（大树先跑 rebuild 预热，查询路径才不吃首建成本）────

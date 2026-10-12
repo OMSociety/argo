@@ -38,6 +38,8 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import errno
+import glob
 import io
 import json
 import os
@@ -67,6 +69,40 @@ MAX_REQ_BYTES = 1 << 20  # 单请求上限 1MB（args 很小，此值纯防失�
 RUNNABLE = {
     "search": "search",
 }
+
+
+def _code_fingerprint() -> str:
+    """仓库 Python 源码指纹：scripts/*.py 的 (路径, mtime_ns, size) 汇总哈希。
+
+    为什么需要它：daemon 是长驻进程，但 `runpy.run_module` 只重执行脚本顶层，
+    首次请求 import 进 sys.modules 的整棵依赖树（search_cli/search/search_pipeline/
+    engines* …）**不会被刷新**（2026-10-12 审计实证：顶层体重执行、依赖仍是旧
+    对象）。于是 `git pull` / 改动脚本后，daemon 存活期内每次 search 都在静默
+    跑旧代码，最长到空闲自杀（默认 30 分钟）；若新版脚本 import 了旧模块里不
+    存在的符号，顶层 ImportError 还会变成「ok=True + exit 1」的硬失败。
+    指纹不一致时客户端必须回退冷路径（见 _daemon_run），daemon 自身也退出，
+    下一笔冷调用会按需重启新代码。
+    """
+    import hashlib
+    h = hashlib.sha1()
+    try:
+        for p in sorted(glob.glob(os.path.join(SCRIPTS_DIR, "*.py"))):
+            try:
+                st = os.stat(p)
+            except OSError:
+                continue
+            h.update(f"{os.path.basename(p)}:{st.st_mtime_ns}:{st.st_size}\n"
+                     .encode("utf-8"))
+    except Exception:
+        return ""
+    # bin/argo 也在热路径上（客户端自己读），变更同样必须触发回退
+    try:
+        st = os.stat(os.path.join(ARGO_HOME, "bin", "argo"))
+        h.update(f"bin/argo:{st.st_mtime_ns}:{st.st_size}\n".encode("utf-8"))
+    except OSError:
+        pass
+    return h.hexdigest()
+
 
 
 def _cache_root() -> str:
@@ -123,7 +159,9 @@ def _pid_is_daemon(pid: int) -> bool:
     """核实 pid 的命令行确实是本 daemon（macOS/Linux ps，Windows 视为不是）。
 
     误杀的代价不对称：漏杀只是留一个下次 start 时 ping 不到、自己会空闲退出的
-    进程；错杀是 SIGTERM 一个无关进程。所以判据从紧——ps 拿不到或不像就放弃。
+    进程；错杀是 SIGTERM 一个无关进程。所以判据从紧——单独出现 "daemon.py"
+    子串不够（编辑器/别仓同名脚本都会中），必须同时命中本仓 scripts 目录的
+    绝对路径（daemon 的启动命令行就是 python <绝对路径>/daemon.py start）。
     """
     if os.name == "nt":
         return False
@@ -132,7 +170,8 @@ def _pid_is_daemon(pid: int) -> bool:
         r = subprocess.run(["ps", "-p", str(pid), "-o", "command="],
                            capture_output=True, text=True, timeout=5,
                            encoding="utf-8", errors="replace")
-        return "daemon.py" in (r.stdout or "")
+        cmd = r.stdout or ""
+        return "daemon.py" in cmd and SCRIPTS_DIR in cmd
     except Exception:
         return False
 
@@ -173,23 +212,81 @@ def ping(sock_path: str, timeout: float = 1.0) -> dict:
 
 
 def _alive() -> dict | None:
-    """daemon 存活则返回 ping 响应，否则 None（顺带清陈尸 socket/指针）。"""
+    """daemon 存活则返回 ping 响应，否则 None。
+
+    清场判据从紧（2026-10-12 审计修正）：只在「连接被明确拒绝」时摘除
+    socket/指针——ping 超时（daemon 被 GIL 硬占/负载高）不代表它死了，
+    此前任何异常都 unlink，会把活着 daemon 的入口摘掉，其监听 socket 成为
+    永久不可达的孤儿，直到空闲自杀。宁可不摘（下次 start 会再探），不误摘。
+    """
     sp = _sock_path()
     if not os.path.exists(sp):
+        with contextlib.suppress(OSError):
+            os.unlink(_pointer_path())
         return None
     try:
         return ping(sp)
+    except OSError as e:
+        if e.errno in (errno.ECONNREFUSED, errno.ENOENT):
+            for p in (sp, _pointer_path()):
+                with contextlib.suppress(OSError):
+                    os.unlink(p)
+        return None
     except Exception:
-        with contextlib.suppress(OSError):
-            os.unlink(sp)
-        with contextlib.suppress(OSError):
-            os.unlink(_pointer_path())
         return None
 
 
 # ── 请求执行 ────────────────────────────────────────────────────────────────
 
+# 执行锁：stdout 重定向是进程级全局态，运行请求必须串行。持有者超时前
+# 未释放时新请求不排队等待而是快速返回 busy——排队等待会让每个调用方的
+# 客户端超时预算含上排队时间，冷路径本来就能并行跑，排队在这儿没有任何
+# 收益（audit 2026-10-12）。
 _EXEC_LOCK = threading.Lock()
+_EXEC_WAIT_S = 0.2
+
+# 环境变量透传白名单判据（客户端 → 请求级覆盖，请求结束即还原）：
+# ARGO_* 全量 + 常见密钥命名。为什么需要：daemon 启动时同步一次 env 文件，
+# 此后 `SERPER_API_KEY=x argo search` 这类按次覆盖在快路径被静默忽略
+# （冷路径生效、热路径不生效，同一命令两种行为）。只透传「客户端有值」的
+# 键，请求结束后还原 daemon 自己的环境，不污染后续请求。
+_ENV_KEY_SUFFIXES = ("_KEY", "_TOKEN", "_SECRET", "_PASSWORD", "_APIKEY")
+_MAX_ENV_OVERRIDE_BYTES = 32768
+
+
+def _env_overrides() -> dict:
+    """客户端侧调用：挑出需要透传给 daemon 的环境变量。"""
+    out: dict = {}
+    size = 0
+    for k, v in os.environ.items():
+        if not (k.startswith("ARGO_") or k.endswith(_ENV_KEY_SUFFIXES)):
+            continue
+        size += len(k) + len(v)
+        if size > _MAX_ENV_OVERRIDE_BYTES:
+            return {}
+        out[k] = v
+    return out
+
+
+def _apply_env_overrides(overrides) -> dict:
+    """请求级应用客户端环境；返回还原快照（键 → 旧值或 None）。"""
+    saved: dict = {}
+    if not isinstance(overrides, dict):
+        return saved
+    for k, v in overrides.items():
+        if not isinstance(k, str) or not isinstance(v, str) or not k:
+            continue
+        saved[k] = os.environ.get(k)
+        os.environ[k] = v
+    return saved
+
+
+def _restore_env(saved: dict) -> None:
+    for k, prev in saved.items():
+        if prev is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = prev
 
 
 def _run_request(req: dict) -> dict:
@@ -199,6 +296,8 @@ def _run_request(req: dict) -> dict:
     的 `if __name__ == "__main__"` / argparse / sys.exit 语义原样生效。代价
     是每次重执行脚本顶层（__pycache__ 命中下 ~几 ms）——相对引擎 RTT 可忽略，
     换来的是零特判的「和 CLI 完全一样」。
+
+    调用方必须已持有 _EXEC_LOCK（锁在 handle() 层做超时快失败）。
     """
     script = req.get("script")
     module = RUNNABLE.get(script or "")
@@ -213,25 +312,26 @@ def _run_request(req: dict) -> dict:
     out, err = io.StringIO(), io.StringIO()
     code = 0
     old_argv, old_cwd = sys.argv, os.getcwd()
-    with _EXEC_LOCK:
-        try:
-            cwd = req.get("cwd")
-            if cwd and os.path.isdir(cwd):
-                os.chdir(cwd)
-            sys.argv = [script_path] + args
-            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-                try:
-                    runpy.run_module(module, run_name="__main__")
-                except SystemExit as e:
-                    # 与 CLI 退出码契约一致：None/0 → 0，整数原样，其余 → 1
-                    code = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
-        except BaseException as e:  # 引擎栈漏出的非 SystemExit：按 CLI 语义退出码 1
-            code = 1
-            err.write(f"\n[daemon] {type(e).__name__}: {e}\n")
-        finally:
-            sys.argv = old_argv
-            with contextlib.suppress(OSError):
-                os.chdir(old_cwd)
+    saved_env = _apply_env_overrides(req.get("env"))
+    try:
+        cwd = req.get("cwd")
+        if cwd and os.path.isdir(cwd):
+            os.chdir(cwd)
+        sys.argv = [script_path] + args
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            try:
+                runpy.run_module(module, run_name="__main__")
+            except SystemExit as e:
+                # 与 CLI 退出码契约一致：None/0 → 0，整数原样，其余 → 1
+                code = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
+    except BaseException as e:  # 引擎栈漏出的非 SystemExit：按 CLI 语义退出码 1
+        code = 1
+        err.write(f"\n[daemon] {type(e).__name__}: {e}\n")
+    finally:
+        _restore_env(saved_env)
+        sys.argv = old_argv
+        with contextlib.suppress(OSError):
+            os.chdir(old_cwd)
     return {
         "ok": True,
         "exit_code": code,
@@ -244,6 +344,29 @@ def _run_request(req: dict) -> dict:
 # ── 服务循环 ────────────────────────────────────────────────────────────────
 
 
+def _peer_closed(conn: socket.socket) -> bool:
+    """对端是否已断开（不消费数据，MSG_PEEK 探测）。
+
+    用途：客户端超时/被杀后 socket 已关，但请求如果恰在排队或还没点火，
+    daemon 不应该再把它跑一遍——那是同一查询的付费调用与 usage 双计
+    （audit 2026-10-12）。已开始的执行不中断（引擎有各自超时且有缓存兜底），
+    只挡住「还没开跑」这一类。
+    """
+    import select
+    try:
+        r, _, _ = select.select([conn], [], [], 0)
+        if not r:
+            return False
+        return conn.recv(1, socket.MSG_PEEK) == b""
+    except OSError:
+        return True
+
+
+# stop/SIGTERM 时等在途 run 收尾的上限：宁可 stop 慢几秒，也不腰斩一笔已
+# 开始的执行（腰斩会让客户端拿到 EOF 回退冷跑，同一查询双跑双计）。
+_STOP_GRACE_S = 20.0
+
+
 class _Server:
     def __init__(self, idle_exit_s: float) -> None:
         self.idle_exit_s = idle_exit_s
@@ -251,12 +374,15 @@ class _Server:
         self.active = 0
         self.active_lock = threading.Lock()
         self.last_activity = time.monotonic()
+        self.started_at = time.monotonic()
+        self.in_run = 0  # 正在执行的 run 数（0/1，受 _EXEC_LOCK 约束）
+        self.fp = ""  # 启动时的源码指纹；请求时比对，变更即 stale
 
     def handle(self, conn: socket.socket) -> None:
         with self.active_lock:
             self.active += 1
         try:
-            conn.settimeout(300)
+            conn.settimeout(60)  # 兼容旧值 300s：哑连接不应把空闲退出推迟五分钟
             buf = b""
             while not buf.endswith(b"\n") and len(buf) < MAX_REQ_BYTES:
                 chunk = conn.recv(65536)
@@ -264,20 +390,24 @@ class _Server:
                     break
                 buf += chunk
             resp: dict = {"ok": False, "error": "空请求"}
+            if len(buf) > MAX_REQ_BYTES:
+                resp = {"ok": False, "error": "请求超长"}
+                buf = b""
             if buf.strip():
                 try:
                     req = json.loads(buf.decode("utf-8", "replace"))
                     op = req.get("op")
                     if op == "ping":
+                        now = time.monotonic()
                         resp = {"ok": True, "pid": os.getpid(),
-                                "uptime_s": round(time.monotonic() - self.last_activity, 1)}
+                                "uptime_s": round(now - self.started_at, 1),
+                                "idle_s": round(now - self.last_activity, 1),
+                                "fp": self.fp}
                     elif op == "stop":
                         resp = {"ok": True, "stopping": True}
                         self.stop_evt.set()
                     elif op == "run":
-                        self.last_activity = time.monotonic()
-                        resp = _run_request(req)
-                        self.last_activity = time.monotonic()
+                        resp = self._handle_run(conn, req)
                     else:
                         resp = {"ok": False, "error": f"未知 op: {op!r}"}
                 except Exception as e:
@@ -290,6 +420,30 @@ class _Server:
                 conn.close()
             with self.active_lock:
                 self.active -= 1
+
+    def _handle_run(self, conn: socket.socket, req: dict) -> dict:
+        """run 分支：忙时快失败；源码变更判 stale；对端已断不点火。"""
+        if not _EXEC_LOCK.acquire(timeout=_EXEC_WAIT_S):
+            return {"ok": False, "busy": True,
+                    "error": "daemon 正忙（客户端应回退冷路径）"}
+        try:
+            fp = _code_fingerprint()
+            if self.fp and fp and fp != self.fp:
+                self.stop_evt.set()  # 旧代码 daemon 退役，下次冷调用按需起新
+                return {"ok": False, "stale": True,
+                        "error": "仓库源码已变更：daemon 退出，客户端回退冷路径"}
+            if _peer_closed(conn):
+                return {"ok": False, "error": "客户端已断开，跳过执行"}
+            self.last_activity = time.monotonic()
+            self.in_run += 1
+            try:
+                resp = _run_request(req)
+            finally:
+                self.in_run -= 1
+            self.last_activity = time.monotonic()
+            return resp
+        finally:
+            _EXEC_LOCK.release()
 
     def serve_forever(self) -> None:
         sp = _sock_path()
@@ -309,6 +463,7 @@ class _Server:
             raise
         os.chmod(sp, 0o600)  # UDS 连接权限=文件权限；默认 umask 会放出组/其他可连
         listen_sock.listen(16)
+        self.fp = _code_fingerprint()  # 请求期比对；源码一变即 stale（见 _handle_run）
         _atomic_write(_pid_path(), f"{os.getpid()}\n")
         _atomic_write(_pointer_path(), sp + "\n")
 
@@ -342,13 +497,12 @@ class _Server:
                 except socket.timeout:
                     continue
                 threading.Thread(target=self.handle, args=(conn,), daemon=True).start()
-            # stop 请求的响应要送达：等在途 handler 收尾（上限 1s）
-            deadline = time.monotonic() + 1.0
-            while time.monotonic() < deadline:
-                with self.active_lock:
-                    if self.active == 0:
-                        break
-                time.sleep(0.02)
+            # stop 请求的响应要送达、在途 run 要收尾：等在途执行结束（上限
+            # _STOP_GRACE_S）——腰斩已开始的执行会逼客户端回退冷跑、同查询双计。
+            # 无在途执行时立即退出（常见路径零成本）。
+            deadline = time.monotonic() + _STOP_GRACE_S
+            while time.monotonic() < deadline and self.in_run > 0:
+                time.sleep(0.05)
         finally:
             _cleanup()
             print("[daemon] 已退出", flush=True)
@@ -357,48 +511,144 @@ class _Server:
 # ── 子命令 ──────────────────────────────────────────────────────────────────
 
 
+def _quiet_stop(sp: str) -> bool:
+    """向在跑 daemon 发 stop 并等 socket 消失；成功 True。
+
+    用于 start 的陈旧自愈：指纹不符的旧实例先请走，再起新代码的实例。
+    """
+    try:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(2.0)
+        s.connect(sp)
+        s.sendall(b'{"op":"stop"}\n')
+        s.close()
+    except OSError:
+        return False
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        if not os.path.exists(sp):
+            return True
+        time.sleep(0.1)
+    return False
+
+
 def _start(args: argparse.Namespace) -> int:
     alive = _alive()
     if alive:
-        print(json.dumps({"ok": True, "already_running": True, **alive},
-                         ensure_ascii=False) if args.json
-              else f"argo daemon 已在运行 pid={alive.get('pid')}")
-        return 0
+        # 陈旧自愈：在跑的实例指纹与当前源码不符（git pull / 改脚本后）时，
+        # 老实例已进入「拒执行 + 准备退役」状态，但退役与重新拉起之间有时序
+        # 缝——客户端自启的新 start 会因「ping 得到旧进程」直接报已在运行并
+        # 退出，结果退役完成后无人接手（实测踩中：touch 脚本后 status 永为
+        # 未运行）。这里对指纹不符的实例先停、等它出场，再走正常启动。
+        cur_fp = _code_fingerprint()
+        running_fp = alive.get("fp") or ""
+        if running_fp and cur_fp and running_fp != cur_fp:
+            if not args.json:
+                print(f"argo daemon 检出旧代码实例（pid={alive.get('pid')}），重启",
+                      file=sys.stderr)
+            if _quiet_stop(_sock_path()):
+                alive = None  # 让流程继续到启动
+            else:
+                print(json.dumps({"ok": False, "error": "旧实例未能停止"},
+                                 ensure_ascii=False) if args.json
+                      else "旧代码 daemon 未能停止；先 `argo daemon stop`", file=sys.stderr)
+                return 1
+        else:
+            print(json.dumps({"ok": True, "already_running": True, **alive},
+                             ensure_ascii=False) if args.json
+                  else f"argo daemon 已在运行 pid={alive.get('pid')}")
+            return 0
 
-    if args.foreground or os.name == "nt":  # Windows 无 fork：只支持前台
-        _serve_child(args)
-        return 0
-
-    pid = os.fork()
-    if pid > 0:
-        # 父进程：等 socket 就绪后报告（子进程 bind 完成即视为成功）
+    # 启动互斥（stub 文件 O_EXCL）：两个并发 start 都通过 _alive 检查时会
+    # 双双 fork，输家 bind 失败、赢家被后到的父进程误报；更糟的是赢家在
+    # bind→listen 窗口内会被输家的 _alive 当陈尸。stub 让后来者等待赢家。
+    stub = _pid_path() + ".starting"
+    try:
+        os.makedirs(os.path.dirname(stub), exist_ok=True)
+    except OSError:
+        pass
+    try:
+        fd = os.open(stub, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        os.close(fd)
+    except FileExistsError:
+        # 旧 stub 可能是上次崩溃残留（>20s 视为陈尸，抢过来继续）
+        try:
+            if time.time() - os.stat(stub).st_mtime > 20:
+                os.unlink(stub)
+        except OSError:
+            pass
         deadline = time.time() + 10
         while time.time() < deadline:
-            try:
-                info = ping(_sock_path(), 0.5)
-                msg = {"ok": True, "pid": info.get("pid")}
-                print(json.dumps(msg, ensure_ascii=False) if args.json
-                      else f"argo daemon 已启动 pid={info.get('pid')} socket={_sock_path()}")
+            info = _alive()
+            if info:
+                print(json.dumps({"ok": True, "already_running": True, **info},
+                                 ensure_ascii=False) if args.json
+                      else f"argo daemon 已在运行 pid={info.get('pid')}")
                 return 0
-            except Exception:
-                time.sleep(0.05)
-        print(json.dumps({"ok": False, "error": "启动超时", "log": _log_path()},
+            if not os.path.exists(stub):
+                break  # 另一进程放行：重走本函数（递归深度受 stub 生命周期约束）
+            time.sleep(0.1)
+        print(json.dumps({"ok": False, "error": "另一进程正在启动 daemon，等待超时"},
                          ensure_ascii=False) if args.json
-              else f"argo daemon 启动超时，看日志：{_log_path()}", file=sys.stderr)
+              else "另一进程正在启动 argo daemon（等待超时）", file=sys.stderr)
         return 1
-    os.setsid()
-    # 重定向 stdio 到日志：daemon 不再依赖终端（日志目录同样可能还不存在）
-    log_dir = os.path.dirname(_log_path())
-    if log_dir:
-        os.makedirs(log_dir, exist_ok=True)
-    log = open(_log_path(), "ab", buffering=0)
-    os.dup2(log.fileno(), 0)
-    os.dup2(log.fileno(), 1)
-    os.dup2(log.fileno(), 2)
-    with contextlib.suppress(OSError):
-        log.close()
-    _serve_child(args)
-    return 0
+    except OSError:
+        pass  # stub 建不了（只读状态目录等）：退回无互斥的老路，不阻断启动
+
+    try:
+        # socket 还在但 ping 不通：可能是在途请求把 GIL 占满的活 daemon。
+        # 不抢跑（bind 必失败、还可能把它的入口当陈尸摘掉），如实报告。
+        sp = _sock_path()
+        if os.path.exists(sp):
+            try:
+                ping(sp, 2.0)
+            except OSError as e:
+                if e.errno not in (errno.ECONNREFUSED, errno.ENOENT):
+                    print(json.dumps({"ok": False, "error": "daemon socket 存在但无响应"},
+                                     ensure_ascii=False) if args.json
+                          else "argo daemon socket 存在但无响应；先 `argo daemon stop`",
+                          file=sys.stderr)
+                    return 1
+            except Exception:
+                pass
+
+        if args.foreground or os.name == "nt":  # Windows 无 fork：只支持前台
+            _serve_child(args)
+            return 0
+
+        pid = os.fork()
+        if pid > 0:
+            # 父进程：等 socket 就绪后报告（子进程 bind 完成即视为成功）
+            deadline = time.time() + 10
+            while time.time() < deadline:
+                try:
+                    info = ping(_sock_path(), 0.5)
+                    msg = {"ok": True, "pid": info.get("pid")}
+                    print(json.dumps(msg, ensure_ascii=False) if args.json
+                          else f"argo daemon 已启动 pid={info.get('pid')} socket={_sock_path()}")
+                    return 0
+                except Exception:
+                    time.sleep(0.05)
+            print(json.dumps({"ok": False, "error": "启动超时", "log": _log_path()},
+                             ensure_ascii=False) if args.json
+                  else f"argo daemon 启动超时，看日志：{_log_path()}", file=sys.stderr)
+            return 1
+        os.setsid()
+        # 重定向 stdio 到日志：daemon 不再依赖终端（日志目录同样可能还不存在）
+        log_dir = os.path.dirname(_log_path())
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+        log = open(_log_path(), "ab", buffering=0)
+        os.dup2(log.fileno(), 0)
+        os.dup2(log.fileno(), 1)
+        os.dup2(log.fileno(), 2)
+        with contextlib.suppress(OSError):
+            log.close()
+        _serve_child(args)
+        return 0
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(stub)
 
 
 def _serve_child(args: argparse.Namespace) -> None:

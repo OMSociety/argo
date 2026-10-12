@@ -151,6 +151,41 @@ def _sogou_fallback(url: str) -> dict:
         return {"ok": False, "error": f"搜狗兜底异常: {e}"}
 
 
+# 微信错误页特征串（被删/违规/风控/校验失败都会渲染成短提示页而非常规文章）。
+# 这些页面 HTTP 200、可读、有正文——长度判据拦不住，必须按标记识别。
+_WECHAT_ERROR_MARKERS = (
+    "参数错误", "该内容已被发布者删除", "此内容因违规无法查看", "环境异常",
+    "访问过于频繁", "请在微信客户端打开链接", "系统繁忙", "网页包含诱导分享",
+    "该公众号已迁移", "此账号已自主注销",
+)
+
+
+def _has_content(result: dict) -> bool:
+    """通道结果必须有真实正文才算成功。
+
+    2026-10-12 实测两形态：①被删/不存在的 URL 走 HTTP 直取拿到 HTTP 200 的
+    空壳（ok=True、char_count=0）；②CDP 通道会渲染微信「参数错误」提示页
+    （char_count=4、title 空）。两者此前都被当成功直接交付（失败伪装成成功），
+    后续通道也拿不到机会。判据：正文非空 + 非错误页特征 + （有标题或有图或
+    正文有实际长度）——正常文章这三者至少居其一。
+    """
+    if not result.get("ok"):
+        return False
+    content = (result.get("content") or "").strip()
+    n = result.get("char_count")
+    if not isinstance(n, (int, float)) or n <= 0:
+        n = len(content)
+    if n <= 0:
+        return False
+    for marker in _WECHAT_ERROR_MARKERS:
+        if marker in content and len(content) < 60:
+            return False
+    title = (result.get("title") or "").strip()
+    if not title and not result.get("images") and len(content) < 60:
+        return False
+    return True
+
+
 def fetch_wechat_article(url: str) -> dict:
     """多级降级链主函数。"""
     if not re.match(r"https?://mp\.weixin\.qq\.com/", url):
@@ -158,18 +193,19 @@ def fetch_wechat_article(url: str) -> dict:
 
     # 通道1: HTTP 直取（快速失败）
     result = _http_fetch(url, timeout=5)
-    if result.get("ok"):
+    if _has_content(result):
         result["fetch_method"] = "http_direct"
+        result.setdefault("char_count", len(result.get("content") or ""))
         return result
 
     # 通道2: Chrome CDP 浏览器
     result = _cdp_fetch(url, timeout=15)
-    if result.get("ok"):
+    if _has_content(result):
         return result
 
     # 通道3: 搜狗搜索兜底
     result = _sogou_fallback(url)
-    if result.get("ok"):
+    if _has_content(result):
         return result
 
     # 全部失败
@@ -191,6 +227,10 @@ def main():
     if args.json:
         from cli_io import dumps
         print(dumps(out))
+        # 失败必须走非零退出码（与 article.py 同款）：agent/脚本按 rc 判成败，
+        # `--json` 分支此前只印 JSON 就返回 0，失败被 rc=0 掩盖。
+        if not out.get("ok"):
+            sys.exit(1)
     else:
         if not out["ok"]:
             print(f"抓取失败: {out['error']}", file=sys.stderr)

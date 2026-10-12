@@ -33,8 +33,13 @@ sys.path.insert(0, str(SCRIPTS))
 
 import seek as s  # noqa: E402
 
-SKILLS_ROOT = str(Path.home() / ".agents" / "skills")
-ARGO_ROOT = str(Path.home() / ".agents" / "skills" / "argo")
+# 语料根从本文件位置推导（scripts/ → local-seek/ → sub-skills/ → 仓根），
+# 此前硬编码 ~/.agents/skills/argo：换机器/克隆路径不同就全 miss（MRR 全 0
+# 却看不出是路径病）。SKILLS_ROOT 保留给「跨仓搜索」类用例的常见安装位，
+# 不存在时相关用例自然 0 命中（诚实反映环境，不伪造）。
+_ARGO_ROOT = Path(__file__).resolve().parents[3]
+ARGO_ROOT = str(_ARGO_ROOT)
+SKILLS_ROOT = str(_ARGO_ROOT.parent)
 
 # ── 分级用例 ─────────────────────────────────────────────────────────────────
 # expect：文件路径后缀集合，任一命中即算该用例 top 命中（MRR 取最高排名）。

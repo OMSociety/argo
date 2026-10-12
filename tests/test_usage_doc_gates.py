@@ -112,5 +112,31 @@ class TestUsageDocSwitches(unittest.TestCase):
                          + "\n  ".join(bad))
 
 
+class TestCommandOverviewGate(unittest.TestCase):
+    """命令总览表与 bin/argo 分发表双向锁定（2026-10-12）。
+
+    历史漂移：标题写 22、表内 23 行、分发表 24 个（`auth` 从未进总览表）——
+    旧门禁只要求「命令在 usage.md 某处出现」，auth 有自己的命令节所以从没
+    报红，标题计数与表行数则完全没人管（与开关组「标注 30、实际 33」同类，
+    那次修了开关组、命令组照旧）。判据现在是：标题计数 = 表行数 = 分发表
+    条目数，三者一致。
+    """
+
+    def _overview_rows(self) -> list[str]:
+        m = re.search(r"## 命令总览（(\d+) 个.*?\n(.*?)(?=\n## |\Z)", USAGE, re.S)
+        self.assertIsNotNone(m, "usage.md 缺「命令总览」节")
+        return m, re.findall(r"^\| `argo ([a-z][a-z_-]*)`", m.group(2), re.M)
+
+    def test_header_count_matches_rows(self):
+        m, rows = self._overview_rows()
+        self.assertEqual(int(m.group(1)), len(rows),
+                         f"命令总览标注 {m.group(1)} 个，实际 {len(rows)} 行")
+
+    def test_overview_covers_dispatch_exactly(self):
+        _m, rows = self._overview_rows()
+        self.assertEqual(set(rows), _dispatch_commands(),
+                         "命令总览表与分发表不一致（多/少行都要修）")
+
+
 if __name__ == "__main__":
     unittest.main()

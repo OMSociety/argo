@@ -265,3 +265,49 @@ def test_seek_integration_fts_and_rg_parity(fts_env):
     assert [(r["path"], r["line"]) for r in on] == \
         [(r["path"], r["line"]) for r in off]
     assert on, "两条路都必须命中"
+
+
+def test_type_filter_bypasses_fts_fastpath(fts_env):
+    """带 --type 时不得走 FTS 快路（快路不做扩展名过滤，会静默混入范围外结果）。
+
+    回归（2026-10-12）：此前 --type py 在 ARGO_LOCAL_FTS=1 下仍命中 .md 文件。
+    """
+    _state, tree = fts_env
+    _write(tree, "hit.py", "stateroot in python\n")
+    _write(tree, "noise.md", "stateroot in markdown\n")
+    _build(tree)
+    env = dict(os.environ)
+    cmd = [sys.executable, str(SCRIPTS / "seek.py"), "stateroot",
+           "--path", str(tree), "--type", "py", "--json", "--include-noise"]
+    r = subprocess.run(cmd, capture_output=True, text=True,
+                       env={**env, "ARGO_LOCAL_FTS": "1"}, timeout=60)
+    results = json.loads(r.stdout)["results"]
+    assert results, "py 文件必须命中"
+    assert all(x["path"].endswith(".py") for x in results), \
+        f"--type py 下混入了非 py 结果: {[x['path'] for x in results]}"
+
+
+def test_exclude_filter_bypasses_fts_fastpath(fts_env):
+    """带 --exclude 时不得走 FTS 快路（快路不做排除，会绕掉自污染守卫）。"""
+    _state, tree = fts_env
+    _write(tree, "keep.py", "stateroot keep\n")
+    _write(tree, "skip.py", "stateroot skip\n")
+    _build(tree)
+    env = dict(os.environ)
+    cmd = [sys.executable, str(SCRIPTS / "seek.py"), "stateroot",
+           "--path", str(tree), "--exclude", "skip.py", "--json",
+           "--include-noise"]
+    r = subprocess.run(cmd, capture_output=True, text=True,
+                       env={**env, "ARGO_LOCAL_FTS": "1"}, timeout=60)
+    results = json.loads(r.stdout)["results"]
+    assert results and all(not x["path"].endswith("skip.py") for x in results)
+
+
+def test_like_prefix_dir_boundary(tmp_path):
+    """_like_prefix 目录语义：/a/b 不得匹配 /a/bc（兄弟树误配回归）。"""
+    (tmp_path / "a" / "b").mkdir(parents=True)
+    (tmp_path / "a" / "bc").mkdir(parents=True)
+    pat = seek_fts._like_prefix(str(tmp_path / "a" / "b"))
+    assert pat.endswith(os.sep + "%")
+    # 根路径特判：//% 永不匹配（静默假空回归）
+    assert seek_fts._like_prefix("/") == "/%"

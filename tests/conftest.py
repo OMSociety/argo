@@ -52,6 +52,13 @@ os.environ.setdefault("ARGO_USAGE_LOG", "0")
 # memo 自身的行为由 tests/test_routable_memo.py 显式开启旋钮验证。
 os.environ.setdefault("ARGO_ADMISSION_TTL_S", "0")
 
+# daemon 快路径默认关闭（2026-10-12）：bin/argo 现在对缺失指针做「后台按需
+# 自启」，测试里随手一次 `bin/argo search` 都会 spawn 一个常驻进程——全量套件
+# 会留下一批存活 30 分钟的游离 daemon（实测 6 个），既污染本机又让后续用例
+# 的延迟分布失真。需要验证快路径的用例在 tests/test_daemon.py 内显式打开
+# （其 _env 会 pop 掉这个变量）。
+os.environ.setdefault("ARGO_NO_DAEMON", "1")
+
 # 状态目录隔离（必须在任何 argo 模块 import 前设置）
 _STATE_DIR = tempfile.mkdtemp(prefix="argo-test-state-")
 os.environ["ARGO_STATE_DIR"] = _STATE_DIR

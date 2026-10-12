@@ -59,3 +59,31 @@ def test_broken_line_kept_not_quarantined(log_env):
     report = usage_log_clean._clean(log_env, apply=True)
     assert report["kept"] == 1 and report["quarantined"] == 1
     assert "not-json" in log_env.read_text(encoding="utf-8")
+
+
+def test_apply_keeps_lines_appended_during_window(log_env, monkeypatch):
+    """读写窗口内追加的新行不得丢失（旧实现整文件替换为快照视图）。"""
+    log_env.write_text("\n".join([_line("anysearch"), _line("slow_primary")]) + "\n",
+                       encoding="utf-8")
+    orig_read = Path.read_text
+
+    calls = {"n": 0}
+
+    def read_then_append(self, *a, **kw):
+        text = orig_read(self, *a, **kw)
+        if self == log_env and calls["n"] == 0:
+            calls["n"] += 1
+            # 模拟窗口内并发追加一条真实查询（直接改盘）
+            with open(log_env, "a", encoding="utf-8") as f:
+                f.write(_line("octen") + "\n")
+            # 返回快照（不含刚落盘的那行）——旧实现由此开始丢数据
+            return text
+        return text
+
+    monkeypatch.setattr(Path, "read_text", read_then_append)
+    report = usage_log_clean._clean(log_env, apply=True)
+    monkeypatch.undo()
+    kept = [json.loads(l)["engines_used"]
+            for l in log_env.read_text(encoding="utf-8").splitlines() if l]
+    assert ["octen"] in kept, f"窗口内追加行被静默丢弃：{kept}"
+    assert report["quarantined"] == 1

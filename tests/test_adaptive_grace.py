@@ -132,7 +132,11 @@ class TestAdaptiveGrace(unittest.TestCase):
         self.assertEqual(self._grace("cold_eng", 0.8, None), 0.8)
 
     def test_fail_open_on_learner_error(self):
-        with patch("adaptive.get_learner", side_effect=RuntimeError("db locked")):
+        # 开关必须显式打开：本用例测的是「learner 抛错时 fail-open」，不设
+        # ARGO_ADAPTIVE_GRACE=1 会在 env 闸门处直接返回 base，get_learner 根本
+        # 不会被调到——fail-open 分支删掉用例照样绿（2026-10-12 实测无牙）。
+        with patch.dict(os.environ, {"ARGO_ADAPTIVE_GRACE": "1"}), \
+                patch("adaptive.get_learner", side_effect=RuntimeError("db locked")):
             self.assertEqual(engine_dispatch._adaptive_grace("any", 0.8), 0.8,
                              "学习库异常必须 fail-open 回固定窗")
 

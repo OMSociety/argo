@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import argparse
+import atexit
 import functools
 import json
 import logging
@@ -21,17 +22,34 @@ import re
 import shlex
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
-import concurrent.futures
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+
+# ddgs -o 的结构化输出临时文件：正常路径在 _run_cli_engine 里即时 unlink；
+# 这里登记一份进程级兜底——工作线程被弃置后进程若直接退出（见 search_engines
+# 的「不 join」收尾），finally 不保证跑，未清理的临时文件会永远留在 /tmp。
+# 一处 atexit 覆盖整类泄漏。
+_TMP_FILES: set[str] = set()
+
+
+def _cleanup_tmp_files() -> None:
+    for p in list(_TMP_FILES):
+        try:
+            os.unlink(p)
+        except OSError:
+            pass
+        _TMP_FILES.discard(p)
+
+
+atexit.register(_cleanup_tmp_files)
 
 # 将 unified-search/scripts 加入路径，以复用 cache.py
 SKILL_DIR = Path(__file__).resolve().parent
@@ -765,6 +783,7 @@ def _run_cli_engine(spec: dict[str, Any], query: str, n: int, timeout: float,
         import tempfile
         fd, tmp_path = tempfile.mkstemp(suffix=".json", prefix="ddgs_")
         os.close(fd)
+        _TMP_FILES.add(tmp_path)  # 兜底登记：弃置线程对应的进程若直接退出也可清理
         cli_args.extend(["-o", tmp_path])
     
     cmd = [cli_cmd] + cli_args
@@ -815,6 +834,7 @@ def _run_cli_engine(spec: dict[str, Any], query: str, n: int, timeout: float,
                     os.unlink(tmp_path)
                 except OSError:
                     pass
+                _TMP_FILES.discard(tmp_path)
             if json_ok:
                 return [], ""
         else:
@@ -1225,11 +1245,13 @@ def search_engines(
     sort: 时间排序 relevance/oldest/newest，仅改变返回顺序，不进入缓存键。
     total_budget: 整体聚合预算（秒），与 `timeout` 的单引擎 HTTP 超时是两个
     语义（此前同一变量承担两职）。None = 沿用 timeout or 30 的历史默认。
-    注意它是**收集上限**而非进程退出承诺：预算到点后未完成的引擎被记为
-    timeout 并放弃等待（shutdown(wait=False)），慢引擎的硬上限是它自己的
-    HTTP 超时；CLI 短生命周期下进程至多再多等一个慢引擎的 HTTP 超时。
-    有意不做 daemon 线程——那要依赖 ThreadPoolExecutor 私有属性，换来的
-    只是让进程退出快几秒，却让 in-process 调用方丢结果。
+    它是**收集上限**：预算/早停到点即返回已收结果，未完成引擎记为 timeout；
+    worker 跑在 daemon 线程上不被 join（2026-10-12 起，与 bounded_run 同法），
+    CLI 进程不再被慢 ddgs 后端拖住退出（旧 ThreadPoolExecutor 的 non-daemon
+    线程会在解释器退出前被 join，实测墙钟比内部耗时多 1.2–5.4s）；弃置线程
+    受各自 HTTP/subprocess 超时约束自然结束。in-process 调用方（MCP/
+    include-local）拿到的结果集与旧实现同口径（旧实现 shutdown(wait=False)
+    同样是「返回时未完成的就不进这轮结果」），差别只在进程退出不再等它们。
     """
     reg = registry or get_registry()
     cfg = _load_config()
@@ -1322,7 +1344,6 @@ def search_engines(
         return name, res, err
 
     budget = total_budget if total_budget is not None else (timeout or 30)
-    ex = ThreadPoolExecutor(max_workers=min(len(engines), max_parallel))
     # 够数早停：fast/auto 下已收结果 ≥ n 时不再干等慢引擎。
     # 旧规则：≥n 且 ≥2 引擎有结果才停——第二引擎是 ddgs 慢后端时最坏拖
     # 6s+（2026-10-06 实测 pg vacuum 4.0s：yandex 1.9s 已给足 5 条，
@@ -1332,71 +1353,96 @@ def search_engines(
     # 覆盖正常第二引擎到达窗口；单引擎放行仅在「其余引擎全部慢性子」时
     # 发生，此时等下去的边际共识收益低于墙钟成本。
     # deep/budget 仍收满（质量优先/配额契约不变）。
+    #
+    # 执行模型（2026-10-12 重写）：daemon 线程 + 轮询，替换 ThreadPoolExecutor。
+    # 旧实现的早停只是「不再等结果」，但**解释器退出会被 executor 的非 daemon
+    # 线程 join**（官方文档：all threads will be joined before the interpreter
+    # can exit）——`shutdown(wait=False)` 挡不住，慢 ddgs 后端跑完才让 CLI 进程
+    # 退出。实测墙钟比内部耗时多 1.2–5.4s（`argo search --engine local_search`
+    # 7.4–10.0s vs 自报 2.5–5.7s）。daemon 线程到点即返回、不被 join，与
+    # bounded_run.py（research/social/crawl/fetch 已迁移）和 mcp_transport 的
+    # os._exit 硬退是同一套办法，这里是最后一个未推平的孤点。
+    # worker 内仍持有各自引擎的 HTTP/subprocess 超时，弃置线程会自然结束；
+    # 输出收集走 holder + 轮询，与「已完成即收」逐位一致。
     enough = mode in ("fast", "auto")
+    running: list[tuple[threading.Thread, str, dict]] = []
+    waiting: list[str] = list(engines)
+    slots = max(1, min(len(engines), max_parallel))
+
+    def _start_worker(name: str) -> None:
+        holder: dict = {}
+
+        def _work() -> None:
+            try:
+                holder["r"] = _task(name)
+            except BaseException as e:  # noqa: BLE001 - 单引擎异常不得炸整组
+                holder["r"] = (name, [], f"{name}: {e}")
+
+        t = threading.Thread(target=_work, daemon=True)
+        t.start()
+        running.append((t, name, holder))
+
+    for _ in range(slots):
+        if waiting:
+            _start_worker(waiting.pop(0))
+
+    def _ingest(entry: tuple[threading.Thread, str, dict]) -> None:
+        _t, name, holder = entry
+        _n, res, err = holder.get("r", (name, [], f"{name}: 线程结束但没有返回值"))
+        _collect(_n, res)
+        if err:
+            errors.append(err)
+
     try:
-        futures = {ex.submit(_task, name): name for name in engines}
-        try:
-            # 轮询取代 as_completed：宽限是「时间到点即放行」而非「下一个
-            # 完成事件才检查」——后者在慢引擎未完成时永远等不到检查时机，
-            # 宽限形同虚设（实测场景 yahoo 4s 完成才触发判定，墙钟不变）。
-            pending = set(futures)
-            enough_at: float | None = None
-            while pending:
-                # Python 3.11 起 concurrent.futures.TimeoutError 才并入
-                # 内置 TimeoutError；3.9/3.10 是两个类，只写 except
-                # TimeoutError 会让整体预算在老解释器上永不生效（异常
-                # 穿透聚合层）。wait() 不因超时抛异常，这里显式判预算。
-                done, pending = concurrent.futures.wait(
-                    pending, timeout=_CONSENSUS_POLL_S,
-                    return_when=concurrent.futures.FIRST_COMPLETED)
-                for fut in done:
-                    name = futures[fut]
-                    try:
-                        _, res, err = fut.result()
-                        _collect(name, res)
-                        if err:
-                            errors.append(err)
-                    except Exception as e:
-                        errors.append(f"{name}: {e}")
-                now = time.time()
-                # 够数共识判定（fast/auto）：与预算判定相互独立——曾把
-                # 预算检查放进够数分支，结果不足 n 时预算永不生效
-                # （test_total_budget_returns_before_slow_engine 红线）。
-                if enough and len(all_results) >= n:
-                    if len(engines_used) >= 2:
-                        break  # 双引擎共识达成
-                    if len(all_results) >= 2 * n:
-                        break  # 单引擎已给足 2n：共识边际价值低于宽限墙钟（自适应免宽限）
-                    if enough_at is None:
-                        enough_at = now
-                    elif now - enough_at >= _CONSENSUS_GRACE_S:
-                        break  # 宽限到点：够数放行，不等慢引擎
-                if now - t0_all >= budget:
-                    # 预算到点（含总预算）：同旧 as_completed(timeout)
-                    # 语义，未完成引擎记 timeout。
-                    for fut2 in pending:
-                        fut2.cancel()
-                        errors.append(f"{futures[fut2]}: timeout")
-                    break
-        except (TimeoutError, FutureTimeoutError):
-            # 整体超时（如 ddgs 慢后端 > budget）：保留已完成引擎的结果，
-            # 未完成的标记 timeout 记入 errors，不整链崩溃（与主技能同构）。
-            for fut, name in futures.items():
-                if not fut.done():
-                    fut.cancel()
-                    errors.append(f"{name}: timeout")
-                    continue
-                try:
-                    _, res, err = fut.result()
-                    _collect(name, res)
-                    if err:
-                        errors.append(err)
-                except Exception as e:
-                    errors.append(f"{name}: {e}")
-    finally:
-        # 不等慢引擎（wait=False）：已收结果立即返回；排队未启动的直接取消。
-        # 运行中的线程受各自 HTTP 超时约束自然结束，见 total_budget docstring。
-        ex.shutdown(wait=False, cancel_futures=True)
+        # 轮询取代 as_completed：宽限是「时间到点即放行」而非「下一个
+        # 完成事件才检查」——后者在慢引擎未完成时永远等不到检查时机，
+        # 宽限形同虚设（实测场景 yahoo 4s 完成才触发判定，墙钟不变）。
+        enough_at: float | None = None
+        hit_budget = False
+        while running or waiting:
+            # 完成即收：退出运行的线程先入账，再补位排队任务（保持并发上限）
+            for entry in list(running):
+                if not entry[0].is_alive():
+                    running.remove(entry)
+                    _ingest(entry)
+                    if waiting:
+                        _start_worker(waiting.pop(0))
+            now = time.time()
+            # 够数共识判定（fast/auto）：与预算判定相互独立——曾把
+            # 预算检查放进够数分支，结果不足 n 时预算永不生效
+            # （test_total_budget_returns_before_slow_engine 红线）。
+            if enough and len(all_results) >= n:
+                if len(engines_used) >= 2:
+                    break  # 双引擎共识达成
+                if len(all_results) >= 2 * n:
+                    break  # 单引擎已给足 2n：共识边际价值低于宽限墙钟（自适应免宽限）
+                if enough_at is None:
+                    enough_at = now
+                elif now - enough_at >= _CONSENSUS_GRACE_S:
+                    break  # 宽限到点：够数放行，不等慢引擎
+            if now - t0_all >= budget:
+                hit_budget = True
+                break
+            if running:
+                time.sleep(_CONSENSUS_POLL_S)
+        # 收尾前置：末次轮询后完成的补收（不丢结果）——此时 running 里只剩
+        # 真正还在跑的；已完成者入账后不再出现在后续统计里。
+        for entry in list(running):
+            if not entry[0].is_alive():
+                running.remove(entry)
+                _ingest(entry)
+        if hit_budget:
+            # 预算到点：未完成引擎记 timeout（与旧 as_completed(timeout) 同语义）
+            for _t, name, _h in running:
+                errors.append(f"{name}: timeout")
+            for name in waiting:
+                errors.append(f"{name}: timeout")
+    except (TimeoutError, FutureTimeoutError):
+        # 兜底：轮询模型不 throw，此分支仅防调用链意外（与旧主技能同构）
+        pass
+    # 早停/预算放行后仍在跑的线程不 join、不取消（daemon 随进程退出自然消亡；
+    # 各自 HTTP/subprocess 超时是硬上限），排队未启动的丢弃——与旧实现
+    # shutdown(wait=False, cancel_futures=True) 的对外可见行为一致。
 
     # engines_used 按路由序归一（此前按完成序追加：线程完成顺序不定，同输入
     # 两次运行的 JSON 输出里顺序不同，破坏可复现性与快照对比）。

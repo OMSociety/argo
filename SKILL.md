@@ -27,18 +27,18 @@ triggers:
 # Argo — 统一搜索与证据核验
 
 > 不止「帮你搜到」，还要「帮你核到」：高后果问题标 `fetch_required`、结果标
-> `fetch_suggested`，`--verify` 核验正文并回填证据分。收录 265 个源、229 个免密钥开箱可用；另有 1 个默认关的本地引擎 digup（按内容搜本机文件/音视频），启用见 engines/specs/digup.yaml。
+> `fetch_suggested`，`--verify` 核验正文并回填证据分。收录 265 个源、229 个免密钥开箱可用；另有默认关的 digup 引擎（搜本机文件/音视频，见 engines/specs/digup.yaml）。
 
 ## 快速上手
 
 ```bash
-python3 scripts/search.py "查询词"                      # 自动路由搜索
-python3 scripts/search.py "查询词" --json --fields agent  # Agent 消费档
-python3 scripts/search.py "查询词" --verify 3            # 核验 top-3 并回填证据分
-python3 scripts/research.py "复杂问题" --json            # 取证包（扩词或多工作包 → dossier）
+argo search "查询词"                     # 自动路由搜索（常驻快路径自动启用；argo 不在 PATH 用 python3 scripts/search.py）
+argo search "查询词" --json --fields agent  # Agent 消费档
+argo search "查询词" --verify 3           # 核验 top-3 并回填证据分
+python3 scripts/research.py "复杂问题" --json  # 取证包（扩词或多工作包 → dossier）
 ```
 
-默认不附归档用的 candidates/sources；`--fields agent` 剥遥测只留答案（Agent 消费档，~4.3 KB）；
+默认不附归档用的 candidates/sources；`--fields agent` 剥遥测只留答案（~4.3 KB），
 要来源追溯或归档才加 `--envelope`（`--archive` 自动带上）。
 
 深度研究只此一条。机器产出**取证包（dossier）**：来源、覆盖、缺口、是否达标，不是判断稿。Agent 先读 `references/research-protocol.md`，写出工作包再取证；判断按事实/推断/建议写。不要另装「专业深度研究」skill。

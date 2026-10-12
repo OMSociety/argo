@@ -412,7 +412,7 @@ def _finish_content(candidates, raw_query, context, count, fixed,
 
 def rg_search(patterns, path, excludes, exts, context, count, max_results,
               fixed, raw_query="", dots=False, drop_noise=True, timeout=None,
-              since_ts=None, until_ts=None):
+              since_ts=None, until_ts=None, fts_ok=True):
     timeout = _RUN_DEFAULT_TIMEOUT_S if timeout is None else timeout
 
     # FTS5 持久索引快路（opt-in，ARGO_LOCAL_FTS=1，2026-10-10 方案乙）：只在
@@ -420,7 +420,12 @@ def rg_search(patterns, path, excludes, exts, context, count, max_results,
     # （字面量标志 fixed 不参与判断——普通无元字符查询就是 fixed=True 进来的）。
     # 索引不可用/未建成时返回 None，自然落到下面的 rg 主路；契约见
     # seek_fts 模块 docstring（零命中回退、TTL 新鲜度、覆盖面对齐）。
-    if not count and context == 0 and len(patterns) == 1:
+    #
+    # fts_ok（2026-10-12 修复）：调用方带 --type/--exclude 时必须为 False。
+    # 快路只按内容命中，不会应用 rg 侧的 `-g !glob` / `-g *.ext` 过滤——
+    # 此前带过滤条件仍走快路，静默返回范围外的结果（--type py 会混入非 .py，
+    # --exclude 被忽略还会绕掉 eval 自污染的排除守卫）。
+    if fts_ok and not count and context == 0 and len(patterns) == 1:
         try:
             import seek_fts
         except ImportError:
@@ -1349,6 +1354,9 @@ def run_query(argv=None, time_budget=None) -> tuple[str, int]:
             err = "fd 未安装：按文件名搜索需要 fd（内容搜索走 rg/grep）"
     else:
         mode = "deep" if (args.context > 0 or args.count) else "fast"
+        # FTS 快路资格：带扩展名过滤或自定义排除时关闭（快路不做 rg 侧 glob 过滤，
+        # 见 rg_search 的 fts_ok 说明）。--scope doc 会自动填 exts，同样走 rg 主路。
+        fts_ok = not exts and not args.exclude
         if not args.exact and len(patterns) > 1:
             # 中文扩展遵循「先窄后宽」：先精确匹配，命中不足才放宽到扩展词
             _dn = not args.include_noise
@@ -1356,13 +1364,15 @@ def run_query(argv=None, time_budget=None) -> tuple[str, int]:
                                      args.context, args.count, max_results,
                                      is_literal(args.query), args.query, args.dot,
                                      drop_noise=_dn, timeout=time_budget,
-                                     since_ts=since_ts, until_ts=until_ts)
+                                     since_ts=since_ts, until_ts=until_ts,
+                                     fts_ok=fts_ok)
             if not results and not err:
                 results, err = rg_search(patterns, path, excludes, exts,
                                          args.context, args.count, max_results,
                                          fixed, args.query, args.dot, drop_noise=_dn,
                                          timeout=time_budget,
-                                         since_ts=since_ts, until_ts=until_ts)
+                                         since_ts=since_ts, until_ts=until_ts,
+                                         fts_ok=fts_ok)
                 if results:
                     mode += "+扩展"
         else:
@@ -1371,7 +1381,8 @@ def run_query(argv=None, time_budget=None) -> tuple[str, int]:
                                      fixed, args.query, args.dot,
                                      drop_noise=not args.include_noise,
                                      timeout=time_budget,
-                                     since_ts=since_ts, until_ts=until_ts)
+                                     since_ts=since_ts, until_ts=until_ts,
+                                     fts_ok=fts_ok)
 
     # 注：噪声档**只降权不排除**（见 _apply_noise_floor），所以这里没有
     # 「搜不到就回落重搜」的分支——噪声内容始终在结果池里，只是排在真源之后。

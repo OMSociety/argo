@@ -128,6 +128,40 @@ def test_all_channels_fail():
                 assert "所有通道均失败" in result["error"]
 
 
+def test_empty_body_is_failure_and_falls_through():
+    """空正文的「HTTP 200 错误页」不算成功，必须降级到下一通道。
+
+    2026-10-12 实测：不存在的文章 URL 走 HTTP 直取返回 ok=True 但
+    title/content 全空；此前被当成功直接交付（失败伪装成成功）。
+    """
+    empty = {"ok": True, "url": "https://mp.weixin.qq.com/s/gone",
+             "title": "", "author": "", "content": "",
+             "char_count": 0, "image_count": 0, "images": []}
+    with patch("wechat_article._http_fetch", return_value=dict(empty)):
+        with patch("wechat_article._cdp_fetch", return_value={
+                "ok": True, "title": "CDP 文章", "content": "真正文",
+                "char_count": 3, "fetch_method": "chrome_cdp"}):
+            result = fetch_wechat_article("https://mp.weixin.qq.com/s/gone")
+    assert result["ok"] and result["fetch_method"] == "chrome_cdp"
+    assert result["content"] == "真正文"
+
+
+def test_json_failure_exits_nonzero(monkeypatch):
+    """--json 失败分支必须退非零（agent 按 rc 判成败；此前退 0）。"""
+    import wechat_article
+
+    def fake_main(argv):
+        monkeypatch.setattr(sys, "argv", ["wechat_article.py", "https://mp.weixin.qq.com/s/x", "--json"])
+        return wechat_article.main()
+
+    with patch("wechat_article._http_fetch", return_value={"ok": False, "error": "a"}), \
+            patch("wechat_article._cdp_fetch", return_value={"ok": False, "error": "b"}), \
+            patch("wechat_article._sogou_fallback", return_value={"ok": False, "error": "c"}):
+        with pytest.raises(SystemExit) as ei:
+            fake_main(None)
+    assert ei.value.code == 1
+
+
 # ── 通道3: 搜狗兜底 ────────────────────────────────────────────────────────
 
 def _fake_og_response(title: str = "测试标题"):
@@ -228,3 +262,23 @@ def test_output_contains_required_fields():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_error_page_not_treated_as_success():
+    """微信错误提示页（「参数错误」等短提示页，HTTP 200 有正文）不算成功。"""
+    from wechat_article import _has_content
+    err_page = {"ok": True, "title": "", "content": "参数错误",
+                "char_count": 4, "image_count": 0, "images": []}
+    assert not _has_content(err_page), "微信错误页必须判失败"
+    # 正常文章：有标题
+    assert _has_content({"ok": True, "title": "标题", "content": "短",
+                         "char_count": 1, "images": []})
+    # 无标题但有实质正文（≥60 字）
+    assert _has_content({"ok": True, "title": "", "content": "x" * 80,
+                         "char_count": 80, "images": []})
+    # 无标题但有图（图集型文章）
+    assert _has_content({"ok": True, "title": "", "content": "abc",
+                         "char_count": 3, "images": ["u"]})
+    # 错误页特征串出现在长正文里（正常文章引用了这个词）不误杀
+    assert _has_content({"ok": True, "title": "T", "content": "参数错误" + "y" * 80,
+                         "char_count": 84, "images": []})

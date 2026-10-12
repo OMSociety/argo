@@ -3,7 +3,7 @@
 > 本文受门禁保护（tests/test_usage_doc_gates.py）：文中命令必须存在于
 > bin/argo 分发表、`ARGO_*` 开关必须代码实存。改命令先改代码，本文随行。
 
-## 命令总览（22 个，唯一事实=bin/argo 分发表）
+## 命令总览（24 个，唯一事实=bin/argo 分发表）
 
 | 命令 | 一句话 |
 |------|--------|
@@ -22,6 +22,7 @@
 | `argo tweet` | X 帖子完整打包（正文全文+串/引用/转发+媒体，`--out` 落盘） |
 | `argo answer` | 直答（Seltz 带引用合成答案） |
 | `argo watch` | 网页变化监控（add/check/list/remove） |
+| `argo auth` | 浏览器登录态（login/status/logout；登录墙站点抓取自动带会话） |
 | `argo job` | 招聘多平台聚合 |
 | `argo preflight` | 批量 URL 预检（`--probe` 联网探测） |
 | `argo cite` | DOI 引用条目（四格式） |
@@ -42,15 +43,24 @@
 ```bash
 argo daemon start     # 后台启动（socket/pid/指针文件落状态根，见 argo paths）
 argo daemon status    # 运行状态
-argo daemon stop      # 停止并清场
+argo daemon stop      # 停止并清场（等在途请求收尾，上限 20s）
 ```
 
-- 快路径自动生效：daemon 在位时 `argo search ...` 直达常驻进程；不在位或
-  任何失败时静默回退常态执行，CLI 行为不变。`ARGO_NO_DAEMON=1` 显式关闭。
+- 快路径自动生效：daemon 在位时 `argo search ...` 直达常驻进程；**不在位时
+  首次调用会自动后台拉起**（60s 节流；本次仍走冷路径，下一笔起加速）。任何
+  失败——不在位、连不上、正忙、源码已变更——都静默回退常态执行，CLI 行为不变。
+  `ARGO_NO_DAEMON=1` 显式关闭（同时关闭自启）。
 - 第一笔请求多付 ~100ms（daemon 内首次 import search 全家），此后全热路径。
 - daemon 空闲 1800s 自杀退出（`start --idle-exit N` 调整，0=常驻）；
   SIGTERM 同样清场。
-- 请求串行执行（stdout 重定向是进程级全局态）；argo 内部引擎并发不受影响。
+- 请求串行执行（stdout 重定向是进程级全局态）；前一笔未收尾时新请求立即返回
+  忙并静默回退冷路径（不排队等，避免排队把客户端拖到超时）。argo 内部引擎
+  并发不受影响。
+- **源码变更即退役**：daemon 启动时记录 scripts/*.py 指纹，请求时比对；
+  `git pull`/改脚本后旧 daemon 拒绝执行并退出，客户端回退冷路径、后台拉起
+  新代码的 daemon——不会静默跑旧代码。
+- 按次环境变量（`FOO_KEY=x argo search`、`ARGO_*` 覆盖）随请求透传给 daemon，
+  请求结束即还原，与冷路径行为一致。
 - socket 路径超 AF_UNIX 104 字节上限时自动落 `/tmp/argo-daemon-<uid>/`
   短路径哈希位，客户端经指针文件 `.daemon_sock` 发现，无需感知。
 

@@ -14,8 +14,9 @@ engines_used 出现任何表外名即判夹具。两处历史别名显式豁免�
 recovery.jsonl 无 engines_used 字段，2026-10-11 全文扫描零夹具命中，
 不在本工具处理范围。
 
-用法（建议 argo 空闲时跑——读改之间落进的新查询会随原子写一并保留在
-quarantine 之外的旧视图里，详见 _clean 的窗口说明）：
+用法（建议 argo 空闲时跑；写回前会重读并把窗口内新追加的行接回 kept，
+不再静默丢失——但仍建议停掉 daemon/MCP 等持续写入方，避免夹具判定
+跨窗口不一致）：
   python3 scripts/usage_log_clean.py            # 干跑：只报告不动文件
   python3 scripts/usage_log_clean.py --apply    # 实际隔离
 """
@@ -77,12 +78,24 @@ def _clean(path: Path, apply: bool) -> dict:
         "applied": False,
     }
     if apply and quarantine:
+        # 写回前重读一次，把「快照读」与「原子写」之间并发追加的新行接在
+        # kept 之后——否则这段窗口里落进的真实查询会被静默吞掉（旧实现
+        # 整文件替换为读时的旧视图，docstring 的错误承诺正好相反）。
+        # 追加行夹在既有行之后，无法用「是否为快照行」区分，只能按行数增量
+        # 取尾部；夹具行本工具只报一次，多余不影响数据（它们仍会进下次账）。
+        try:
+            current = path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            current = lines
+        appended = current[len(lines):] if len(current) > len(lines) else []
+        kept = kept + [ln for ln in appended if ln.strip()]
         stamp = time.strftime("%Y%m%d-%H%M%S")
         q_path = path.with_name(f"{path.name}.quarantine-{stamp}")
         argo_paths.atomic_write_text(q_path, "\n".join(quarantine) + "\n")
         argo_paths.atomic_write_text(path, "\n".join(kept) + "\n")
         report["applied"] = True
         report["quarantine_path"] = str(q_path)
+        report["appended_kept"] = len(appended)
     return report
 
 

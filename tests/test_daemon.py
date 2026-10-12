@@ -35,10 +35,16 @@ DAEMON = ROOT / "scripts" / "daemon.py"
 
 pytestmark = pytest.mark.skipif(os.name == "nt", reason="daemonize 依赖 fork，仅 POSIX")
 
+sys.path.insert(0, str(ROOT / "scripts"))
+import daemon as daemon_mod  # noqa: E402
+
 
 def _env(tmp_path: Path) -> dict:
     env = dict(os.environ)
     env["ARGO_STATE_DIR"] = str(tmp_path / "state")
+    # conftest 为防测试自启留下游离 daemon 默认关掉了快路径；本文件正测它，
+    # 显式打开（客户端的 _daemon_run 与自启都会读这个变量）。
+    env.pop("ARGO_NO_DAEMON", None)
     return env
 
 
@@ -102,6 +108,46 @@ def running(tmp_path):
     yield info
     _daemon(tmp_path, "stop")
     _wait_sock(tmp_path, False)
+
+
+@pytest.fixture(autouse=True)
+def _no_stray_daemon(tmp_path):
+    """用例结束后确保本用例起的 daemon 已退出。
+
+    多数用例刻意不逐个 stop（生命周期用例自行覆盖 start/stop），不清理会留
+    一批存活到空闲自杀死线（1800s）的游离进程，实测全量套件一口气留 6 个。
+    这里按 tmp_path 的 pid 文件兜底：ping 得到就发 stop，ping 不到就核对
+    命令行后 SIGTERM（防误杀复用 pid 的无关进程）。
+    """
+    yield
+    pid_path = tmp_path / "state" / "daemon.pid"
+    try:
+        pid = int(pid_path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return
+    try:
+        _daemon(tmp_path, "stop")
+    except Exception:
+        pass
+    deadline = time.time() + 3
+    while time.time() < deadline:
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            return
+        time.sleep(0.05)
+    # stop 没送走（例如 socket 已死）：核实命令行后补刀
+    try:
+        r = subprocess.run(["ps", "-p", str(pid), "-o", "command="],
+                           capture_output=True, text=True, timeout=5)
+        if "daemon.py" in (r.stdout or "") and str(ROOT / "scripts") in (r.stdout or ""):
+            os.kill(pid, 15)
+    except Exception:
+        pass
 
 
 def test_lifecycle_ping_status_stop(tmp_path):
@@ -188,3 +234,161 @@ def test_idle_exit_self_terminate(tmp_path):
     assert r.returncode == 0
     _wait_sock(tmp_path, True)
     _wait_sock(tmp_path, False, timeout=15.0)  # 空闲 1s + 5s 看护轮询窗
+
+
+# ── 加固锁：源码指纹 / env 透传还原 / stale / busy / 客户端回退 ─────────────
+
+
+def test_source_fingerprint_is_stable_and_nonempty():
+    fp1 = daemon_mod._code_fingerprint()
+    fp2 = daemon_mod._code_fingerprint()
+    assert fp1 and len(fp1) >= 32
+    assert fp1 == fp2, "同一状态下指纹必须可复现（mtime_ns+size 汇总）"
+
+
+def test_handle_run_rejects_stale_fingerprint(tmp_path):
+    """daemon 存活期内仓库源码变更 → run 必须拒执行并触发退役。
+
+    此前无任何版本判据：git pull 后 daemon 会继续用 sys.modules 里的旧模块
+    静默跑旧代码，最长到空闲自杀。
+    """
+    srv = daemon_mod._Server(idle_exit_s=1800)
+    srv.fp = "definitely-not-the-real-fingerprint"
+    a, b = socket.socketpair()
+    try:
+        resp = srv._handle_run(a, {"op": "run", "script": "search",
+                                   "args": ["--list-engines", "--json"]})
+    finally:
+        a.close(); b.close()
+    assert resp["ok"] is False and resp.get("stale") is True
+    assert srv.stop_evt.is_set(), "stale 后 daemon 必须标记退役"
+
+
+def test_handle_run_busy_fails_fast(tmp_path):
+    """执行锁被占时立即回 busy，不让调用方排队等（排队只会拖到客户端超时）。"""
+    srv = daemon_mod._Server(idle_exit_s=1800)
+    srv.fp = daemon_mod._code_fingerprint()
+    a, b = socket.socketpair()
+    assert daemon_mod._EXEC_LOCK.acquire(timeout=0.01)
+    try:
+        t0 = time.monotonic()
+        resp = srv._handle_run(a, {"op": "run", "script": "search", "args": []})
+        took = time.monotonic() - t0
+    finally:
+        daemon_mod._EXEC_LOCK.release()
+        a.close(); b.close()
+    assert resp["ok"] is False and resp.get("busy") is True
+    assert took < 5.0, "busy 必须快失败"
+
+
+def test_env_overrides_applied_then_restored(monkeypatch):
+    monkeypatch.setenv("ARGO_DAEMON_PROBE", "orig")
+    monkeypatch.delenv("ARGO_DAEMON_PROBE_NEW", raising=False)
+    saved = daemon_mod._apply_env_overrides(
+        {"ARGO_DAEMON_PROBE": "req", "ARGO_DAEMON_PROBE_NEW": "v"},)
+    assert os.environ["ARGO_DAEMON_PROBE"] == "req"
+    assert os.environ["ARGO_DAEMON_PROBE_NEW"] == "v"
+    daemon_mod._restore_env(saved)
+    assert os.environ["ARGO_DAEMON_PROBE"] == "orig"
+    assert "ARGO_DAEMON_PROBE_NEW" not in os.environ
+
+
+def test_client_env_override_picks_argo_and_keys(monkeypatch):
+    monkeypatch.setenv("ARGO_DAEMON_PROBE", "1")
+    monkeypatch.setenv("SOME_SERVICE_KEY", "k")
+    monkeypatch.setenv("UNRELATED_VAR", "x")
+    env = _client_env_overrides()
+    assert env.get("ARGO_DAEMON_PROBE") == "1"
+    assert env.get("SOME_SERVICE_KEY") == "k"
+    assert "UNRELATED_VAR" not in env
+
+
+def _client_env_overrides() -> dict:
+    """复刻 bin/argo._daemon_env 的挑选规则（bin 不 import，测试侧独立验证）。"""
+    out = {}
+    for k, v in os.environ.items():
+        if not (k.startswith("ARGO_") or k.endswith(
+                ("_KEY", "_TOKEN", "_SECRET", "_PASSWORD", "_APIKEY"))):
+            continue
+        out[k] = v
+    return out
+
+
+def test_client_falls_back_when_daemon_busy(tmp_path):
+    """daemon 返回 busy 时客户端必须静默回退冷路径并正常出结果。"""
+    state = tmp_path / "state"
+    state.mkdir()
+    sock_path = state / "daemon.sock"
+
+    fake = subprocess.Popen(
+        [sys.executable, "-c", (
+            "import json,socket,sys,os\n"
+            "sp=sys.argv[1]\n"
+            "s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)\n"
+            "s.bind(sp); s.listen(4)\n"
+            "for _ in range(4):\n"
+            "    c,_=s.accept()\n"
+            "    c.recv(65536)\n"
+            "    c.sendall((json.dumps({'ok':False,'busy':True})+'\\n').encode())\n"
+            "    c.close()\n"), str(sock_path)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        for _ in range(100):
+            if sock_path.exists():
+                break
+            time.sleep(0.05)
+        (state / ".daemon_sock").write_text(str(sock_path) + "\n", encoding="utf-8")
+        env = _env(tmp_path)
+        env["ARGO_NO_DAEMON"] = ""  # 确保快路径开启
+        r = subprocess.run([sys.executable, str(BIN), "search", "--list-engines", "--json"],
+                           env=env, capture_output=True, text=True, timeout=60)
+        assert r.returncode == 0, r.stderr
+        assert len(json.loads(r.stdout)) > 100
+        assert "busy" not in r.stderr  # 静默回退：不得把 daemon 内部状态漏给用户
+    finally:
+        fake.terminate()
+        fake.wait(timeout=10)
+
+
+def test_autostart_brings_daemon_up(tmp_path):
+    """指针缺失时首次调用仍出结果（冷路径），并后台把 daemon 拉起。"""
+    env = _env(tmp_path)
+    env.pop("ARGO_NO_DAEMON", None)
+    r = subprocess.run([sys.executable, str(BIN), "search", "--list-engines", "--json"],
+                       env=env, capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    assert len(json.loads(r.stdout)) > 100
+    _wait_sock(tmp_path, True, timeout=10.0)
+    # 第二笔即应走快路径（等价性由 test_cli_fastpath_and_fallback 锁着）
+    r2 = subprocess.run([sys.executable, str(BIN), "search", "--list-engines", "--json"],
+                        env=env, capture_output=True, text=True, timeout=60)
+    assert r2.returncode == 0 and json.loads(r2.stdout) == json.loads(r.stdout)
+    _daemon(tmp_path, "stop")
+    _wait_sock(tmp_path, False)
+
+
+def test_start_self_heals_stale_instance(tmp_path):
+    """在跑实例指纹不符时，start 必须先停旧的、再起新代码实例（陈旧自愈）。
+
+    回归（2026-10-12 实测踩中）：改脚本后旧 daemon 进入「拒执行+准备退役」，
+    但退役与自启之间有时序缝——新 start 看到旧进程 ping 得到就直接报
+    「已在运行」，退役完成后无人接手，快路径永久失效。
+    """
+    _start(tmp_path)
+    _wait_sock(tmp_path, True)
+    # 模拟代码变更：改 _code_fingerprint 的输入（touch 一个 scripts/*.py）
+    import pathlib
+    p = ROOT / "scripts" / "search.py"
+    st = p.stat()
+    try:
+        os.utime(p, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000))
+        info = _start(tmp_path)  # 应触发重启而非 already_running
+        assert not info.get("already_running"), f"陈旧实例未被自愈: {info}"
+        _wait_sock(tmp_path, True)
+        # 新实例 fingerprint 应与当前源码一致
+        r = _uds(_sock(tmp_path), {"op": "ping"})
+        assert r.get("fp") == daemon_mod._code_fingerprint()
+    finally:
+        os.utime(p, ns=(st.st_atime_ns, st.st_mtime_ns))
+    _daemon(tmp_path, "stop")
+    _wait_sock(tmp_path, False)
