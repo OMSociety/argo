@@ -654,7 +654,7 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
         return (not no_early) and cumulative_sufficient(
             raw_results, mode=mode, min_results=early_min, query=query)
 
-    def _daemon_start(eng: str):
+    def _daemon_start(eng: str, done_evt: threading.Event | None = None):
         """daemon 线程跑 _run_one：弃置线程不阻塞进程退出。"""
         holder: dict[str, Any] = {"t0": _now()}
 
@@ -669,6 +669,9 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
                         eng, [{"error": str(exc), "source": eng}], 0),
                     0,
                 )
+            finally:
+                if done_evt is not None:
+                    done_evt.set()
         t = threading.Thread(target=_work, daemon=True)
         t.start()
         return holder, t
@@ -766,13 +769,11 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
         deadline = _now() + max(0.0, wait_s)
         gate = None if start_before_s is None else _now() + max(0.0, start_before_s)
         last_start: float | None = None
+        done_evt = threading.Event()
+        max_concurrency = _max_parallel_engines(depth=depth)
         while (queue or pending) and _now() < deadline:
+            done_evt.clear()
             started = False
-            # 并发上限。此前是写死的 3，而 config.yaml 的
-            # execution.max_parallel_engines **从来没被任何代码读过**——
-            # 改配置等于没改，是「看着生效、其实没生效」最难查的一类。
-            # 兜底 3 是原硬编码值：配置缺失或非法时行为与从前逐位一致。
-            max_concurrency = _max_parallel_engines(depth=depth)
             while queue and len(pending) < max_concurrency:
                 if gate is not None and _now() >= gate:
                     break  # 预算耗尽：不再起新引擎（既有 fast 契约）
@@ -780,7 +781,7 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
                         and (_now() - last_start) < stagger_s):
                     break  # 起步节流：等满 stagger 再补发（串行路径的对冲）
                 eng = queue.pop(0)
-                holder, th = _daemon_start(eng)
+                holder, th = _daemon_start(eng, done_evt)
                 pending.append((holder, th, eng))
                 last_start = _now()
                 started = True
@@ -802,11 +803,14 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
             if not progressed and not started:
                 if not pending:
                     break  # 队列里还有引擎，但起步闸门已关：没有下一步了
-                # 自适应轮询间隔：剩余时间充裕时多睡，快到期时少睡。
-                # 固定 20ms 在尾部会浪费时间（实测最多浪费 20ms），
-                # 自适应后平均等待时长降至 5-8ms。
+                # 完成事件唤醒 + 剩余时间/stagger 窗口上限：线程完成即醒（零轮询税），
+                # 无完成事件时按 20ms 节拍复核 stagger/deadline（兼容假时钟测试）。
                 remain = deadline - _now()
-                time.sleep(min(0.02, remain / 10) if remain > 0 else 0.005)
+                wait_step = min(0.02, remain / 10) if remain > 0 else 0.005
+                if queue and stagger_s > 0.0 and last_start is not None:
+                    stagger_rem = max(0.0, stagger_s - (_now() - last_start))
+                    wait_step = min(wait_step, stagger_rem)
+                done_evt.wait(max(0.0, wait_step))
         _settle_pending(pending, status="timeout")
         return False
 

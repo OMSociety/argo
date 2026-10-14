@@ -827,11 +827,17 @@ def route_query(query: str, engine_override: str = "auto",
             engines = ["anysearch"]
         # 空串等同 auto：防止空引擎名混入 combo（registry 查无 → 空结果
         # → 熔断器空键 ''），MCP/外部调用可能传入空 engine 参数
+        # 显式引擎也补 domain 判定：让缓存 TTL 按真实域分域（财经 5min /
+        # 新闻 10min / 学术 2h），usage_log 统计不再全糊成 general。
+        _domain = None
+        _hits = match_domains(query, max_n=1)
+        if _hits:
+            _domain = _hits[0].get("name")
         return _done(
             engine=engines[0], engines=engines,
             engines_combo=engines,
             reason=f"用户指定: {', '.join(engines)}", confidence=1.0,
-            features={}, domain=None, parallel=False, mode=mode,
+            features={}, domain=_domain, parallel=False, mode=mode,
             depth=depth, context=context,
             login_hint=_detect_login_intent(query, None),
         )

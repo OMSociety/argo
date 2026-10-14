@@ -20,3 +20,5 @@ docs-local/
 # Vision 辅助的编译产物（首次使用时由 local_image.ensure_probe() 自动编译；
 # 二进制与 CPU 架构/系统版本绑定，入库只会带来跨机不兼容的假象）
 scripts/image_vision/vision_probe
+# 本地个性化引擎插件（如 OSV / CISA KEV，不随公开仓提交）
+scripts/local_engines.py

@@ -80,6 +80,7 @@ def run_bounded(
     finished: list[tuple[I, Any]] = []
     deadline = time.monotonic() + max(0.0, float(wait_s))
     last_start: float | None = None
+    done_evt = threading.Event()
 
     def _start(item: I) -> None:
         holder: dict = {}
@@ -89,12 +90,15 @@ def run_bounded(
                 holder["v"] = worker(item)
             except BaseException as exc:  # noqa: BLE001 - 任意任务异常都要隔离，不能让一个任务炸掉整组
                 holder["v"] = TaskError(item, exc)
+            finally:
+                done_evt.set()
 
         th = threading.Thread(target=_work, daemon=True)
         th.start()
         running.append((th, item, holder))
 
     while queue or running:
+        done_evt.clear()
         if time.monotonic() >= deadline:
             break
         # 按并发上限补启动排队任务
@@ -122,7 +126,10 @@ def run_bounded(
             remain = deadline - time.monotonic()
             if remain <= 0:
                 break
-            time.sleep(min(poll, remain))
+            wait_step = remain
+            if queue and stagger_s > 0 and last_start is not None:
+                wait_step = min(wait_step, max(0.0, stagger_s - (time.monotonic() - last_start)))
+            done_evt.wait(min(poll, wait_step) if poll > 0 else wait_step)
 
     # 收尾：还活着的不等待（关键：不 join），计入 unfinished；恰在末次轮询后完成的
     # 照常收进来，避免结果悄悄丢失。因并发上限到点仍没排上起跑的任务同样算未完成，

@@ -58,12 +58,18 @@ def _load_yaml(path: Path) -> dict[str, Any]:
     if yaml is None:
         raise ImportError("缺少 PyYAML，请安装：pip install pyyaml")
     try:
+        from yaml_load import load as _yaml_load
         with path.open("r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
+            data = _yaml_load(f)
         return data if isinstance(data, dict) else {}
-    except Exception as e:
-        logger.warning(f"加载 YAML 失败 {path}: {e}")
-        return {}
+    except Exception:
+        try:
+            with path.open("r", encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+            return data if isinstance(data, dict) else {}
+        except Exception as e:
+            logger.warning(f"加载 YAML 失败 {path}: {e}")
+            return {}
 
 
 def _default_health_state_path() -> Path:

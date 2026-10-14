@@ -16,8 +16,6 @@
 # 改用 POSIX sh + 解释器探测后，macOS 本机行为不变（同一个 env 文件、同一层
 # launchctl 兜底、同一批透传名单），其余平台从「拉不起来」变成「能起」。
 
-set -a
-
 # 某些宿主（如 dsh web）以净化环境 spawn MCP，HOME 可能缺失——先兜底
 if [ -z "$HOME" ]; then
   if command -v dscl >/dev/null 2>&1; then                 # macOS
@@ -29,7 +27,10 @@ if [ -z "$HOME" ]; then
 fi
 
 ENV_FILE="${HOME}/.config/argo/env"
+# set -a 仅覆盖 env 文件加载这一行，内部变量不导出
+set -a
 [ -f "$ENV_FILE" ] && . "$ENV_FILE"
+set +a
 
 # 透传名单单一真源：launchctl print 批量路径与 getenv 回退路径共用这一份
 # （与 engine_env.KNOWN_ENV_ALIASES 展开 + 代理变量对齐，
@@ -87,7 +88,6 @@ else
     fi
   done
 fi
-set +a
 
 # 脚本所在目录的绝对路径（POSIX 写法，替代 zsh 的 ${0:A:h}）
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"

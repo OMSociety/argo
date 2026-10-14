@@ -22,6 +22,7 @@
 engine_id: cisa_kev
 type: cisa_kev
 enabled: true
+explicit_only: true
 cost_tier: free
 label: CISA KEV 在野利用漏洞
 family: security

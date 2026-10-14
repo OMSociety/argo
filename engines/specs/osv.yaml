@@ -23,6 +23,7 @@
 engine_id: osv
 type: osv
 enabled: true
+explicit_only: true
 cost_tier: free
 label: OSV 开源漏洞库
 family: security

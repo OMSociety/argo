@@ -72,7 +72,11 @@ RUNNABLE = {
 }
 
 
-def _code_fingerprint() -> str:
+_fp_memo: tuple[float, str] | None = None
+_FP_TTL_S = 1.0  # 与 config_stamp() 同口径：1s 内突发请求免扫 220 个文件
+
+
+def _code_fingerprint(force: bool = False) -> str:
     """仓库 Python 源码指纹：scripts/*.py + sub-skills 关键子技能 + bin/argo。
 
     为什么需要它：daemon 是长驻进程，但 `runpy.run_module` 只重执行脚本顶层，
@@ -87,6 +91,10 @@ def _code_fingerprint() -> str:
     指纹不一致时客户端必须回退冷路径（见 _daemon_run），daemon 自身也退出，
     下一笔冷调用会按需重启新代码。
     """
+    global _fp_memo
+    now = time.monotonic()
+    if not force and _fp_memo is not None and now - _fp_memo[0] < _FP_TTL_S:
+        return _fp_memo[1]
     import hashlib
     h = hashlib.sha1()
     targets: list[str] = sorted(glob.glob(os.path.join(SCRIPTS_DIR, "*.py")))
@@ -108,7 +116,9 @@ def _code_fingerprint() -> str:
         h.update(f"bin/argo:{st.st_mtime_ns}:{st.st_size}\n".encode("utf-8"))
     except OSError:
         pass
-    return h.hexdigest()
+    digest = h.hexdigest()
+    _fp_memo = (now, digest)
+    return digest
 
 
 
@@ -498,6 +508,25 @@ class _Server:
                     self.stop_evt.set()
 
         threading.Thread(target=_watchdog, daemon=True).start()
+
+        def _prewarm() -> None:
+            # 监听就绪后后台预热核心模块与域正则（与 mcp_handlers._warm_core_async 同构）：
+            # 既不拖慢 start 握手（~30ms），又消除首笔 search 请求的 ~118ms 冷加载税。
+            if not _EXEC_LOCK.acquire(timeout=0.05):
+                return
+            try:
+                if self.stop_evt.is_set():
+                    return
+                import search  # noqa: F401
+                import search_cli  # noqa: F401
+                from route_domains import warm_compiled_domains
+                warm_compiled_domains()
+            except Exception:
+                pass
+            finally:
+                _EXEC_LOCK.release()
+
+        threading.Thread(target=_prewarm, name="argo-daemon-warm", daemon=True).start()
         print(f"[daemon] pid={os.getpid()} socket={sp} 就绪", flush=True)
         try:
             listen_sock.settimeout(2.0)
@@ -563,7 +592,7 @@ def _start(args: argparse.Namespace) -> int:
         # 缝——客户端自启的新 start 会因「ping 得到旧进程」直接报已在运行并
         # 退出，结果退役完成后无人接手（实测踩中：touch 脚本后 status 永为
         # 未运行）。这里对指纹不符的实例先停、等它出场，再走正常启动。
-        cur_fp = _code_fingerprint()
+        cur_fp = _code_fingerprint(force=True)
         running_fp = alive.get("fp") or ""
         if running_fp and cur_fp and running_fp != cur_fp:
             if not args.json:

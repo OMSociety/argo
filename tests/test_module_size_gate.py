@@ -61,7 +61,7 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "2026-09-29 +19：open_meteo 多 place forecast 并行化（串行 9.28s → "
               "3.9-5.1s，bounded_run 有界并发 + 保序）"),
     "scripts/engines_builders_tech.py": (
-        1615, "技术社区源声明构建器（V2EX/StackExchange 等），逐源一段；"
+        1354, "技术社区源声明构建器（V2EX/StackExchange 等），逐源一段；"
               "2026-09-26 批次十增强净增 +402：sov2ex 一级全文来源（v2ex 就地升级）、"
               "tineye/bing_rss 新引擎、exa 免 key 匿名通道——与原逐源一段同性质，"
               "拆出只会把同一张表切碎（新引擎的下一站是 batch 模块）；"
@@ -69,7 +69,8 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "工作区未提交、当日仍在增长 1600→1604）——上限随工作区现值登记，"
               "随该工作正式提交后由其转正或回调；"
               "2026-10-05 A1 惰性 logging 导入（+11）：模块级 import logging 改"
-              "_LazyLogger 代理类，省 ~10ms/次冷启动"),
+              "_LazyLogger 代理类，省 ~10ms/次冷启动；"
+              "2026-10-14 7ca2f22 移除 OSV/CISA KEV 代码段（−261）"),
     "scripts/fetch_v3.py": (
         1791, "抓取降级链（HTTP→md 变体→TLS 指纹→jina→Parallel→浏览器），"
               "每级都要保留顺序与超时语义，尚未找到能一次搬走且可验证的切面；"
@@ -164,7 +165,7 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "2026-10-10 +2：入口状态隔离（真实搜索路径会写生产状态，实测夹具"
               "引擎已混入 circuit_breaker/usage_log），接 argo_paths.isolate_state_dir"),
     "scripts/route.py": (
-        992, "路由决策主干（route_query + 三个 _route_by_* 判定器）；"
+        998, "路由决策主干（route_query + 三个 _route_by_* 判定器）；"
               "2026-09-28 拆出 Bangs 解析（route_bangs.py，−26 行）后登记；"
               "同日 +2：breaker.status 读失败 debug 留痕（fail-open 语义不变）；"
               "2026-09-30 +1：routable memo 接线（get_engines 不传 cfg，"
@@ -174,7 +175,9 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "backfill_after_breaker、select_tfidf_best 四助手，"
               "route.py 三处死源判定各写一遍的重复随之消除）；"
               "2026-10-03 −1：TF-IDF 弱证据辅源化——tfidf_lead_combo"
-              "进 route_combo，route.py 只留调用点与 reason 分叉"),
+              "进 route_combo，route.py 只留调用点与 reason 分叉；"
+              "2026-10-14 +6：显式引擎域归因——--engine X 时补 domain 判定，"
+              "修复缓存 TTL 一刀切为 general 及 usage_log 统计失真"),
 }
 
 

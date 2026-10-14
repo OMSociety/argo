@@ -61,6 +61,19 @@ _LOCAL_SEEK_CACHE_MAX = 64
 # 模块名、不污染 sys.path），进程内只加载一次（实测 0.5ms）。
 _SEEK_MODULE_CACHE: dict[str, Any] = {}
 
+# include-local 的本地搜索 worker 单例（住在被导入模块而非 search.py 顶层，
+# 防 daemon runpy.run_module 重跑 search 顶层时覆写泄漏线程池）。
+_LOCAL_SEEK_EXECUTOR = None
+
+
+def get_local_seek_executor():
+    global _LOCAL_SEEK_EXECUTOR
+    if _LOCAL_SEEK_EXECUTOR is None:
+        import concurrent.futures
+        _LOCAL_SEEK_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="local-seek")
+    return _LOCAL_SEEK_EXECUTOR
+
 # H3：跨进程落盘缓存。CLI 每次新进程，进程内缓存救不了 CLI 重复查询；
 # 落盘缓存让 TTL 内的重复查询（同 query+dir+max）零成本。陈旧语义与
 # 进程内缓存一致（300s TTL——文件不频繁修改场景可接受）。写侧原子替换

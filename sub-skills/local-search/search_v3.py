@@ -104,13 +104,39 @@ _CLI_AVAIL_TTL = 60.0
 
 def _load_yaml(path: Path) -> dict[str, Any]:
     try:
-        import yaml  # type: ignore
+        from yaml_load import load as _yaml_load
         with path.open("r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
+            data = _yaml_load(f)
         return data if isinstance(data, dict) else {}
-    except Exception as e:
-        logger.warning(f"加载 YAML 失败 {path}: {e}")
-        return {}
+    except Exception:
+        try:
+            import yaml  # type: ignore
+            with path.open("r", encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+            return data if isinstance(data, dict) else {}
+        except Exception as e:
+            logger.warning(f"加载 YAML 失败 {path}: {e}")
+            return {}
+
+
+_CACHE_INSTANCE: tuple[str, Any] | None = None
+
+
+def _get_search_cache() -> Any:
+    """按当前 db_path 记忆化 SearchCache 实例（防进程内每次调用重新建连 + 跑 4 条 PRAGMA）。"""
+    global _CACHE_INSTANCE
+    if SearchCache is None:
+        return None
+    try:
+        import argo_paths
+        db_p = str(argo_paths.db_path())
+    except Exception:
+        db_p = ""
+    if _CACHE_INSTANCE is not None and _CACHE_INSTANCE[0] == db_p:
+        return _CACHE_INSTANCE[1]
+    inst = SearchCache()
+    _CACHE_INSTANCE = (db_p, inst)
+    return inst
 
 
 @functools.lru_cache(maxsize=1)
@@ -1315,7 +1341,7 @@ def search_engines(
     # 仅当组合内含带时间能力引擎时隔离：text/images/videos 子引擎忽略
     # 时间窗、结果相同，隔离只会降低命中率。
     time_aware = any(e in _TIME_CAPABLE_ENGINES for e in engines)
-    cache = SearchCache() if SearchCache is not None else None
+    cache = _get_search_cache()
     cache_key = _cache_key(engines)
     if since and time_aware:
         cache_key += f"|since={since}"

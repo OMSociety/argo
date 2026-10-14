@@ -238,19 +238,12 @@ def _local_seek_grace_s() -> float:
 
 _LOCAL_SEEK_GRACE_S = _local_seek_grace_s()
 
-# include-local 的本地搜索 worker：模块级单例。此前每次调用新建
-# ThreadPoolExecutor 且从不 shutdown——CLI 一次性进程无感，常驻 MCP server
-# 每跑一次 --include-local 就泄漏一个非 daemon 线程（线性累积，永不回收）。
-_LOCAL_SEEK_EXECUTOR = None
-
-
+# include-local 的本地搜索 worker：单例下沉到 local_seek 模块，避免 search.py
+# 在 daemon.py 的 runpy.run_module("search", run_name="__main__") 下重跑顶层时
+# 把 _LOCAL_SEEK_EXECUTOR 覆写为 None、导致每次调用泄漏一个 ThreadPoolExecutor。
 def _get_local_seek_executor():
-    global _LOCAL_SEEK_EXECUTOR
-    if _LOCAL_SEEK_EXECUTOR is None:
-        import concurrent.futures
-        _LOCAL_SEEK_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
-            max_workers=1, thread_name_prefix="local-seek")
-    return _LOCAL_SEEK_EXECUTOR
+    from local_seek import get_local_seek_executor
+    return get_local_seek_executor()
 
 
 def _note_remote_quota_exhausted(engine: str, detail: str) -> None:

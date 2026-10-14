@@ -1,6 +1,6 @@
 _generated: 由 scripts/sync_backends.py 从运行时引擎声明派生，勿手工修改。
 version: 2
-last_updated: '2026-10-11'
+last_updated: '2026-10-14'
 engines:
 - name: aljazeera
   tier: T1
@@ -264,7 +264,7 @@ engines:
   cost: free
   status: ok
   recommended: false
-  explicit_only: false
+  explicit_only: true
   desc: CISA 已知被在野利用漏洞目录（官方确认已被实际攻击利用的 CVE；全量 1.35MB 本地过滤）
 - name: clawhub
   tier: T1
@@ -2126,7 +2126,7 @@ engines:
   cost: free
   status: ok
   recommended: false
-  explicit_only: false
+  explicit_only: true
   desc: OSV.dev 开源漏洞库（按包查已知漏洞与影响版本区间，免 key；生态 PyPI/npm/Go/crates 等）
 - name: parallel
   tier: T1

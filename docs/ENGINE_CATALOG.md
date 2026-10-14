@@ -11,7 +11,7 @@
 - **需自备密钥 21 个**：`bocha`、`bocha_ai`、`byted`、`em_miaoxiang`、`exa`、`keenable`、`octen`、`parallel`、`qweather`、`seltz`、`tavily`、`tinyfish`、`tinyfish_news`、`tinyfish_paper`、`unpaywall`、`weread`、`you`、`zhihu`、`zhihu_global`、`zhihu_hot`、`zhihu_user`（没配也不影响搜索，路由会跳过）
 - **需装后端工具 3 个**：`reddit`、`twitter`、`xiaohongshu`（装好并登录后即可用）
 - **已停用 12 个**：`brave`、`digup`、`europeana`、`felo`、`jikan`、`local_goodreads`、`metaso`、`nbs_stats`、`realtime_index`、`searxng`、`soilgrids`、`wolframalpha`
-- **显式专用 15 个**：`bing_rss`、`datagov_uk`、`doi`、`ecosia`、`gdelt`、`opencitations`、`qwant`、`tineye`、`tinyfish`、`tinyfish_news`、`tinyfish_paper`、`twitter_syndication`、`unpaywall`、`x_trending`、`zbmath`（设计上不进自动路由，按 `--engine` 或交接提示调用）
+- **显式专用 17 个**：`bing_rss`、`cisa_kev`、`datagov_uk`、`doi`、`ecosia`、`gdelt`、`opencitations`、`osv`、`qwant`、`tineye`、`tinyfish`、`tinyfish_news`、`tinyfish_paper`、`twitter_syndication`、`unpaywall`、`x_trending`、`zbmath`（设计上不进自动路由，按 `--engine` 或交接提示调用）
 
 自己核一遍（口径不同，别混用）：
 
@@ -400,10 +400,10 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 
 | 引擎 | 状态 | 费用 | 频率上限 | 需自备密钥 | 什么时候用到 | 说明 |
 |---|---|---|---|---|---|---|
-| `cisa_kev` | 可直接用 | 免费 | 不限 | — | 域 security_search | CISA 已知被在野利用漏洞目录（官方确认已被实际攻击利用的 CVE；全量 1.35MB 本地过滤） |
 | `crt_sh` | 可直接用 | 免费 | 不限 | — | 域 security_search | crt.sh 证书透明度日志（子域名/证书情报，免认证，响应较慢） |
 | `nvd` | 可直接用 | 免费 | 不限 | — | 域 security_search | NVD 漏洞情报（CVE 编号/描述/CVSS 与 KEV 标记；免认证 5 请求/30 秒） |
-| `osv` | 可直接用 | 免费 | 不限 | — | 域 security_search | OSV.dev 开源漏洞库（按包查已知漏洞与影响版本区间，免 key；生态 PyPI/npm/Go/crates 等） |
+| `cisa_kev` | 显式专用 | 免费 | 不限 | — | 显式调用（--engine） | CISA 已知被在野利用漏洞目录（官方确认已被实际攻击利用的 CVE；全量 1.35MB 本地过滤） |
+| `osv` | 显式专用 | 免费 | 不限 | — | 显式调用（--engine） | OSV.dev 开源漏洞库（按包查已知漏洞与影响版本区间，免 key；生态 PyPI/npm/Go/crates 等） |
 
 ### 体育（4）
 
@@ -479,7 +479,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 | `protein_search` | `uniprot` | `uniprot`、`rcsb_pdb` |
 | `us_legal` | `courtlistener` | `courtlistener`、`federal_register`、`anysearch` |
 | `earth_science` | `usgs` | `usgs`、`gdacs`、`anysearch`、`nasa_cmr`、`nasa_images`、`soilgrids` |
-| `security_search` | `nvd` | `nvd`、`anysearch`、`osv`、`cisa_kev`、`crt_sh` |
+| `security_search` | `nvd` | `nvd`、`anysearch`、`crt_sh` |
 | `lifecycle_search` | `endoflife` | `endoflife`、`anysearch` |
 | `package_intel` | `deps_dev` | `deps_dev`、`anysearch` |
 | `trade_stats` | `un_comtrade` | `un_comtrade`、`anysearch` |

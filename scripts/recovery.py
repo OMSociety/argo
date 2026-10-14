@@ -439,8 +439,11 @@ def build_recovery_plan(query: str, tried_engines: list[str],
         prefer = ["zh", "en"]
 
     # L1 放宽
+    # 止损：显式指定单一引擎且无备选时，L1 放宽仍在同一引擎上重试，白烧一轮 RTT。
+    # 只在有备选引擎（L3 可能换引擎）时才做 L1 同引擎重试。
+    _has_fallback = bool(engines_fallback) or len(tried_engines) > 1
     relaxed = relax_query(query)
-    if relaxed and relaxed != query:
+    if relaxed and relaxed != query and _has_fallback:
         steps.append(RecoveryStep(
             level="L1", strategy="relax", query=relaxed, engines=base_engines,
             reason="去停用词/引号/尾修饰后重试"))

@@ -275,12 +275,9 @@ _DORMANT_ALLOWLIST: dict[str, str] = {
     # 若要恢复 crossref 的自动可见性，需给它加槽（_VERTICAL_NEW_SOURCE）或
     # 调高 academic 域预算——两者都会挤掉 openreview/biorxiv，属权衡而非纯收益。
     "crossref": "待接线：academic 位次 5（fast 档 budget=2，位次 3+ 不参与自动路由）",
-    # 2026-09-16：security_search 接入 osv/cisa_kev 后，crt_sh 由第 3 位降到第 5 位。
-    # 与 crossref 同一笔账：该域声明 5 个源而 fast 档 budget=2，位次 3+ 不参与
-    # 自动路由。cisa_kev 是本次新接的源，天然排在兜底源之后（见 config 注释：
-    # 结构化事实不应挤掉中文召回），故同样登记。
-    "cisa_kev": "待接线：security_search 位次 4（fast 档 budget=2，位次 3+ 不参与自动路由）",
-    "crt_sh": "待接线：security_search 位次 5（原第 3 位，接入 osv/cisa_kev 后顺延）",
+    # 2026-10-14（7ca2f22）：osv/cisa_kev 从 security_search combo 移出并改为
+    # explicit_only（本地插件按需提供），crt_sh 回到位次 3（进 auto/balanced 预算窗），
+    # 故 cisa_kev 与 crt_sh 均从休眠台账撤账。
     "dblp": "待接线：academic 位次 7",
     "docker_hub": "待接线：package_search 位次 4",
     "europepmc": "待接线：academic 位次 6；tech_deep 位次 5",
