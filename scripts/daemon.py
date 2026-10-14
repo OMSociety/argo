@@ -61,6 +61,7 @@ SOCK_NAME = "daemon.sock"
 PID_NAME = "daemon.pid"
 LOG_NAME = "daemon.log"
 POINTER_NAME = ".daemon_sock"  # 指针文件：落 bin/argo 可预测的缓存根，内容=真实 socket 路径
+MARKER_NAME = ".daemon_autostart"  # 自启节流文件：落 _cache_root()
 MAX_REQ_BYTES = 1 << 20  # 单请求上限 1MB（args 很小，此值纯防失控）
 
 # 可执行脚本白名单（键=客户端传的 script 名，值=runpy 模块名）。
@@ -155,6 +156,10 @@ def _sock_path() -> str:
 
 def _pointer_path() -> str:
     return os.path.join(_cache_root(), POINTER_NAME)
+
+
+def _marker_path() -> str:
+    return os.path.join(_cache_root(), MARKER_NAME)
 
 
 def _pid_path() -> str:
@@ -508,7 +513,7 @@ class _Server:
             # 立即 ECONNREFUSED → 客户端静默回退冷路径。
             with contextlib.suppress(OSError):
                 listen_sock.close()
-            for p in (_sock_path(), _pointer_path()):
+            for p in (_sock_path(), _pointer_path(), _marker_path()):
                 with contextlib.suppress(OSError):
                     os.unlink(p)
             # 第二步：等在途 run 收尾（上限 _STOP_GRACE_S）——腰斩已开始的
@@ -722,6 +727,8 @@ def _stop(args: argparse.Namespace) -> int:
                 except OSError:
                     break  # 进程已退出：真停
                 time.sleep(0.1)
+        with contextlib.suppress(OSError):
+            os.unlink(_marker_path())
         print(json.dumps({"ok": True, "stopped": True, "pid": pid}, ensure_ascii=False)
               if args.json else "argo daemon 已停止")
         return 0
@@ -738,7 +745,7 @@ def _stop(args: argparse.Namespace) -> int:
                 killed = pid
         except (OSError, ValueError):
             pass
-        for p in (sp, _pointer_path(), _pid_path()):
+        for p in (sp, _pointer_path(), _pid_path(), _marker_path()):
             with contextlib.suppress(OSError):
                 os.unlink(p)
         print(json.dumps({"ok": True, "stopped": True, "killed": killed},
