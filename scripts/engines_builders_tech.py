@@ -1225,150 +1225,10 @@ def _build_endoflife_engine(spec: dict[str, Any]) -> Any:
     return _engine
 
 
-# ── OSV.dev 开源漏洞库（免 key，必须 POST）─────────────────────────────────
-
-# 包名 → 生态的推断表。OSV 必须显式给 ecosystem，而用户只会打「requests」
-# 这样的裸包名，所以需要一层启发式；判断不了的按 PyPI 兜底（OSV 的 PyPI 库
-# 最全，且 Python 是 agent 场景里最常问的）。
-#
-# 形态约定：
-#   - 带冒号前缀（pypi:requests / npm:lodash）→ 显式指定，最高优先
-#   - 带斜杠（@scope/pkg、github.com/a/b）→ npm 或 Go
-#   - 纯 CVE 编号 → 不是包名，走 nvd 更合适，这里诚实返回空
-_OSV_ECOSYSTEM_PREFIX: dict[str, str] = {
-    "pypi": "PyPI", "npm": "npm", "go": "Go", "crates": "crates.io",
-    "cargo": "crates.io", "maven": "Maven", "nuget": "NuGet",
-    "packagist": "Packagist", "composer": "Packagist",
-    "rubygems": "RubyGems", "gem": "RubyGems", "hex": "Hex",
-}
-
-# 这些包名在 npm 生态里比 PyPI 更常见，优先按 npm 查（同日名包不同生态）
-_OSV_NPM_HINTS: frozenset[str] = frozenset({
-    "lodash", "react", "vue", "express", "axios", "next", "webpack",
-    "typescript", "eslint", "vite", "jest", "moment", "jquery", "angular",
-    "svelte", "nuxt", "rollup", "babel", "prettier", "cheerio", "socket.io",
-})
-
-_OSV_GO_HINTS: frozenset[str] = frozenset({
-    "golang.org/x/net", "golang.org/x/crypto", "golang.org/x/text",
-    "github.com/gin-gonic/gin", "github.com/gorilla/websocket",
-})
-
-
-def _osv_resolve_ecosystem(query: str) -> tuple[str, str]:
-    """把查询词解析成 (包名, OSV 生态)。解析不出时按 PyPI 兜底。
-
-    返回生态名而非空串：OSV 对缺失 ecosystem 的请求返回 400，兜底比报错好——
-    但会在结果里注明按哪个生态查的，避免「查了但查的是别的生态」这种静默偏差。
-    """
-    q = (query or "").strip()
-    if ":" in q:
-        head, _, tail = q.partition(":")
-        eco = _OSV_ECOSYSTEM_PREFIX.get(head.strip().lower())
-        if eco and tail.strip():
-            return tail.strip(), eco
-    name = q
-    if name.startswith("@") or "/" in name:
-        # npm scoped（@scope/pkg）或 Go module 路径
-        if name.startswith("@"):
-            return name, "npm"
-        if name.startswith(("github.com/", "gitlab.com/", "golang.org/")):
-            return name, "Go"
-        return name, "npm"
-    if name.lower() in _OSV_NPM_HINTS:
-        return name, "npm"
-    if name.lower() in _OSV_GO_HINTS:
-        return name, "Go"
-    return name, "PyPI"
-
-
-def _build_osv_engine(spec: dict[str, Any]) -> Any:
-    """OSV.dev 漏洞查询（按包名，POST /v1/query；免 key、免限次）。"""
-    timeout = spec.get("timeout", 15)
-
-    @safe_search
-    def _engine(query: str, n: int = 5, _timeout: float | None = None,
-                **kwargs) -> list[dict[str, Any]]:
-        to = _timeout or timeout
-        q = (query or "").strip()
-        if not q:
-            return []
-        # CVE 编号不是包名：OSV 查不到，交给 nvd（避免给出误导性的空结果）
-        if re.match(r"^CVE-\d{4}-\d{4,}$", q, re.I):
-            logger.info("osv: %s 是 CVE 编号而非包名，建议用 nvd 引擎", q)
-            return []
-        pkg, eco = _osv_resolve_ecosystem(q)
-        body = json.dumps({"package": {"name": pkg, "ecosystem": eco}}).encode("utf-8")
-        req = urllib.request.Request(
-            "https://api.osv.dev/v1/query", data=body,
-            headers={"Content-Type": "application/json"})
-        try:
-            with http_open(req, timeout=to, engine=spec.get("_name", "")) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except Exception as e:
-            logger.warning(f"OSV 失败: {e}")
-            return []
-        results = []
-        for i, v in enumerate((data.get("vulns") or [])[:n]):
-            vid = str(v.get("id") or "").strip()
-            if not vid:
-                continue
-            summary = str(v.get("summary") or "").strip()
-            # 影响版本：OSV 的 affected[].ranges 是版本区间，摘要里给出区间
-            # 比只给「有漏洞」有用得多（能判断自己是否受影响）
-            affected_bits = []
-            for aff in (v.get("affected") or [])[:2]:
-                if not isinstance(aff, dict):
-                    continue
-                for rng in (aff.get("ranges") or [])[:2]:
-                    if not isinstance(rng, dict):
-                        continue
-                    events = rng.get("events") or []
-                    introduced = next((e.get("introduced") for e in events
-                                       if isinstance(e, dict) and e.get("introduced")), "")
-                    fixed = next((e.get("fixed") for e in events
-                                  if isinstance(e, dict) and e.get("fixed")), "")
-                    if introduced or fixed:
-                        affected_bits.append(
-                            f"{introduced or '?'} ≤ 受影响 < {fixed or '未修复'}")
-            aliases = [a for a in (v.get("aliases") or []) if a][:3]
-            snippet = " · ".join(p for p in (
-                summary,
-                f"生态 {eco}",
-                affected_bits[0] if affected_bits else "",
-                " ".join(aliases),
-            ) if p)[:300]
-            results.append({
-                # 标题带生态：同名包在不同生态是不同软件，标清楚避免误读
-                "title": f"{vid} [{eco}] {summary}"[:500] or vid,
-                "url": f"https://osv.dev/vulnerability/{vid}",
-                "snippet": snippet,
-                "source": "osv",
-                "published_at": str(v.get("published") or "")[:10],
-                "score": rank_score(0.85, i),
-            })
-        return results
-    return _engine
-
-
 # ── TinEye 反向图片搜索（以图搜图，免 key）────────────────────────────────
 
 def _build_tineye_engine(spec: dict[str, Any]) -> Any:
-    """TinEye 反向图片搜索（公开 JSON 端点，免 key）。
-
-    填补的空白：argo 此前没有任何反搜图能力——通用网页引擎只吃文字查询，
-    「这张图出自哪里 / 谁在用这张图 / 图片最早出现在哪」一类问题无源可查。
-    TinEye 以图片指纹检索其历史索引，返回出现过该图的页面。
-
-    用法约束：**query 必须是公网图片 URL（http(s):// 开头）**，不是关键词——
-    本引擎不做关键词搜索。喂文字查询返回带提示的 error 记录（模型能从
-    提示里纠正用法），诚实失败优于空结果或瞎猜。
-
-    端点 GET https://tineye.com/api/v1/result_json/?url={image_url}，
-    响应 matches[]：{image_url, domain, score(0-100 相似度), width, height,
-    backlinks[]: {url(图片地址), backlink(出现该图的页面), crawl_date}}
-    （字段名与 SearXNG 适配器/SAC_search tineye.ts 一致）。
-    """
+    """TinEye 反向图片搜索（公开 JSON 端点，免 key）。"""
     timeout = spec.get("timeout", 15)
 
     @safe_search
@@ -1379,7 +1239,6 @@ def _build_tineye_engine(spec: dict[str, Any]) -> Any:
             return [{"error": "tineye: 反搜图引擎要喂图片 URL（http(s):// 开头）"
                               f"作为查询，收到的是关键词「{q[:50]}」",
                      "source": "tineye"}]
-        # 图片 URL 里的 ://?& 必须整体编码，否则会被当成 query 参数边界
         u = ("https://tineye.com/api/v1/result_json/?url="
              + urllib.parse.quote(q, safe=""))
         raw = _http_get_raw(u, {"Accept": "application/json"}, to,
@@ -1400,8 +1259,6 @@ def _build_tineye_engine(spec: dict[str, Any]) -> Any:
                 break
             if not isinstance(m, dict):
                 continue
-            # 一个 match 可带多个 backlink（同一图多次收录）：取第一个有
-            # 页面地址的；同一页面被多个 match 命中时只保留首条
             bl = next((b for b in (m.get("backlinks") or [])
                        if isinstance(b, dict) and (b.get("backlink") or b.get("url"))), None)
             if not bl:
@@ -1426,8 +1283,6 @@ def _build_tineye_engine(spec: dict[str, Any]) -> Any:
                 f"{w}x{h}" if w and h else "",
                 f"收录 {crawl[:10]}" if crawl else "",
             ) if b]
-            # TinEye score 是 0-100 相似度：归一到 0-1 当档位分再做序位衰减；
-            # 上游没给分（0）时退固定档位，避免 0 分被下游当无效分
             base = min(sim / 100.0, 1.0) if sim > 0 else 0.7
             results.append({
                 "title": (domain or "TinEye 图片匹配")[:120],
@@ -1451,20 +1306,7 @@ def _build_tineye_engine(spec: dict[str, Any]) -> Any:
 # ── Bing RSS 通用网页搜索（免 key，稳定备胎）─────────────────────────────
 
 def _build_bing_rss_engine(spec: dict[str, Any]) -> Any:
-    """Bing 网页搜索 RSS 出口（免 key、免 HTML 解析的稳定备胎）。
-
-    与 local_bing 的分工：local_bing 解析结果页 HTML，Bing 一改版式就
-    全军覆没（argo 历史上 local_bing 因改版多次返工），且 HTML 路径对
-    反爬更敏感；本引擎走 Bing 官方 format=rss 出口——字段语义由 RSS 2.0
-    规范保证，没有版式可变，作为 local_bing 被改版/风控打断时的兜底源。
-    代价：单页结果少（≤20 条）、不支持 setlang/mkt 本地化参数，中文场景
-    优先 local_bing，这里保底；两者可同跑互补。
-
-    GET https://www.bing.com/search?q={q}&format=rss&count={n≤20}，
-    RSS item 的 title/link/description/pubDate；description 里的 HTML
-    标签剥掉。pubDate 是 RFC 822（如 Wed, 24 Sep 2026 08:00:00 GMT），
-    解析失败原样透传，不丢时间信息。
-    """
+    """Bing 网页搜索 RSS 出口（免 key、免 HTML 解析的稳定备胎）。"""
     timeout = spec.get("timeout", 10)
 
     @safe_search
@@ -1479,16 +1321,11 @@ def _build_bing_rss_engine(spec: dict[str, Any]) -> Any:
                             to, engine=spec.get("_name", ""))
         if not raw:
             return []
-        # 编码已由统一 GET 出口按 utf-8 errors=replace 解码；声明行剥掉——
-        # 带 encoding 声明的 str 会被 ET.fromstring 拒收，且声明里的编码
-        # 与解码后的实际内容已无关
         text = re.sub(r"^\s*<\?xml[^>]*\?>", "", raw.strip())
         try:
             root = ET.fromstring(text)
         except ET.ParseError:
             return []
-        # .//item 不依赖 channel 层级；item 标签本身无命名空间（rss 的
-        # xmlns 声明只修饰带前缀的扩展元素，不影响普通子标签查找）
         out: list[dict[str, Any]] = []
         for i, item in enumerate(root.findall(".//item")[:max(1, int(n))]):
             title = (item.findtext("title") or "").strip()
@@ -1515,101 +1352,3 @@ def _build_bing_rss_engine(spec: dict[str, Any]) -> Any:
         return out
     return _engine
 
-
-# ── CISA KEV 已知在野利用漏洞（免 key，全量文件 + 本地过滤）──────────────
-
-# 全量目录的进程内缓存。KEV 全量 1.35MB / 1710 条，上游不支持查询参数，
-# 每次调用都要整份下载——而同一会话里连问几个 CVE 是常态。
-# 只在**同一进程内**缓存（MCP 常驻进程受益最大；CLI 单发场景自然不命中），
-# TTL 6 小时：CISA 的新增节奏是「每周几次」，6 小时足够新鲜且能省下重复下载。
-_KEV_CACHE: dict[str, Any] = {"at": 0.0, "items": None}
-_KEV_TTL_S = 6 * 3600
-
-
-def _kev_load(timeout: float) -> list[dict[str, Any]]:
-    """取 KEV 全量条目（带进程内 TTL 缓存）；失败返回空列表。"""
-    now = time.time()
-    cached = _KEV_CACHE.get("items")
-    if cached and (now - float(_KEV_CACHE.get("at") or 0)) < _KEV_TTL_S:
-        return cached
-    req = urllib.request.Request(
-        "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
-        headers={"User-Agent": "argo-search/1.0 (+cisa-kev)", "Accept": "application/json"})
-    try:
-        with http_open(req, timeout=timeout, engine="cisa_kev") as resp:
-            data = json.loads(resp.read().decode("utf-8", "replace"))
-    except Exception as e:
-        logger.warning(f"CISA KEV 失败: {e}")
-        return cached or []
-    items = data.get("vulnerabilities") or []
-    if not isinstance(items, list):
-        return cached or []
-    _KEV_CACHE["items"] = items
-    _KEV_CACHE["at"] = now
-    return items
-
-
-def _build_cisa_kev_engine(spec: dict[str, Any]) -> Any:
-    """CISA KEV 在野利用漏洞目录（本地过滤全量目录）。"""
-    timeout = spec.get("timeout", 30)
-
-    @safe_search
-    def _engine(query: str, n: int = 5, _timeout: float | None = None,
-                **kwargs) -> list[dict[str, Any]]:
-        to = _timeout or timeout
-        q = (query or "").strip()
-        if not q:
-            return []
-        items = _kev_load(to)
-        if not items:
-            return []
-        # 查询是 CVE 编号时**只认 ID 精确匹配**：KEV 条目之间会互相引用
-        # （CVE-2021-45046 的 description 里就写着 CVE-2021-44228），
-        # 用纯子串匹配会把「提到它」的条目也算命中，排序后甚至排在正主前面
-        # ——实测查 CVE-2021-44228 首条返回的是 45046，属明确错误答案。
-        cve_q = q.upper() if re.match(r"^CVE-\d{4}-\d{4,}$", q.strip(), re.I) else ""
-        matched = []
-        for v in items:
-            if not isinstance(v, dict):
-                continue
-            if cve_q:
-                if str(v.get("cveID") or "").strip().upper() == cve_q:
-                    matched.append(v)
-                continue
-            # 多词查询按「全部词都命中」过滤（AND），比 OR 精确：
-            # 「chrome type confusion」这类组合能直接定位到具体那条
-            terms = [t for t in re.split(r"[\s,]+", q.lower()) if t]
-            hay = " ".join(str(v.get(k) or "") for k in (
-                "cveID", "vendorProject", "product", "vulnerabilityName",
-                "shortDescription", "requiredAction", "cwes")).lower()
-            if all(t in hay for t in terms):
-                matched.append(v)
-        # 最近的排在前面（dateAdded 是 ISO 日期，字符串比较即可）
-        matched.sort(key=lambda x: str(x.get("dateAdded") or ""), reverse=True)
-        results = []
-        for i, v in enumerate(matched[:n]):
-            cve = str(v.get("cveID") or "").strip()
-            if not cve:
-                continue
-            vendor = str(v.get("vendorProject") or "").strip()
-            product = str(v.get("product") or "").strip()
-            name = str(v.get("vulnerabilityName") or "").strip()
-            desc = str(v.get("shortDescription") or "").strip()
-            due = str(v.get("dueDate") or "").strip()
-            ransom = str(v.get("knownRansomwareCampaignUse") or "").strip()
-            bits = [b for b in (
-                f"{vendor} {product}".strip(),
-                f"修复期限 {due}" if due else "",
-                "已知勒索软件利用" if ransom.lower() == "known" else "",
-                desc,
-            ) if b]
-            results.append({
-                "title": f"{cve} — {name or product or vendor}"[:500],
-                "url": f"https://www.cisa.gov/known-exploited-vulnerabilities-catalog",
-                "snippet": " · ".join(bits)[:300],
-                "source": "cisa_kev",
-                "published_at": str(v.get("dateAdded") or "")[:10],
-                "score": rank_score(0.9, i),
-            })
-        return results
-    return _engine

@@ -149,8 +149,6 @@ from engines_builders import (
     _build_twitter_syndication_engine,
     _build_deps_dev_engine,
     _build_endoflife_engine,
-    _build_osv_engine,
-    _build_cisa_kev_engine,
     _build_biorxiv_engine,
     _build_un_comtrade_engine,
     _build_uniprot_engine,
@@ -430,8 +428,6 @@ _BUILDERS = {
     "twitter_syndication": _build_twitter_syndication_engine,
     "deps_dev": _build_deps_dev_engine,
     "endoflife": _build_endoflife_engine,
-    "osv": _build_osv_engine,
-    "cisa_kev": _build_cisa_kev_engine,
     "biorxiv": _build_biorxiv_engine,
     "un_comtrade": _build_un_comtrade_engine,
     "em_global_news": _build_em_global_news_engine,
@@ -621,6 +617,12 @@ def _load_registry():
         return
     cfg = load_config()
     engines = get_engines(cfg)
+    # 本地个性化引擎插件（不随公开仓库提交）
+    try:
+        from local_engines import register as _register_local
+        _register_local(_BUILDERS, engines)
+    except ImportError:
+        pass
     registry = {}
     for name, spec in engines.items():
         spec = dict(spec)

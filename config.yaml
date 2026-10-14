@@ -338,8 +338,6 @@ domains:
   engines_combo:
   - nvd
   - anysearch
-  - osv
-  - cisa_kev
   - crt_sh
   fallback: anysearch
   name: security_search
