@@ -140,7 +140,14 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "2026-10-08 +2：traceability 评分接入快速路径"
               "（score_traceability 调用 + 权重调整 0.40→0.35/0.35→0.30）"),
     "scripts/search_pipeline.py": (
-        1030, "搜索编排主管线（路由→分派→融合→恢复→漏斗输出）；"
+        1033, "搜索编排主管线（路由→分派→融合→恢复→漏斗输出）；"
+              "基线 1029（距原登记 1030 仅 1 行余量），"
+              "2026-10-15 +3：finalize 的 usage_log 接入引擎级耗时归因"
+              "（+1 import usage_log_attribution、+1 行接线注释、"
+              "+1 行 **usage_log_attribution(engine_latency) 展开）；"
+              "归因的提取/聚合/字段构造三件事全部落在新模块 "
+              "search_attribution.py，本文件只留一行调用点"
+              "（与 L0 拆 recovery_l0 同一手法）；"
               "2026-09-30 +2：恢复链与变体召回补透传 --domain/--sub_domain"
               "（用户域约束此前被两条辅路旁路）+ variant_recalled/phrase_dropped"
               " 观测补账（变体条目不进漏斗 returned 口径，不补账会出现"

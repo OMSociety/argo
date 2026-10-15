@@ -24,21 +24,39 @@ class TestGeneralFreeSingleSource(unittest.TestCase):
         from recovery import _GENERAL_FREE_COMBO
         self.assertEqual(tuple(_GENERAL_FREE_COMBO), GENERAL_FREE_FALLBACK)
 
-    def test_route_fallback_local_first(self):
+    def test_route_fallback_general_first(self):
         from engine_policy import GENERAL_FREE_FALLBACK
         from route import _general_fallback
         # 取样集合从唯一来源推导，不写死名单：名单增删时这条守的是
-        # 「本地优先 + 顺序与来源一致」这个契约，而不是某天的某个快照。
+        # 「通用源领队 + local_search 殿后 + 顺序与来源一致」这个契约，
+        # 而不是某天的某个快照。领队者是 local_search 会踩 combo_budget=2 的
+        # 截断（见 route_combo._general_fallback docstring 的实测）。
         enabled = {"local_search", "github"} | set(GENERAL_FREE_FALLBACK)
         fb = _general_fallback(enabled)
-        self.assertEqual(fb[0], "local_search")
-        self.assertEqual(fb[1:], list(GENERAL_FREE_FALLBACK))
+        self.assertEqual(fb[0], "anysearch")
+        self.assertEqual(fb[:len(GENERAL_FREE_FALLBACK)], list(GENERAL_FREE_FALLBACK))
+        self.assertEqual(fb[-1], "local_search")
+        self.assertNotIn("local_search", fb[:2],
+                         "预算截断后 local_search 不得进入前 2 位")
         self.assertNotIn("github", fb)
 
     def test_route_fallback_filters_disabled(self):
         from route import _general_fallback
+        # 禁用项剔除，启用项保持清单顺序且 local_search 殿后。
         fb = _general_fallback({"local_search", "anysearch"})
-        self.assertEqual(fb, ["local_search", "anysearch"])
+        self.assertEqual(fb, ["anysearch", "local_search"])
+
+    def test_route_fallback_local_search_respects_enabled(self):
+        """local_search 不在 enabled（未注册/被禁）时不得被兜底选中。"""
+        from route import _general_fallback
+        fb = _general_fallback({"anysearch", "local_bing"})
+        self.assertEqual(fb, ["anysearch", "local_bing"])
+        self.assertNotIn("local_search", fb)
+
+    def test_route_fallback_local_survives_when_general_gone(self):
+        """最坏面：通用源全部不可用时，本地检索仍是最后一道保底。"""
+        from route import _general_fallback
+        self.assertEqual(_general_fallback({"local_search"}), ["local_search"])
 
 
 class TestRuntimeHealthView(unittest.TestCase):

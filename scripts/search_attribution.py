@@ -1,0 +1,88 @@
+"""search_attribution.py — 引擎级耗时归因（可观测性，不参与检索决策）。
+
+为什么独立成模块：主管线 search_pipeline.py 已到模块大小门禁的祖父上限
+（1030 行，见 tests/test_module_size_gate.py），归因逻辑塞进它会让
+`test_grandfathered_files_do_not_grow` 变红——门禁要的是「拆」，不是
+「把数字往上抬」。抽出来同时得到一件好事：提取与聚合都是纯函数，可以
+脱离编排单测，不必构造 _SearchRun 才能验证。
+
+它解决的问题（2026-10-15 实录）：usage_log 的 query 流此前只记
+engines_used（谁参与了），不记各自花了多久，于是「哪个源吃掉了这次查询」
+只能靠人离线重算日志——1059 条真实查询的瓶颈（local_search 独跑 109 次、
+占全部墙钟 369s）就是这样翻出来的。engine_latency 本来就在编排里，
+把它按「谁最慢」取前 N 写进日志，瓶颈就该由系统自己报出来。
+
+口径说明：engine_latency[eng] 是**单个引擎自身的耗时**，并发时它可能大于
+整次查询的墙钟（elapsed_ms）——这不是错误，是「并行等待」的正常形态，
+排序与归因只看相对大小，不与之做减法。
+"""
+
+from __future__ import annotations
+
+from typing import Any, Iterable
+
+# 写进日志的慢源条数：日志是 append-only JSONL，超限会回缩，
+# 慢源恒在前排，Top-3 足够定位瓶颈而不必留全量底。
+DEFAULT_TOP_N = 3
+
+
+def top_engine_latency(engine_latency: dict[str, Any] | None,
+                       top_n: int = DEFAULT_TOP_N) -> list[list[Any]]:
+    """把 {引擎: 耗时ms} 取最慢 top_n，输出 [[引擎, 耗时ms], ...]（降序）。
+
+    紧凑成二元组而非对象：日志每行只多 ~60B，且读侧一眼可读。
+    非数值耗时（None / 字符串 / NaN 形态）一律跳过——归因字段不该因为
+    一个畸形引擎把整条日志写崩（写入侧还有 SHAPE_BENIGN 兜底，双保险）。
+    稳定排序键含引擎名，保证同耗时引擎的次序在重复运行间确定。
+    """
+    if not engine_latency:
+        return []
+    pairs = [(e, round(v)) for e, v in engine_latency.items()
+             if isinstance(v, (int, float)) and not isinstance(v, bool)]
+    pairs.sort(key=lambda kv: (-kv[1], str(kv[0])))
+    return [[e, v] for e, v in pairs[:max(0, int(top_n))]]
+
+
+def usage_log_attribution(engine_latency: dict[str, Any] | None,
+                          top_n: int = DEFAULT_TOP_N) -> dict[str, Any]:
+    """usage_log query 流的归因字段（当前只有引擎耗时 Top-N）。
+
+    返回 dict 以便调用方 **展开进日志记录**，未来新增归因维度（如
+    「等待预算被谁耗掉」「缓存未命中的原因分布」）时只扩这里，
+    主管线那一行 `**usage_log_attribution(...)` 不动——归因是会长大的，
+    写入点不该跟着长（主管线有模块大小门禁，见模块 docstring）。
+    """
+    return {"engine_latency_top": top_engine_latency(engine_latency, top_n)}
+
+
+def aggregate_slow_engines(rows: Iterable[dict[str, Any]],
+                           top_n: int = 5) -> list[dict[str, Any]]:
+    """聚合多行日志的 engine_latency_top → 按累计耗时的慢源排行。
+
+    `argo stats` 的读出口：单条日志能说「这次谁慢」，聚合才能说
+    「长期是谁在拖」。畸形条目（长度不对 / 非数值耗时 / 非序列）整体跳过，
+    读侧面对历史日志里可能存在的旧格式必须 fail-soft。
+    """
+    total: dict[str, int] = {}
+    peak: dict[str, int] = {}
+    hits: dict[str, int] = {}
+    for row in rows:
+        entries = row.get("engine_latency_top")
+        # 标量/None 都不是可迭代的条目表：历史日志或未来换格式都必须 fail-soft，
+        # 不能因为一行脏数据让整个 `argo stats` 崩掉（契约见模块 docstring）。
+        if not isinstance(entries, (list, tuple)):
+            continue
+        for item in entries:
+            if not (isinstance(item, (list, tuple)) and len(item) == 2):
+                continue
+            eng, ms = item
+            if not isinstance(eng, str) or not isinstance(ms, (int, float)) \
+                    or isinstance(ms, bool):
+                continue
+            total[eng] = total.get(eng, 0) + int(ms)
+            peak[eng] = max(peak.get(eng, 0), int(ms))
+            hits[eng] = hits.get(eng, 0) + 1
+    ranked = sorted(total.items(), key=lambda kv: (-kv[1], kv[0]))
+    return [{"engine": e, "total_ms": t, "max_ms": peak.get(e, 0),
+             "queries": hits.get(e, 0)}
+            for e, t in ranked[:max(0, int(top_n))]]

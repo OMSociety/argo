@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import usage_log  # noqa: E402
 from cli_io import dumps  # noqa: E402
+from search_attribution import aggregate_slow_engines  # noqa: E402
 
 
 def _query_summary(n: int) -> dict:
@@ -32,6 +33,10 @@ def _query_summary(n: int) -> dict:
     counts = [r.get("count", 0) for r in rows]
     lat = [r.get("elapsed_ms") for r in rows if isinstance(r.get("elapsed_ms"), (int, float))]
     engines: Counter = Counter()
+    # 引擎级耗时归因（2026-10-15）：query 流新增 engine_latency_top，
+    # 这里按「慢源累计耗时」排序，把「长期是谁在拖」直接摆到 stats 上——
+    # 此前只能离线重算日志（local_search 独跑占 369s 就是这么翻出来的）。
+    # 聚合是纯函数，住 search_attribution（与写侧同一份口径真源）。
     for r in rows:
         for e in (r.get("engines_used") or [])[:8]:
             engines[e] += 1
@@ -41,6 +46,7 @@ def _query_summary(n: int) -> dict:
         "avg_elapsed_ms": round(sum(lat) / len(lat)) if lat else None,
         "recovered": sum(1 for r in rows if r.get("recovered")),
         "top_engines": engines.most_common(5),
+        "slowest_engines": aggregate_slow_engines(rows),
         "recent": [
             {"query": r.get("query"), "count": r.get("count"),
              "elapsed_ms": r.get("elapsed_ms")}

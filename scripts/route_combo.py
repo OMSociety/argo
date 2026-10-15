@@ -81,16 +81,29 @@ def _expand_local_search(engine_list: list[str], features: dict | None = None) -
 
 
 def _general_fallback(enabled: set[str]) -> list[str]:
-    """本地优先 + 通用免费源保底（清单唯一来源 engine_policy.GENERAL_FREE_FALLBACK）。
+    """通用免费源领队 + 本地检索保底（清单唯一来源 engine_policy.GENERAL_FREE_FALLBACK）。
 
-    域内引擎全被过滤 / 无匹配域时的回退组合：先 local_search（展开成本地子引擎），
-    再通用免费源。清单与 recovery L3 共用同一常量，避免两处清单漂移。
+    域内引擎全被过滤 / 无匹配域时的回退组合。通用免费源在前、local_search 殿后，
+    清单与 recovery L3 共用同一常量，避免两处清单漂移。
+
+    local_search 殿后而非领队（2026-10-15 实测定案）：日常档 combo_budget=2
+    （见 engine_policy.combo_budget，fast/auto+fast 都只取前 2 位），
+    `_expand_local_search` 又把展开出的本地子引擎**追加尾部**——它一旦占住前排，
+    尾部子引擎必被预算截断，只剩 local_search 聚合器**独跑**。1059 条真实查询里
+    它独跑 109 次、中位 2.9s、45% 超 3s，占全部查询墙钟 369s，而其中纯英文
+    技术查询（"zig comptime explained" 类）占 82%——本地文件检索对这类 query
+    语义上无效，纯亏延迟。改为通用源领队后：常规查询直接落 anysearch/local_bing
+    （实测 ~1.1-1.7s），local_search 只在通用源全部不可用（熔断/配额耗尽）时
+    才顶上前预算位，本地检索能力不减，只是不再无条件霸占首轮。
     """
     try:
         from engine_policy import GENERAL_FREE_FALLBACK
     except ImportError:
         GENERAL_FREE_FALLBACK = ("anysearch", "local_bing")
-    return ["local_search"] + [e for e in GENERAL_FREE_FALLBACK if e in enabled]
+    lead = [e for e in GENERAL_FREE_FALLBACK if e in enabled]
+    # 保底项同样受 enabled 约束：不在 enabled 说明本机压根没注册/被禁用，
+    # 选它只会在执行层撞 "未知引擎" 空跑。
+    return lead + (["local_search"] if "local_search" in enabled else [])
 
 
 def _breaker_blocked(engine_id: str) -> bool:

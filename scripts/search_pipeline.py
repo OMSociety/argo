@@ -56,6 +56,7 @@ from engine_env import env_flag
 from variant_recall import augment_with_variants
 from phrase_filter import apply_phrase_filter, extract_phrases
 from except_sets import OPT_IMPORT, SHAPE_BENIGN
+from search_attribution import usage_log_attribution
 from search_output import _collect_errors, _slow_query_ttl, build_funnel
 from search_rank import (
     _LANG_SCRIPT,
@@ -941,11 +942,13 @@ def finalize(req: _SearchRequest, run: _SearchRun, hooks: Any) -> dict[str, Any]
     # 本函数（finalize）不在其作用域内，直接引用会 NameError。
     if req.emit_usage_log is not None:
         try:
+            # 引擎级耗时归因（2026-10-15 起）：写在 search_attribution，本处只接线。
             req.emit_usage_log("query", {
                 "query": (query[:60] if query else query),
                 "count": len(merged),
                 "elapsed_ms": round(elapsed),
                 "engines_used": list(raw_results.keys())[:8],
+                **usage_log_attribution(engine_latency),
                 "errors": len(_collect_errors(raw_results, engine_outcomes)),
                 "recovered": bool(recovery_info.get("recovered")) if recovery_info else False,
                 "early_stopped": bool(early_stopped),
