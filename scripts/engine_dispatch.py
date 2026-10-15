@@ -59,8 +59,34 @@ _CONTRIBUTING_STATUS = frozenset({"ok", "ok-cached", "partial"})
 # 并发上限的兜底值 = 原硬编码的 3。配置缺失 / 非法 / 读不到时用它，
 # 保证「接上配置」这件事不会改变任何既有环境下的行为。
 _DEFAULT_MAX_PARALLEL = 3
-# deep 模式要多铺几个源，值得付更高并发；其余模式沿用默认值。
+# deep 模式要多铺几个源，值得付更高并发；其余模式沿用配置值。
+# 它现在是**下限**而不是定值：配置调到 6 时 deep 若仍是 5，就成了
+# 「深研比日常还收得更紧」，与这行的本意相反（B-4 并发 3→6 时暴露）。
 _DEEP_MAX_PARALLEL = 5
+# 并发上限的环境覆盖（对拍 / 运维应急）。config.yaml 是唯一真源，但 A/B
+# 要求**同一份代码、逐对交错**切换取值——改配置文件做不到交错（每对都要
+# 重写文件+失效配置磁盘缓存），而「后跑的一组系统性偏慢」在本仓造过 37%
+# 的假阳性。取值非法/<=0 时回落配置，不报错：旋钮是加速器不是依赖。
+_MAX_PARALLEL_ENV = "ARGO_MAX_PARALLEL_ENGINES"
+
+
+def _configured_max_parallel() -> int:
+    try:
+        import os
+        raw = os.environ.get(_MAX_PARALLEL_ENV, "").strip()
+        if raw:
+            n = int(raw)
+            if n >= 1:
+                return n
+    except (ValueError, TypeError):
+        pass
+    try:
+        from config import get_execution_config
+        n = int(get_execution_config().get("max_parallel_engines",
+                                           _DEFAULT_MAX_PARALLEL))
+    except Exception:
+        return _DEFAULT_MAX_PARALLEL
+    return n if n >= 1 else _DEFAULT_MAX_PARALLEL
 
 
 def _max_parallel_engines(*, depth: str | None = None) -> int:
@@ -71,17 +97,13 @@ def _max_parallel_engines(*, depth: str | None = None) -> int:
     调度用的是 engine_dispatch 里写死的 3：改配置不生效，且没有任何提示。
     调参的人只会得出「改了没用」的结论，不会想到代码没读它。
 
-    deep 模式不受配置限制（深研要证据覆盖，优先墙钟），但仍保底 1。
+    deep 模式取「配置值与 _DEEP_MAX_PARALLEL 的较大者」：深研要证据覆盖、
+    优先墙钟，只保证不比日常档更保守，不再压下配置。
     """
+    n = _configured_max_parallel()
     if depth == "deep":
-        return _DEEP_MAX_PARALLEL
-    try:
-        from config import get_execution_config
-        n = int(get_execution_config().get("max_parallel_engines",
-                                           _DEFAULT_MAX_PARALLEL))
-    except Exception:
-        return _DEFAULT_MAX_PARALLEL
-    return n if n >= 1 else _DEFAULT_MAX_PARALLEL
+        return max(_DEEP_MAX_PARALLEL, n)
+    return n
 
 
 def _adaptive_grace(engine: str, base_grace_s: float) -> float:
@@ -237,6 +259,7 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
                  deep_budget_s: float | None = None,
                  primary_grace_s: float,
                  straggler_grace_s: float = 1.5,
+                 straggler_tail_fn: Callable[[str, float], float] | None = None,
                  serial_stagger_s: float = 0.8,
                  engine_domain: str | None = None,
                  engine_sub_domain: str | None = None) -> DispatchResult:
@@ -731,7 +754,8 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
                              stop: Callable[[str, list[dict[str, Any]]], bool] | None = None,
                              stagger_s: float = 0.0,
                              start_before_s: float | None = None,
-                             tail_grace_s: float = 0.0) -> bool:
+                             tail_grace_s: float = 0.0,
+                             tail_grace_fn: Callable[[str], float] | None = None) -> bool:
         """并发跑一组引擎（≤3 并发），等待上限 wait_s 秒；返回是否已「够用」。
 
         `stop(eng, goods)` 是某引擎完成后的收工判据，返回真即立刻收尾返回。
@@ -753,6 +777,15 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
         「一个能交付的东西都没有」是两种处境——后者值得等，前者已经可以
         收工。与 wave-1 竞速分支的 `_STRAGGLER_GRACE_S` 同一语义、同一开关
         （`ARGO_STRAGGLER_GRACE_S=0` 可整体关闭做消融对照）。
+
+        `tail_grace_fn(eng)`（可选）：把上面的固定尾宽换成**按引擎分层**的
+        尾宽（2026-10-16，ARGO_ADAPTIVE_TAIL 控制，见
+        straggler_policy.straggler_tail）。
+        在首个交付时刻对**还没回来的引擎**（在跑的 + 还没起步的，含队列里等
+        stagger 的）逐个取值、取最保守的那个（max）：尾宽治理的是「还等不
+        等没回来的引擎」，判据自然该由没回来的那些引擎的历史速度决定，而
+        不是由刚交付的那个决定。无 fn 或取值抛错时逐位退回固定
+        tail_grace_s（旧行为）。
 
         为什么不用 ThreadPoolExecutor：它的 `with` 退出会
         `shutdown(wait=True)` 并 join 所有已提交任务，把「超时即返回」的语义
@@ -799,7 +832,28 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
                     return True
                 if goods and tail_grace_s > 0.0:
                     # 有东西可交付了：剩余等待收窄到宽限窗（只收紧一次，不回扩）
-                    deadline = min(deadline, _now() + tail_grace_s)
+                    tail = tail_grace_s
+                    if tail_grace_fn is not None:
+                        # 分层尾宽：按**还没回来的引擎**（在跑的 + 还没起步的）
+                        # 各自的历史 P75 取值，取最保守（最长）的那个。不能只
+                        # 看 pending——首个交付时刻 backup 常常还在队列里等
+                        # stagger 起步（2026-10-16 实测：只算 pending 时分层
+                        # 从不生效，墙钟与固定尾宽无异）。慢源不值得等，但不
+                        # 因为「有个更慢的在场」把快源也提前埋掉。fn 抛错/无
+                        # 数据由 fn 自身 fail-open 回 base。
+                        try:
+                            # gate 关（预算耗尽不再起新引擎）时，队列里的
+                            # 条目永远不会起步——把它们算进「还没回来」
+                            # 只会把分层尾宽被死条目拉长，方向反了。
+                            startable = (list(queue)
+                                         if gate is None or _now() < gate else [])
+                            waiting = ([e for _h, _t, e in pending] + startable)
+                            if waiting:
+                                tail = max(tail_grace_fn(e, tail_grace_s)
+                                           for e in waiting)
+                        except Exception:
+                            tail = tail_grace_s
+                    deadline = min(deadline, _now() + max(0.0, tail))
             if not progressed and not started:
                 if not pending:
                     break  # 队列里还有引擎，但起步闸门已关：没有下一步了
@@ -860,7 +914,8 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
                 to_run[:2], race_wait,
                 stop=None if no_early else _wave1_stop,
                 stagger_s=grace,
-                tail_grace_s=straggler_grace_s):
+                tail_grace_s=straggler_grace_s,
+                tail_grace_fn=straggler_tail_fn):
             early_stopped = True
         # 第 3 个及之后的引擎归 wave-2（竞速是 2 匹马的比赛，再多的交给
         # 累计充分性判定批量补全）
@@ -880,7 +935,8 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
             # 这段空等）。守卫本身不被绕过：累计充分性仍按原判据
             # 判定，尾宽只约束「拒绝早停后的最长空等」。
             if _run_engines_bounded(rest, w2_wait, stop=_cumulative_stop,
-                                        tail_grace_s=straggler_grace_s):
+                                        tail_grace_s=straggler_grace_s,
+                tail_grace_fn=straggler_tail_fn):
                 early_stopped = True
     elif parallel and to_run:
         # 全量并行（depth=deep，或 mode 不在 fast/auto/budget 内）：没有早停判据，
@@ -935,7 +991,8 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
                                 stop=_serial_stop if allow_early else None,
                                 stagger_s=stagger,
                                 start_before_s=_start_before,
-                                tail_grace_s=straggler_grace_s):
+                                tail_grace_s=straggler_grace_s,
+                tail_grace_fn=straggler_tail_fn):
             early_stopped = True
 
 

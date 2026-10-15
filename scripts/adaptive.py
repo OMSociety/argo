@@ -300,6 +300,13 @@ class AdaptiveLearner:
         不动」的自适应窗，见 engine_dispatch._adaptive_grace。只做读侧，不缓存
         ——每次编排至多一次查询（窗口内样本量小，全量取回后本地排序，免去依赖
         SQLite 版本的 percentile 扩展）。
+
+        调用次数说明（2026-10-16 修订）：此处原文写「每次编排至多一次」，
+        随 straggler_policy.straggler_tail 接入后不再成立——分层尾宽会在
+        每次交付时刻对「还没回来的引擎」逐个取值（2 引擎编排约 1 次，多引
+        擎编排最坏 ≈ 各次交付的 waiting 数之和）。默认关（ARGO_ADAPTIVE_TAIL）
+        时不发生；开启后每引擎每次约 0.07ms（实测 200 次调用 warm），代价
+        相对引擎 RTT 可忽略，但判「多不多」时按这个口径，别按旧句子。
         """
         if not engine:
             return None

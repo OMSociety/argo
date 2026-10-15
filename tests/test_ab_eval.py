@@ -87,3 +87,61 @@ def test_spaced_query_reaches_cmd_as_single_arg():
     pair = report["per_pair"][0]
     assert pair["a"]["ok"] and pair["b"]["ok"], (pair["a"], pair["b"])
     assert pair["a"]["count"] == 1  # 完整查询串是唯一 argv，未被拆散
+
+
+# ── 尾判据（B-4）：p90 / max，而不是中位 ────────────────────────────────────
+#
+# 为什么必须补这一档：中位由最快的那个引擎决定，把并发从 3 提到 6 只可能动
+# 尾部。中位纹丝不动而 p90 翻倍的改动，只看 median_diff / 符号检验会被放行。
+
+def test_percentile_nearest_rank_takes_observed_sample():
+    assert ab_eval.percentile_nearest_rank(list(range(1, 11)), 0.9) == 9
+    assert ab_eval.percentile_nearest_rank(list(range(1, 11)), 0.5) == 5
+    assert ab_eval.percentile_nearest_rank([42.0], 0.9) == 42.0
+    assert ab_eval.percentile_nearest_rank([], 0.9) is None
+    # 最近秩只取**真实观测到的样本**，不做插值：n=10 时 statistics.quantiles
+    # 的 p90 会插出 370 这种从未出现过的值，而 400 是 max 不是 p90。
+    assert ab_eval.percentile_nearest_rank([100] * 9 + [400], 0.9) == 100
+
+
+def test_tail_verdict_passes_small_noise():
+    a = [100] * 10
+    b = [100] * 9 + [120]        # 唯一一个极值 +20%，p90 未动
+    v = ab_eval.tail_verdict(a, b)
+    assert v["passed"] is True, v["reason"]
+    assert v["p90_a_ms"] == 100 and v["p90_b_ms"] == 100
+    assert v["max_ratio"] == 1.2
+
+
+def test_tail_verdict_flags_p90_regression_only():
+    a = [100] * 10
+    b = [100] * 8 + [115, 115]   # p90 +15%（超 10% 容忍），max 仍在 25% 内
+    v = ab_eval.tail_verdict(a, b)
+    assert v["passed"] is False
+    assert "p90" in v["reason"] and "max" not in v["reason"]
+    assert v["p90_ratio"] == 1.15 and v["max_ratio"] == 1.15
+
+
+def test_tail_verdict_flags_max_regression():
+    a = [100] * 10
+    b = [100] * 9 + [900]        # 尾点：p90=100 未动，max ×9
+    v = ab_eval.tail_verdict(a, b)
+    assert v["passed"] is False
+    assert "max" in v["reason"]
+    assert v["p90_ratio"] == 1.0
+
+
+def test_tail_verdict_needs_samples():
+    v = ab_eval.tail_verdict([], [])
+    assert v["passed"] is False
+    assert "样本不足" in v["reason"]
+
+
+def test_evaluate_stats_expose_tail_fields():
+    report = ab_eval.evaluate(_fake_cmd(100), _fake_cmd(300), "q",
+                              pairs=3, seed=1, keep_usage=False)
+    s = report["stats"]
+    assert s["p90_a_ms"] == 100 and s["p90_b_ms"] == 300
+    assert s["max_a_ms"] == 100 and s["max_b_ms"] == 300
+    assert s["p90_ratio"] == 3.0
+    assert s["tail_verdict"]["passed"] is False  # B 慢 3 倍，尾判据必须拦住

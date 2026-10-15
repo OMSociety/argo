@@ -63,6 +63,9 @@ LOG_NAME = "daemon.log"
 POINTER_NAME = ".daemon_sock"  # 指针文件：落 bin/argo 可预测的缓存根，内容=真实 socket 路径
 MARKER_NAME = ".daemon_autostart"  # 自启节流文件：落 _cache_root()
 MAX_REQ_BYTES = 1 << 20  # 单请求上限 1MB（args 很小，此值纯防失控）
+# 发送侧超时的兜底值（客户端未在请求里带 send_timeout 时的旧客户端路径）。
+# 正常路径由客户端按自己的 ARGO_DAEMON_TIMEOUT+5 下达，见 handle()。
+_SEND_TIMEOUT_S = 300.0
 
 # 可执行脚本白名单（键=客户端传的 script 名，值=runpy 模块名）。
 # 与 bin/argo.scripts 同源收窄：daemon 只收 CLI 映射表里真实存在的目标，
@@ -435,6 +438,17 @@ class _Server:
                         resp = {"ok": False, "error": f"未知 op: {op!r}"}
                 except Exception as e:
                     resp = {"ok": False, "error": f"{type(e).__name__}: {e}"}
+            # sendall 用的超时与 recv 的那把（60s）分开，且以**客户端声明
+            # 的预算**为准：一笔 run 超过 60s 时 sendall 抛 socket.timeout
+            # 会丢响应、逼客户端冷跑重来（同一查询双跑双计，2026-10-16 审查
+            # 发现）。请求里的 send_timeout 由客户端按自己的
+            # ARGO_DAEMON_TIMEOUT+5 填——服务端任何固定值都猜不到用户把
+            # 客户端等限调到了多大；缺失（旧客户端）时回退模块常量。
+            try:
+                _send_tmo = float(req.get("send_timeout"))
+            except (TypeError, ValueError):
+                _send_tmo = _SEND_TIMEOUT_S
+            conn.settimeout(_send_tmo if _send_tmo > 0 else None)
             conn.sendall((json.dumps(resp, ensure_ascii=False) + "\n").encode("utf-8"))
         except OSError:
             pass  # 客户端超时先走：响应丢弃即可，引擎侧照常完成

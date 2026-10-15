@@ -119,11 +119,18 @@ def _load_yaml(path: Path) -> dict[str, Any]:
             return {}
 
 
-_CACHE_INSTANCE: tuple[str, Any] | None = None
+_CACHE_INSTANCE: tuple[tuple[str, Any], Any] | None = None
 
 
 def _get_search_cache() -> Any:
-    """按当前 db_path 记忆化 SearchCache 实例（防进程内每次调用重新建连 + 跑 4 条 PRAGMA）。"""
+    """按当前 db_path 记忆化 SearchCache 实例（防进程内每次调用重新建连 + 跑 4 条 PRAGMA）。
+
+    记忆化键 = (db_path, SearchCache 类对象本身)：db_path 变（ARGO_STATE_DIR
+    切换）或 SearchCache 符号被替换（测试 monkeypatch、未来热替换）时都必须
+    重建。只认 db_path 的那一版在类被换掉后仍返回旧实例——测试注入的假缓存
+    永远轮不上号（test_local_cache_quality 两条顺序依赖红测的根因），生产上
+    任何「同进程内替换缓存实现」的演化也会静默拿到旧对象。
+    """
     global _CACHE_INSTANCE
     if SearchCache is None:
         return None
@@ -132,10 +139,11 @@ def _get_search_cache() -> Any:
         db_p = str(argo_paths.db_path())
     except Exception:
         db_p = ""
-    if _CACHE_INSTANCE is not None and _CACHE_INSTANCE[0] == db_p:
+    key = (db_p, SearchCache)
+    if _CACHE_INSTANCE is not None and _CACHE_INSTANCE[0] == key:
         return _CACHE_INSTANCE[1]
     inst = SearchCache()
-    _CACHE_INSTANCE = (db_p, inst)
+    _CACHE_INSTANCE = (key, inst)
     return inst
 
 

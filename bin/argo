@@ -310,7 +310,11 @@ def _daemon_run(rest, py="") -> bool:
     try:
         import socket
         req = {"op": "run", "script": "search", "args": rest,
-               "cwd": os.getcwd(), "env": _daemon_env()}
+               "cwd": os.getcwd(), "env": _daemon_env(),
+               # 客户端自己的等待预算随请求下达：daemon 的发送超时以它为准
+               # （服务端的固定值不可能知道用户把 ARGO_DAEMON_TIMEOUT 调到
+               # 多大——硬编码 300s 会在 deep 长查询上复发「响应被丢 → 双跑」）。
+               "send_timeout": tmo + 5}
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
             s.settimeout(tmo + 5)

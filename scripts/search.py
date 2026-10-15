@@ -494,6 +494,8 @@ from stage_timing import (  # noqa: E402
     tick as _tick,
     tock as _tock,
 )
+# 尾宽分层策略（纯函数，拆出理由见 straggler_policy 模块头）
+from straggler_policy import straggler_tail  # noqa: E402
 
 
 def execute_search(query: str, decision: dict[str, Any], max_results: int,
@@ -518,6 +520,7 @@ def execute_search(query: str, decision: dict[str, Any], max_results: int,
         deep_budget_s=_deep_budget_s(),
         primary_grace_s=_PRIMARY_GRACE_S,
         straggler_grace_s=_straggler_grace(),
+        straggler_tail_fn=straggler_tail,
         serial_stagger_s=_serial_stagger(),
     )
     prepared = prepare(query, decision, max_results, timeout, depth, cache,

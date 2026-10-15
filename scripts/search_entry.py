@@ -78,6 +78,9 @@ class _SearchHooks:
     straggler_grace_s: float
     serial_stagger_s: float
     deep_budget_s: float | None = None
+    # 尾宽分层函数（可选，默认 None = 固定尾宽）：dataclass 默认值字段只能
+    # 排在无默认值字段之后，故放在末尾。
+    straggler_tail_fn: Callable[[str, float], float] | None = None
 
 
 @dataclass(frozen=True)
@@ -333,6 +336,7 @@ def dispatch(req: _SearchRequest, run: _SearchRun, hooks: _SearchHooks) -> _Sear
         deep_budget_s=hooks.deep_budget_s,
         primary_grace_s=hooks.primary_grace_s,
         straggler_grace_s=hooks.straggler_grace_s,
+        straggler_tail_fn=hooks.straggler_tail_fn,
         serial_stagger_s=hooks.serial_stagger_s,
         engine_domain=req.engine_domain,
         engine_sub_domain=req.engine_sub_domain,

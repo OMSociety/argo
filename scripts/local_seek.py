@@ -53,8 +53,14 @@ _OWN_INSTALL_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 # 本地文件命中缓存：key = (query, max_n, target) → (写入时间, 结果列表)。
 # 文件修改后 TTL 内可能返回旧结果，对本地文件搜索可接受（文件不频繁修改）。
 # 容量上限 64 条，超出时整表清空（低频增强项，LRU 的简单替代）。
+#
+# TTL 300s → 3600s（2026-10-15，B-4）：本地文件命中是「同一台机器上重复问
+# 同一件事」的增强项，5 分钟的窗在日常用法里几乎等于没有缓存——改一次笔记
+# 之后再问同一个问题，命中率主要被 TTL 而不是被内容变化决定。代价是文件改
+# 动后最长 1 小时可能返回旧命中，本地文件搜索可接受（与落盘缓存同一取舍，
+# 两者共用这个常量才不会再分叉）。
 _LOCAL_SEEK_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
-_LOCAL_SEEK_TTL_S = 300.0
+_LOCAL_SEEK_TTL_S = 3600.0
 _LOCAL_SEEK_CACHE_MAX = 64
 
 # H2：seek 模块按解析后真实路径缓存（importlib 显式文件定位，不占通用
@@ -76,8 +82,8 @@ def get_local_seek_executor():
 
 # H3：跨进程落盘缓存。CLI 每次新进程，进程内缓存救不了 CLI 重复查询；
 # 落盘缓存让 TTL 内的重复查询（同 query+dir+max）零成本。陈旧语义与
-# 进程内缓存一致（300s TTL——文件不频繁修改场景可接受）。写侧原子替换
-# + 全异常吞掉：缓存永不破坏搜索。
+# 进程内缓存一致，**共用 `_LOCAL_SEEK_TTL_S`（现 3600s）**——两处各写一个字
+# 面量正是它们会分叉的原因。写侧原子替换 + 全异常吞掉：缓存永不破坏搜索。
 _SEEK_DISK_CACHE_MAX = 64
 # 条目形状版本：跨版本改 results 条目字段时，TTL 内的旧形状条目按 miss 处理
 _SEEK_DISK_SCHEMA = 1

@@ -735,16 +735,31 @@ def bucket_n(engine: str, n: int) -> int:
     return 100
 
 
-def _call_key(query: str, engine: str, n: int, kwargs: dict[str, Any]) -> str:
+def _call_key(query: str, engine: str, n: int, kwargs: dict[str, Any],
+              *, timeout: float | None = None, depth: str = "fast",
+              mode: str = "fast") -> str:
     """单飞 key：同 query+engine+参数指纹才合并（时间窗/域等影响结果参数
-    必须进 key，否则不同检索被错误合并）。"""
+    必须进 key，否则不同检索被错误合并）。
+
+    2026-10-15 补齐：depth / mode / timeout 同样决定结果，此前只经闭包进
+    `_execute`、没进 key —— 跨档位并发被错误合并：deep 请求可能拿到 fast
+    的结果集（反向亦然，且 follower 还会继承 leader 的 timeout）。三者入 key
+    是治本，不是给合并器打补丁。
+    """
     import json as _json
     try:
         params = _json.dumps(kwargs, sort_keys=True, ensure_ascii=False,
                              default=str)
     except Exception:
         params = str(sorted(kwargs.items()))
-    return f"{engine}|{n}|{query}|{params}"
+    # timeout 归一化：8 与 8.0 是同一次执行，不该分裂成两个 key
+    if timeout is None or isinstance(timeout, bool):
+        to_seg = str(timeout)
+    elif isinstance(timeout, (int, float)):
+        to_seg = f"{float(timeout):g}"
+    else:
+        to_seg = str(timeout)
+    return f"{engine}|{n}|{query}|{params}|{depth}|{mode}|{to_seg}"
 
 
 def search(query: str, engine: str, n: int = 5, timeout: float = 8, depth: str = "fast", mode: str = "fast", **kwargs) -> list[dict[str, Any]]:
@@ -766,7 +781,6 @@ def search(query: str, engine: str, n: int = 5, timeout: float = 8, depth: str =
         # 实体型引擎：自然语言句（疑问前缀/属性词）会让实体搜索接口空结果
         query = _entity_core_query(query)
     eff_n = bucket_n(engine, n)
-    key = _call_key(query, engine, eff_n, kwargs)
 
     # 引擎自声明 timeout 是该源的硬上限（此前被调用方 timeout 位置传参整体
     # 覆盖成死配置——OSM timeout:6 实测跑出 10s+5s curl 守卫 11.3s）。
@@ -776,6 +790,11 @@ def search(query: str, engine: str, n: int = 5, timeout: float = 8, depth: str =
     call_to = timeout
     if mode != "deep" and isinstance(st, (int, float)) and 0 < st < timeout:
         call_to = float(st)
+
+    # key 用 call_to（实际执行时的超时）而非调用方声明的 timeout：被 spec
+    # 夹到同一上限的两次调用是同一执行，应共享单飞而不是白拆两份。
+    key = _call_key(query, engine, eff_n, kwargs,
+                    timeout=call_to, depth=depth, mode=mode)
 
     def _execute() -> list[dict[str, Any]]:
         t0 = time.time()

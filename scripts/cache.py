@@ -11,12 +11,11 @@ cache.py — Unified Search v2 双层缓存引擎
 
 from __future__ import annotations
 
-import functools
+import contextlib
 import gzip
 import hashlib
 import json
 import os
-import re
 import threading
 import time
 from collections import OrderedDict
@@ -76,7 +75,6 @@ SAME_DAY_ELIGIBLE_TIERS = {"research", "evergreen"}
 
 # 时效敏感查询硬上限（秒）— 覆盖 domain 误分到 general 的情况
 REALTIME_TTL_CAP = 900
-FRESHNESS_QUERY_RE = None  # 延迟编译，见 is_freshness_sensitive_query
 
 # query domain → TTL tier 映射
 DOMAIN_TIER_MAP = {
@@ -167,132 +165,21 @@ DOMAIN_TIER_MAP = {
 }
 
 
-@functools.lru_cache(maxsize=4096)
-def normalize_query(query: str) -> str:
-    """缓存键用查询归一化：折叠空白、全半角空格、两端 trim、小写英文字母。
-
-    不改变语义实体大小写敏感场景时仍用 lower；中文不受影响。
-    目标：同一问句不同空白/大小写命中同一 key。
-    """
-    if not query:
-        return ""
-    # 全角空格 → 半角；连续空白折叠
-    q = query.replace("\u3000", " ").strip()
-    q = re.sub(r"\s+", " ", q)
-    return q.casefold()
-
-
-# ── 近重复查询检测（minhash 字符 n-gram）────────────────────────────────────
-
-_NGRAM_N = 3
-# 置换数。**看起来偏低，但不要单独调它**——它与下游软命中阈值 0.7 是一套
-# 标定，动一个必须同时重标另一个，否则会把「检索上一年的缓存」放进来。
-#
-# 2026-09-19 实测记录（起因是「提到 32 更准」，结论是**保持 8 不改**）：
-# K=8 的估计确实有偏且方差大——四条中文对的真实 Jaccard 是
-# 0.275/0.444/0.500/0.375，K=8 估成 0.250/0.750/0.375/0.375（最大误差 0.306，
-# 双向发散）；换 32 后为 0.281/0.438/0.562/0.375，明显贴住真值。
-# 成本也不是障碍：`_signature` 带 lru_cache，比对是逐位比较（实测 0.41us/次，
-# 不随 K 变），提高 K 只增加一次性签名成本（K=8:0.171ms、K=32:0.832ms 每条
-# 查询，相对 1000–3000ms 的单次搜索可忽略）。
-#
-# 拦路石在**阈值**：0.7 正是照着 K=8 的偏高估计定的（下方 find_similar 的
-# docstring 写「单字差异约 0.75」，而真值只有 0.444）。把 K 提到 32 后，要维持
-# 原有软命中范围就得把阈值降到 ~0.35，而实测该阈值下
-#     苹果 2025 营收 ↔ 苹果 2024 营收 = 0.469 ≥ 0.35 → 命中
-# 即「今年的查询会命中去年的缓存」。这比「估计偏一点」严重得多——软命中的
-# 前提是结果集可互换，年份不同则不可互换。两侧一起保持原状。
-#
-# 要走这条路，正确顺序是先换能区分数字/年份的判据（词级或数字感知 shingle），
-# 再重标阈值；单独提 K 只是把偏差从「估计层」搬到「阈值层」。
-_MINHASH_PERM = 8  # 置换数（越多越准，越少越快；8 对查询级足够）
-
-
-def _ngrams(s: str, n: int = _NGRAM_N) -> set[str]:
-    """字符级 n-gram（中文按字，英文按字符，无需分词）。"""
-    s = re.sub(r"\s+", "", s)
-    return {s[i:i + n] for i in range(max(len(s) - n + 1, 1))}
-
-
-def _hash_token(t: str, seed: int) -> int:
-    """带种子的简单哈希（minhash 置换模拟）。"""
-    h = seed * 1315423911
-    for c in t:
-        h = (h ^ ord(c)) * 1099511628211 & 0xFFFFFFFFFFFFFFFF
-    return h
-
-
-@functools.lru_cache(maxsize=8192)
-def _signature(s: str) -> tuple[int, ...]:
-    """查询的 minhash 签名：每个置换下全部 n-gram 的最小哈希。
-
-    这是「查询 → 签名」的纯函数，按查询串记忆化。提出来的意义在于：
-    `query_similarity(q1, q2)` 会被拿去和缓存里**多条**候选比对，旧写法每次
-    都重算两边的签名——一次搜索实测 28,552 次 `_hash_token` 调用，绝大多数
-    是同一批 token 的重复置换。签名化后每条查询的签名全进程只算一次，
-    且比对本身从 O(K × |tokens|) 降到 O(K)（K=置换数=8）。
-    长驻进程（MCP server）里同一查询反复比对时收益为常数级。
-    """
-    grams = _ngrams(s)
-    if not grams:
-        return ()
-    return tuple(min(_hash_token(t, seed) for t in grams)
-                 for seed in range(_MINHASH_PERM))
-
-
-def query_similarity(q1: str, q2: str) -> float:
-    """两查询的字符 n-gram minhash 近似 Jaccard 相似度（0-1）。
-
-    中文「苹果 2025 营收」vs「苹果 2025 年营收」这类近重复查询
-    会得到高相似度（>0.7），用于语义缓存软命中。
-
-    实现 = 两个签名逐位置相等的比例（minhash 估计 Jaccard 的标准做法）。
-    """
-    a = _signature(q1)
-    b = _signature(q2)
-    if not a or not b:
-        return 0.0
-    hits = sum(1 for x, y in zip(a, b) if x == y)
-    return hits / _MINHASH_PERM
-
-
-# 结构化限定符（keywords:pi-package / site:zhihu.com / author:bcoe）。
-# 值里不含 `/` 是刻意的：URL 的 `https:` 因此不被当成限定符——fetch/evidence
-# 的 URL 近重复软命中（`.../x` 与 `.../x.md`，相似度 0.875）是既有的正确
-# 行为，不能被这次修复误伤。键以字母开头则排除 `10:30` 这类时间写法。
-_QUALIFIER_RE = re.compile(r"\b[A-Za-z][A-Za-z0-9_.-]*:[A-Za-z0-9_*.+-]+")
-
-
-def split_qualifiers(query: str) -> tuple[frozenset[str], str]:
-    """把查询拆成（限定符集合，载荷）。
-
-    限定符是**过滤器**而不是内容：两条查询的限定符集合不同，结果全集就不同，
-    再高的词面相似度也不构成可互换的理由。
-
-    为什么要拆：字符 n-gram 相似度会被长公共前缀主导。实测
-    `keywords:pi-package mcp` 与 `keywords:pi-package memory` 整串相似度
-    0.875（远超 0.7 阈值），而判别词只占几个字符——两条不同的检索需求被判成
-    近重复，软命中把 memory 的结果当成 mcp 的结果交了出去（2026-09-18 修复）。
-    拆开后比的是载荷（`mcp` vs `memory`，相似度 0.000），判据恢复有效。
-    """
-    text = query or ""
-    quals = frozenset(q.lower() for q in _QUALIFIER_RE.findall(text))
-    payload = re.sub(r"\s+", " ", _QUALIFIER_RE.sub(" ", text)).strip()
-    return quals, payload
-
-
-def is_freshness_sensitive_query(query: str) -> bool:
-    """检测查询是否时效敏感（今日/实时/盘中/快讯等）。"""
-    global FRESHNESS_QUERY_RE
-    if FRESHNESS_QUERY_RE is None:
-        FRESHNESS_QUERY_RE = re.compile(
-            r"(今日|今天|昨晚|昨夜|本周|本月|实时|即时|最新|刚刚|"
-            r"盘中|盘前|盘后|快讯|直播|热点新闻|头条|"
-            r"today|tonight|breaking|live\s*update|just\s*now|"
-            r"right\s*now|this\s*(morning|week|month))",
-            re.I,
-        )
-    return bool(FRESHNESS_QUERY_RE.search(query or ""))
+# ── 命中策略判据（2026-10-16 拆至 cache_similarity.py）─────────────────────────
+# 归一化 / minhash 相似度 / 限定符拆分 / 时效检测四件事整段搬走（判据层，
+# 零 IO）。此处 re-export：既有 `from cache import query_similarity` 等
+# import 点与 `monkeypatch.setattr(cache, ...)` 的测试面都保持不变——
+# 调用方经本模块全局名查找，patch 照常生效（拆模块老规矩，同 cache_guard）。
+from cache_similarity import (  # noqa: F401
+    _hash_token,
+    _MINHASH_PERM,
+    _ngrams,
+    _signature,
+    is_freshness_sensitive_query,
+    normalize_query,
+    query_similarity,
+    split_qualifiers,
+)
 
 
 # ── LRU 内存缓存 ───────────────────────────────────────────────────────────────
@@ -355,9 +242,18 @@ class SQLiteCache:
 
     SCHEMA_VERSION = 2
 
-    def __init__(self, db_path: str = DEFAULT_DB_PATH, ttl: int = DEFAULT_TTL):
+    def __init__(self, db_path: str = DEFAULT_DB_PATH, ttl: int = DEFAULT_TTL,
+                 max_size_mb: float | None = None):
         self._db_path = os.path.expanduser(db_path)
         self._ttl = ttl
+        # 驱逐阈值：显式参数 > 模块常量。**在 __init__ 取值而不是每次驱逐时读**，
+        # 这样测试 monkeypatch 模块常量（既有小库复现手法，见 test_cache_reclaim）
+        # 依然生效；生产侧的上限由 SearchCache 从 config.yaml 传下来。
+        self._max_size_mb = (float(max_size_mb)
+                             if isinstance(max_size_mb, (int, float))
+                             and not isinstance(max_size_mb, bool)
+                             and max_size_mb > 0
+                             else float(MAX_DB_SIZE_MB))
         self._lock = threading.RLock()
         self._hits = 0
         self._misses = 0
@@ -416,8 +312,44 @@ class SQLiteCache:
         conn.execute("PRAGMA synchronous=NORMAL")
         return conn
 
+    @contextlib.contextmanager
+    def _conn(self):
+        """借一个连接：出作用域提交/回滚，并把**自建**连接关掉。
+
+        为什么不是 `with self._connect() as conn:`：sqlite3 的连接上下文管理器
+        管的是**事务**（正常退出 commit、异常 rollback），它**不关连接**。于是
+        此前 9 处调用点每跑一次就新建并遗弃一条文件连接——进程内跑几千次缓存
+        操作就攒下几千个 fd，长驻 MCP 进程迟早撞上 ulimit（EMFILE），而报错点
+        会落在完全无关的 socket/文件调用上，极难归因。
+
+        这里把「作用域」补成真正的作用域语义：commit → close。异常时先
+        rollback 再关，事务状态不留半截。
+
+        `:memory:` 是**共享**连接（每次 connect(":memory:") 都是独立空库），
+        不能关——关掉等于把整层内存缓存作废。锁不在这里取：调用点有的持锁
+        （读改写路径）、有的不持（_evict_if_needed / size_mb 只读统计），
+        保持各自原语义。
+        """
+        conn = self._connect()
+        shared = conn is self._mem_conn
+        try:
+            yield conn
+            conn.commit()
+        except BaseException:
+            try:
+                conn.rollback()
+            except _get_sqlite3().Error:
+                pass
+            raise
+        finally:
+            if not shared:
+                try:
+                    conn.close()
+                except _get_sqlite3().Error:
+                    pass
+
     def _init_db(self):
-        with self._connect() as conn:
+        with self._conn() as conn:
             conn.executescript("""
                 CREATE TABLE IF NOT EXISTS search_cache (
                     key TEXT PRIMARY KEY,
@@ -494,7 +426,7 @@ class SQLiteCache:
         if self._degraded_reason is not None:
             return False
         with self._lock:
-            with self._connect() as conn:
+            with self._conn() as conn:
                 row = conn.execute(
                     "SELECT created_at, ttl FROM search_cache WHERE key = ?", (key,)
                 ).fetchone()
@@ -506,7 +438,7 @@ class SQLiteCache:
             self._misses += 1
             return None
         with self._lock:
-            with self._connect() as conn:
+            with self._conn() as conn:
                 row = conn.execute(
                     "SELECT value_blob, compressed, created_at, ttl FROM search_cache WHERE key = ?",
                     (key,),
@@ -535,7 +467,7 @@ class SQLiteCache:
             blob, compressed = self._serialize(value)
             now = time.time()
             effective_ttl = ttl if ttl is not None else self._ttl
-            with self._connect() as conn:
+            with self._conn() as conn:
                 conn.execute(
                     """INSERT OR REPLACE INTO search_cache
                        (key, query, engine, max_results, domain, mode, depth,
@@ -594,9 +526,13 @@ class SQLiteCache:
         实测线上 5521 行里 5444 行（98.6%）已过期、占 payload 的 98.3%。
         不回收不只是占盘——find_similar 与淘汰扫描都要扫过这些永不命中的行。
         按节流间隔回收，稳态每小时一次。
+
+        阈值口径（2026-10-15）：limit 取 `self._max_size_mb`（构造时定下），
+        不再直接读模块常量 MAX_DB_SIZE_MB——生产侧的上限现在来自 config.yaml
+        的 `cache.max_size_mb`，改配置真的会改行为。
         """
-        with self._connect() as conn:
-            limit_bytes = MAX_DB_SIZE_MB * 1024 * 1024
+        with self._conn() as conn:
+            limit_bytes = self._max_size_mb * 1024 * 1024
 
             # 三条触发各自独立，代价都是 O(1)：
             #   过期清扫（节流到每小时一次，因为它要全表扫）
@@ -652,7 +588,7 @@ class SQLiteCache:
             return
         with self._lock:
             cutoff = time.time() - older_than_hours * 3600
-            with self._connect() as conn:
+            with self._conn() as conn:
                 conn.execute("DELETE FROM search_cache WHERE created_at < ?", (cutoff,))
                 conn.commit()
 
@@ -706,7 +642,7 @@ class SQLiteCache:
             return []
         # engine 精确匹配（请求身份不同 → 结果不可互换，见上方 docstring）
         with self._lock:
-            with self._connect() as conn:
+            with self._conn() as conn:
                 rows = conn.execute(
                     "SELECT key, query, engine, domain, ttl, created_at "
                     "FROM search_cache "
@@ -757,7 +693,7 @@ class SQLiteCache:
                 "degraded_reason": self._degraded_reason,
             }
         with self._lock:
-            with self._connect() as conn:
+            with self._conn() as conn:
                 row = conn.execute("SELECT COUNT(*), SUM(LENGTH(value_blob)) FROM search_cache").fetchone()
             return {
                 "hits": self._hits,
@@ -775,7 +711,7 @@ class SQLiteCache:
         # 旧实现每次 `_evict_if_needed` 冷启动 21.4ms、温 10ms；新实现 <0.1ms。
         if self._degraded_reason is not None:
             return 0.0
-        with self._connect() as conn:
+        with self._conn() as conn:
             row = conn.execute(
                 "SELECT (SELECT page_count FROM pragma_page_count)"
                 "      * (SELECT page_size  FROM pragma_page_size)"
@@ -898,8 +834,14 @@ class SearchCache:
             # 未设置时才尊重 config 的显式配置。
             self._db_path = str(argo_paths.db_path())
         self._ttl = cfg.get("ttl", ttl)
+        # config.yaml 的 `cache.enabled` / `cache.max_size_mb` 此前是**死配置**：
+        # 两个键写在配置里、默认值也定义了，代码却从不读——关缓存关不掉、改上限
+        # 不生效，只能改源码。现在两处都接线（2026-10-15）。
+        self._enabled = bool(cfg.get("enabled", True))
+        self._max_size_mb = cfg.get("max_size_mb")
         self._l1 = LRUCache(max_size=MAX_MEMORY_ITEMS)
-        self._l2 = SQLiteCache(db_path=self._db_path, ttl=self._ttl)
+        self._l2 = SQLiteCache(db_path=self._db_path, ttl=self._ttl,
+                               max_size_mb=self._max_size_mb)
 
     @staticmethod
     def _key(query: str, engine: str, max_results: int = 0, domain: str = "general",
@@ -955,7 +897,22 @@ class SearchCache:
             return max(ttl, self._seconds_until_end_of_day())
         return ttl
 
+    def _disabled(self) -> bool:
+        """`cache.enabled: false` —— 整层缓存停用。
+
+        语义是「当没有缓存」而不是「有缓存但不写」：读恒 miss（每次调用都
+        真的去打上游）、写一律丢弃、不落盘。关掉写却不关读最危险——旧条目会
+        在 TTL 内继续被交付，用户以为「缓存已关」但拿到的仍是陈货。
+        """
+        return not self._enabled
+
+    @property
+    def enabled(self) -> bool:
+        return self._enabled
+
     def _read(self, key: str) -> Optional[dict]:
+        if self._disabled():
+            return None
         # 返回浅拷贝 + results 列表拷贝：缓存持有数据的所有权，下游对 results
         # 的原地改写（如 _engine 标记、rerank 字段）不得污染 store。
         # 实测：50KB payload 的 deepcopy 约 5-15ms，浅拷贝 <0.5ms。
@@ -983,6 +940,8 @@ class SearchCache:
     def _write(self, key: str, query: str, engine: str, max_results: int,
                value: dict, domain: str, ttl: int,
                mode: str = "", depth: str = "") -> None:
+        if self._disabled():
+            return
         payload = {**value, "_domain": domain, "_ttl": ttl, "_ts": time.time(),
                    "_max_results": max_results}
         self._l1.set(key, payload)
@@ -1009,6 +968,10 @@ class SearchCache:
             domain: str = "general", mode: str = "auto",
             depth: str = "fast") -> Optional[dict]:
         """先查 L1，未命中再查 L2。支持 depth 隔离 + max_results 柔性命中。"""
+        if self._disabled():
+            # 提前返回：_read 已被 guard 挡住，但下面的语义软命中会直接问 L2，
+            # 不在这里拦就会「读返回 None 却仍交出一条旧缓存」。
+            return None
         key = self._key(query, engine, max_results, domain, mode, depth, kind="combo")
         hit = self._read(key)
         if hit is None:
@@ -1314,10 +1277,21 @@ class SearchCache:
                 pass
 
     def clear(self, older_than_hours: int = 24):
+        if self._disabled():
+            return
         self._l2.clear(older_than_hours=older_than_hours)
 
     @property
     def stats(self) -> dict:
+        if self._disabled():
+            # 关缓存时命中断言恒为 0：报「0 命中率」比报一个没人写过的
+            # l1/l2 计数更解释得通（否则用户会以为缓存坏了）。
+            return {
+                "enabled": False,
+                "hits": 0, "misses": 0, "hit_rate": 0.0,
+                "size_mb": 0.0, "entries": 0,
+                "l1": self._l1.stats, "l2": self._l2.stats,
+            }
         l1 = self._l1.stats
         l2 = self._l2.stats
         # 一次 _read 就是一次查找：L1 交付即命中，L1 没交付（未命中或已过期）
@@ -1331,6 +1305,7 @@ class SearchCache:
         misses = l2["misses"]
         hits = lookups - misses
         return {
+            "enabled": True,
             "hits": hits,
             "misses": misses,
             "hit_rate": round(hits / max(lookups, 1), 3),
