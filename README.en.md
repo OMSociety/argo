@@ -24,7 +24,7 @@
 <p align="center">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-blue">
   <img alt="python" src="https://img.shields.io/badge/python-3.9+-green">
-  <img alt="version" src="https://img.shields.io/badge/version-2.9.3-informational">
+  <img alt="version" src="https://img.shields.io/badge/version-2.9.4-informational">
   <img alt="engines" src="https://img.shields.io/badge/engines-265-orange">
   <img alt="mcp" src="https://img.shields.io/badge/MCP-19%20tools-purple">
 </p>
@@ -153,7 +153,7 @@ Results include `selection`, `absorption`, `credibility_fast`, `evidence_flags`,
 
 ## Quick start
 
-Pick any path. **GitHub is the only install source of truth** (`npx github:taxueseek/argo` or `install.sh`); current recommendation **v2.9.3**. **Do not `npm install argo-search`** — the npm registry copy is an **unofficial stale v1.0.1** (not this repo, incomplete, not updated). This package sets `private: true` so it is not published to npm by mistake.
+Pick any path. **GitHub is the only install source of truth** (`npx github:taxueseek/argo` or `install.sh`); current recommendation **v2.9.4**. **Do not `npm install argo-search`** — the npm registry copy is an **unofficial stale v1.0.1** (not this repo, incomplete, not updated). This package sets `private: true` so it is not published to npm by mistake.
 
 **Zero-config works**: without API keys, free engines + local `local_*` engines run; keyed engines are skipped when missing (and usually better when present).
 
@@ -291,6 +291,7 @@ python3 scripts/search.py --list-engines
 
 ### Rough capability set (v2.9.3)
 
+- **Explicit engine domain attribution + recovery chain circuit-breaker + gate sync (new in v2.9.4)**: `--engine X` supplements `match_domains` domain determination, fixing cache TTL blanket-general; single-engine no-fallback skips L1 same-engine empty run; `config.yaml` domain rules enhanced (`org_entity` adds unless shareholder-diligence terms, `fund_query` adds unless policy-regulation terms); `mcp_launch.sh` env var export narrowed; local-search engine registry layer closure and quality improvement; gate sync (module_size_gate / ENGINE_CATALOG)
 - **Full X post packaging, `argo tweet` (new in v2.9.3)**: one command packs a given post's full text, thread/quote/repost context and engagement data; text-only by default, `--out` writes a 4-file bundle (post.md/raw.json/manifest.json/CHECKLIST.md), `--media` downloads images/videos on demand; failure reasons surface in the artifacts
 - **Browser login-state lane, `argo auth` (new in v2.9.3)**: `argo auth login/status/logout` keeps a persistent browser profile per site — scan the QR code once and login-required pages become fetchable; cookies stay in Chrome's own encrypted storage and never touch argo; login-state results are flagged `login_state_used` and excluded from the shared cache (enable with `ARGO_AUTH_FETCH`)
 - **Chinese local-chain quality + speed (new in v2.9.3)**: Sogou/Baidu redirect shells resolve to real URLs without a session, lifting kept results from 1 to 5; consensus grace adapts — the first engine delivering enough releases the wait, English dispatch ~3.0s→2.2-2.5s
@@ -510,6 +511,15 @@ argo/
 
 ## Recent updates
 
+### v2.9.4: Explicit engine domain attribution + recovery chain circuit-breaker + gate sync
+
+- `route.py`: explicit `--engine X` supplements `match_domains`, fixing cache TTL blanket-general
+- `recovery.py`: explicit single-engine no-fallback skips L1 same-engine empty run
+- `config.yaml`: `org_entity` adds unless shareholder-diligence terms; `fund_query` adds unless policy-regulation terms
+- `mcp_launch.sh`: `set -a` narrowed to `. "$ENV_FILE"` single line
+- `sub-skills/local-search/`: engine registry layer closure and search_v3 quality improvement
+- Gate sync: module_size_gate / ENGINE_CATALOG / domain_profiles.json baseline aligned
+
 ### v2.9.3: full X post packaging + browser login-state lane + local-chain quality/speed fixes
 
 - **New**: `argo tweet` — one command packs a given X post's full text, thread/quote/repost context and engagement data; text-only by default, `--out` writes a 4-file bundle (post.md/raw.json/manifest.json/CHECKLIST.md), `--media` downloads images/videos on demand; failure reasons surface in the artifacts
@@ -586,6 +596,7 @@ argo/
 
 | Version | Notes |
 |---------|-------|
+| **v2.9.4** | **Explicit engine domain attribution + recovery chain circuit-breaker + gate sync**: `--engine X` supplements `match_domains` fixing cache TTL blanket-general; single-engine no-fallback skips L1 empty run; `config.yaml` domain rules enhanced (org_entity/fund_query unless terms); `mcp_launch.sh` env var export narrowed; local-search engine registry layer closure and quality improvement; gate sync. |
 | **v2.9.3** | **Full X post packaging + browser login-state lane + local-chain quality/speed fixes**: new `argo tweet` (full text/thread/quotes/reposts/media packed on demand, `--out` 4-file bundle); new `argo auth` browser login-state lane (persistent per-site profile, cookies stay in Chrome's encrypted storage, login-state results excluded from the shared cache); Chinese local chain resolves Sogou/Baidu redirect shells session-free (kept 1→5) + adaptive consensus grace (English dispatch ~3.0s→2.2-2.5s); js-run wired as the fetch chain's first lane (Chrome-fingerprint retries); rail transfer/stopover queries (funnel 10→1 fixed to a faithful 10→10); `--academic-deep` one-flag academic deep-dive; 43 engines wired into domains + 3 keyless finance sources + intent-gate false-lock fix; local image fingerprints 158ms→3.9ms; agent-consumption slimming (MCP fixed overhead −32%). |
 | **v2.9.2** | **DSH 0.2.1-alpha.1 compatibility verified + routing/guard fixes + js-run sub-skill**: the DSH plugin's three forms verified enabled on the latest DSH 0.2.1-alpha.1; `argo mcp inject` adds WorkBuddy, covering a 7th host; TF-IDF weak-evidence demotion to auxiliary sources, dead-source floor + breaker slot backfill, quota-exhausted engine routing isolation, serp_guard collateral false-positive fixes; engines/evidence lazy imports (import −50%) and admission existence-set short-circuit (open 261→99); MCP entry and numeric-argument guards tightened; new js-run sub-skill (browser-free web JS, P50 ≈1ms). |
 | **v2.9.1** | **Content-quality optimization + content-farm resistance + latest-version adaptation**: improved content-quality assessment with better identification and filtering of low-quality bulk-generated content; adapted to the latest version for seamless operation; local search gained a self-install-tree guard so results are not polluted by argo's own source. |

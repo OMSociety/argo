@@ -24,7 +24,7 @@
 <p align="center">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-blue">
   <img alt="python" src="https://img.shields.io/badge/python-3.9+-green">
-  <img alt="version" src="https://img.shields.io/badge/version-2.9.3-informational">
+  <img alt="version" src="https://img.shields.io/badge/version-2.9.4-informational">
   <img alt="engines" src="https://img.shields.io/badge/engines-265-orange">
   <img alt="mcp" src="https://img.shields.io/badge/MCP-19%20tools-purple">
 </p>
@@ -153,7 +153,7 @@ composite  ≈ 0.40·selection + 0.35·absorption + 0.15·freshness + 0.10·engi
 
 ## 빠른 시작
 
-경로를 고르면 됩니다. **설치 진원은 GitHub뿐입니다**(`npx github:taxueseek/argo` 또는 `install.sh`); 현재 권장 **v2.9.3**. **`npm install argo-search`는 쓰지 마세요** — npm 레지스트리 사본은 **비공식 낡은 v1.0.1**(이 저장소가 아님, 기능 부족, 갱신 안 됨). 이 패키지는 `private: true`로 npm 오배포를 막습니다.
+경로를 고르면 됩니다. **설치 진원은 GitHub뿐입니다**(`npx github:taxueseek/argo` 또는 `install.sh`); 현재 권장 **v2.9.4**. **`npm install argo-search`는 쓰지 마세요** — npm 레지스트리 사본은 **비공식 낡은 v1.0.1**(이 저장소가 아님, 기능 부족, 갱신 안 됨). 이 패키지는 `private: true`로 npm 오배포를 막습니다.
 
 **제로 설정으로 동작**: API 키 없이도 무료 엔진 + 로컬 `local_*` 엔진이 돌고, 키 없는 엔진은 스킵됩니다(키가 있으면 보통 더 좋습니다).
 
@@ -333,6 +333,7 @@ python3 scripts/search.py --list-engines
 
 ### 대략적인 능력 세트 (v2.9.3)
 
+- **명시적 엔진 도메인 속성 + 복구 체인 차단기 + 게이트 동기화 (v2.9.4 신규)**: `--engine X` 시 `match_domains` 보충으로 캐시 TTL 일괄 일반화 수정; 단일 엔진에 대체 없으면 L1 빈 실행 건너뜀; `config.yaml` 도메인 규칙 강화; `mcp_launch.sh` 환경 변수 내보내기 축소; 로컬 검색 엔진 레지스트리 계층 폐쇄 및 품질 향상; 게이트 동기화(module_size_gate / ENGINE_CATALOG)
 - **X 게시물 완전 패키징 `argo tweet`(v2.9.3 신규)**: 한 번의 명령으로 지정 게시물의 전문·스레드/인용/리포스트·인터랙션 데이터를 패키징; 기본은 텍스트만, `--out`으로 4파일 세트(post.md/raw.json/manifest.json/CHECKLIST.md), `--media`로 이미지/동영상 필요 시 다운로드; 실패 원인은 산출물에 가시화
 - **브라우저 로그인 상태 레인 `argo auth`(v2.9.3 신규)**: `argo auth login/status/logout`가 사이트별 영구 브라우저 프로필을 유지 — QR을 한 번 스캔하면 로그인 필수 페이지도 가져올 수 있음; 쿠키는 Chrome 자체 암호화 저장소에만 보관되며 argo가 읽지 않음; 로그인 상태 결과에는 `login_state_used`를 붙여 공유 캐시에서 제외(`ARGO_AUTH_FETCH`로 활성화)
 - **중국어 로컬 체인 품질 + 속도(v2.9.3 신규)**: Sogou/Baidu 리다이렉트 껍질을 세션 없이 실제 URL로 해석해 보존 결과를 1→5건으로; 컨센서스 유예 적응화 — 충분히 전달한 첫 엔진으로 방출, 영어 디스패치 ~3.0s→2.2-2.5s
@@ -552,6 +553,15 @@ argo/
 
 ## 최근 업데이트
 
+### v2.9.4: 명시적 엔진 도메인 속성 + 복구 체인 차단기 + 게이트 동기화
+
+- `route.py`: `--engine X` 시 `match_domains` 보충으로 캐시 TTL 일괄 일반화 수정
+- `recovery.py`: 단일 엔진에 대체 없으면 L1 빈 실행 건너뜀
+- `config.yaml`: `org_entity`에 주주 실사 용어 추가; `fund_query`에 정책 법규 용어 추가
+- `mcp_launch.sh`: `set -a`를 `. "$ENV_FILE"` 한 줄로 축소
+- `sub-skills/local-search/`: 엔진 레지스트리 계층 폐쇄 및 search_v3 품질 향상
+- 게이트 동기화: module_size_gate / ENGINE_CATALOG 정합
+
 ### v2.9.3: X 게시물 완전 패키징 + 브라우저 로그인 상태 레인 + 로컬 체인 품질·속도 수정
 
 - **신규**: `argo tweet` — 한 번의 명령으로 지정 X 게시물의 전문·스레드/인용/리포스트·인터랙션 데이터를 패키징; 기본은 텍스트만, `--out`으로 4파일 세트(post.md/raw.json/manifest.json/CHECKLIST.md), `--media`로 이미지/동영상 필요 시 다운로드; 실패 원인은 산출물에 가시화
@@ -628,6 +638,7 @@ argo/
 
 | 버전 | 비고 |
 |---------|-------|
+| **v2.9.4** | **명시적 엔진 도메인 속성 + 복구 체인 차단기 + 게이트 동기화**: `--engine X` 시 `match_domains` 보충으로 캐시 TTL 일괄 일반화 수정; 단일 엔진에 대체 없으면 L1 빈 실행 건너뜀; `config.yaml` 도메인 규칙 강화; `mcp_launch.sh` 환경 변수 내보내기 축소; 로컬 검색 엔진 레지스트리 계층 폐쇄 및 품질 향상; 게이트 동기화. |
 | **v2.9.3** | **X 게시물 완전 패키징 + 브라우저 로그인 상태 레인 + 로컬 체인 품질·속도 수정**: 신규 `argo tweet`(전문/스레드/인용/리포스트/미디어를 필요에 따라 패키징, `--out` 4파일 세트); 신규 `argo auth` 브라우저 로그인 상태 레인(사이트별 영구 프로필, 쿠키는 Chrome의 암호화 저장소에만, 로그인 상태 결과는 공유 캐시 제외); 중국어 로컬 체인이 Sogou/Baidu 리다이렉트 껍질을 세션 없이 해석(보존 1→5) + 컨센서스 유예 적응화(영어 디스패치 ~3.0s→2.2-2.5s); js-run을 fetch 체인 첫 레인으로 접선(Chrome 핑거프린트 재시도); 철도 환승·경유 조회(퍼널 10→1을 실제대로 10→10으로 수정); `--academic-deep` 원플래그 학술 심층; 43개 엔진 도메인 배선 + 키 불필요 금융 소스 3건 + 인텐트 게이트 오잠금 수정; 로컬 이미지 핑거프린트 158ms→3.9ms; 에이전트 소비 슬림화(MCP 고정 오버헤드 −32%). |
 | **v2.9.2** | **DSH 0.2.1-alpha.1 호환 검증 + 라우팅/가드 수정 일괄 + js-run 서브 스킬**: DSH 플러그인 삼형태를 최신 DSH 0.2.1-alpha.1에서 실측 검증; `argo mcp inject`에 WorkBuddy를 추가해 7번째 호스트까지 지원; TF-IDF 약증거 보조 소스 강등, 죽은 소스 플로어 + 서킷 브레이커 슬롯 재충전, 쿼터 소진 엔진 라우팅 격리, serp_guard 연쇄 오탐 수정; engines/evidence 지연 임포트(import량 −50%)와 어드미션 존재 집합 단락(open 261→99); MCP 진입·수치 인자 가드 수습; js-run 서브 스킬 신규(브라우저 없이 웹 JS, P50 ≈1ms). |
 | **v2.9.1** | **콘텐츠 품질 최적화 + 콘텐츠 팜 대응 + 최신 버전 적응**: 콘텐츠 품질 평가를 최적화하여 저품질 대량 생성 콘텐츠 식별·필터링 능력 향상; 최신 버전에 적응해 원활한 협업 보장; 로컬 검색에 자체 설치 트리 가드를 추가해 결과가 자체 소스로 오염되지 않도록 방지. |

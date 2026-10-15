@@ -24,7 +24,7 @@
 <p align="center">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-blue">
   <img alt="python" src="https://img.shields.io/badge/python-3.9+-green">
-  <img alt="version" src="https://img.shields.io/badge/version-2.9.3-informational">
+  <img alt="version" src="https://img.shields.io/badge/version-2.9.4-informational">
   <img alt="engines" src="https://img.shields.io/badge/engines-265-orange">
   <img alt="mcp" src="https://img.shields.io/badge/MCP-19%20tools-purple">
 </p>
@@ -153,7 +153,7 @@ freshness  ≈ 公開時刻（「2015 年以来」のような歴史比較年は
 
 ## クイックスタート
 
-どれか 1 つで十分です。**インストールの来源は GitHub のみ**（`npx github:taxueseek/argo` または `install.sh`）、現在推奨 **v2.9.3**。**`npm install argo-search` は使わないでください**——npm registry 上のそれは**非公式の古い v1.0.1**（本リポジトリ外、機能不足、更新されない）。本パッケージは `private: true` で npm 誤公開を防ぎます。
+どれか 1 つで十分です。**インストールの来源は GitHub のみ**（`npx github:taxueseek/argo` または `install.sh`）、現在推奨 **v2.9.4**。**`npm install argo-search` は使わないでください**——npm registry 上のそれは**非公式の古い v1.0.1**（本リポジトリ外、機能不足、更新されない）。本パッケージは `private: true` で npm 誤公開を防ぎます。
 
 **ゼロ設定で動く**：API Key なしなら無料エンジン + ローカル `local_*`。Key があるソースは品質が上がりやすく、無いものは自動スキップ。
 
@@ -333,6 +333,7 @@ python3 scripts/search.py --list-engines
 
 ### 現時点の能力概要（v2.9.3）
 
+- **明示的エンジンドメイン帰属 + 回復チェーン遮断 + ゲート同期（v2.9.4 新規）**: `--engine X` で `match_domains` を補完しキャッシュ TTL 一般化を修正；単一エンジンでフォールバックなしの場合 L1 空実行をスキップ；`config.yaml` ドメインルール強化；`mcp_launch.sh` 環境変数エクスポートを收窄；ローカル検索エンジンレジストリ層の閉鎖と品質向上；ゲート同期（module_size_gate / ENGINE_CATALOG）
 - **X 投稿の完全パッケージ `argo tweet`（v2.9.3 新規）**：1 コマンドで指定投稿の全文・スレッド/引用/リポスト・インタラクションデータをパッケージ；デフォルトはテキストのみ、`--out` で 4 ファイル一式（post.md/raw.json/manifest.json/CHECKLIST.md）、`--media` で画像/動画を必要時にダウンロード；失敗理由は成果物に可視
 - **ブラウザログイン状態車道 `argo auth`（v2.9.3 新規）**：`argo auth login/status/logout` がサイト別の永続ブラウザプロファイルを保持 — QR を一度スキャンすればログイン必須ページも取得可能に；Cookie は Chrome 自身の暗号化ストレージにのみ保存され argo は読み出さない；ログイン状態の結果は `login_state_used` を付け共有キャッシュから除外（`ARGO_AUTH_FETCH` で有効化）
 - **中国語ローカルチェーンの質と速度（v2.9.3 新規）**：Sogou/Baidu のリダイレクト殻をセッションなしで実 URL に解決し、保持結果を 1→5 件へ；コンセンサス猶予が適応化 — 最初に十分届けたエンジンで放行、英語ディスパッチ ~3.0s→2.2-2.5s
@@ -552,6 +553,15 @@ argo/
 
 ## 最近の更新
 
+### v2.9.4: 明示的エンジンドメイン帰属 + 回復チェーン遮断 + ゲート同期
+
+- `route.py`: `--engine X` で `match_domains` を補完しキャッシュ TTL 一般化を修正
+- `recovery.py`: 単一エンジンでフォールバックなしの場合 L1 空実行をスキップ
+- `config.yaml`: `org_entity` に株主盡職調査語を追加；`fund_query` に政策法規語を追加
+- `mcp_launch.sh`: `set -a` を `. "$ENV_FILE"` 一行に收窄
+- `sub-skills/local-search/`: エンジンレジストリ層の閉鎖と search_v3 品質向上
+- ゲート同期: module_size_gate / ENGINE_CATALOG 整合
+
 ### v2.9.3：X 投稿の完全パッケージ + ブラウザログイン状態車道 + ローカルチェーンの質・速度修正
 
 - **新規**：`argo tweet` — 1 コマンドで指定 X 投稿の全文・スレッド/引用/リポスト・インタラクションデータをパッケージ；デフォルトはテキストのみ、`--out` で 4 ファイル一式（post.md/raw.json/manifest.json/CHECKLIST.md）、`--media` で画像/動画を必要時にダウンロード；失敗理由は成果物に可視
@@ -628,6 +638,7 @@ argo/
 
 | 版 | 内容 |
 |----|------|
+| **v2.9.4** | **明示的エンジンドメイン帰属 + 回復チェーン遮断 + ゲート同期**: `--engine X` で `match_domains` を補完しキャッシュ TTL 一般化を修正；単一エンジンでフォールバックなしの場合 L1 空実行をスキップ；`config.yaml` ドメインルール強化；`mcp_launch.sh` 環境変数エクスポートを收窄；ローカル検索エンジンレジストリ層の閉鎖と品質向上；ゲート同期。 |
 | **v2.9.3** | **X 投稿の完全パッケージ + ブラウザログイン状態車道 + ローカルチェーンの質・速度修正**：新規 `argo tweet`（全文/スレッド/引用/リポスト/メディアを必要時にパッケージ、`--out` で 4 ファイル一式）；新規 `argo auth` ブラウザログイン状態車道（サイト別永続プロファイル、Cookie は Chrome の暗号化ストレージのみ、ログイン状態の結果は共有キャッシュ除外）；中国語ローカルチェーンが Sogou/Baidu リダイレクト殻をセッションなしで解決（保持 1→5）+ コンセンサス猶予適応化（英語ディスパッチ ~3.0s→2.2-2.5s）；js-run を fetch チェーン第一車道に接線（Chrome フィンガープリント再試行）；鉄道乗り継ぎ・経停クエリ（ファンネル 10→1 を実態どおり 10→10 に修復）；`--academic-deep` ワンフラグ学術深掘り；43 エンジンのドメイン配線 + キー不要金融ソース 3 件 + インテントゲート誤ロック修正；ローカル画像フィンガープリント 158ms→3.9ms；エージェント消費スリム化（MCP 固定オーバーヘッド −32%）。 |
 | **v2.9.2** | **DSH 0.2.1-alpha.1 の適合検証 + ルーティング/ガード修正一括 + js-run サブスキル**：DSH プラグインの三形態を最新 DSH 0.2.1-alpha.1 で実検証；`argo mcp inject` に WorkBuddy を追加し 7 番目のホストまで対応；TF-IDF 弱証拠の補助源降格、死源フロア + サーキットブレーカー枠の再充填、クォータ枯渇エンジンのルーティング分離、serp_guard の巻き込み誤検知修正；engines/evidence 遅延インポート（import −50%）とアドミッション存在集合ショートカート（open 261→99）；MCP 入口と数値引数ガードの収口；js-run サブスキル新規追加（ブラウザなしでウェブ JS、P50 ≈1ms）。 |
 | **v2.9.1** | **コンテンツ品質の最適化 + コンテンツファーム対策 + 最新バージョン適合**：コンテンツ品質評価を最適化し、低品質な大量生成コンテンツの識別・フィルタリング能力を向上；最新バージョンに適合しシームレスに連携；ローカル検索に自身のインストールツリーガードを追加し、結果が自身のソースで汚染されるのを防止。 |

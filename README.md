@@ -24,7 +24,7 @@
 <p align="center">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-blue">
   <img alt="python" src="https://img.shields.io/badge/python-3.9+-green">
-  <img alt="version" src="https://img.shields.io/badge/version-2.9.3-informational">
+  <img alt="version" src="https://img.shields.io/badge/version-2.9.4-informational">
   <img alt="engines" src="https://img.shields.io/badge/engines-265-orange">
   <img alt="mcp" src="https://img.shields.io/badge/MCP-19%20tools-purple">
 </p>
@@ -155,7 +155,7 @@ freshness  ≈ 发布时间（会忽略「2015 年以来」这类历史对比年
 
 ## 快速开始
 
-任选一种即可。**以 GitHub 为唯一安装来源**（`npx github:taxueseek/argo` 或 `install.sh` / `install.ps1`），当前推荐 **v2.9.3**。**请勿用 `npm install argo-search`**——npm registry 上那份是**非官方陈旧版 v1.0.1**（非本仓库维护，功能残缺、不随本项目更新）。本包 `package.json` 已设 `private: true` 防止误发布到 npm registry。
+任选一种即可。**以 GitHub 为唯一安装来源**（`npx github:taxueseek/argo` 或 `install.sh` / `install.ps1`），当前推荐 **v2.9.4**。**请勿用 `npm install argo-search`**——npm registry 上那份是**非官方陈旧版 v1.0.1**（非本仓库维护，功能残缺、不随本项目更新）。本包 `package.json` 已设 `private: true` 防止误发布到 npm registry。
 
 **零配置就能跑**：不配 API Key 时走免费引擎 + 本地 `local_*` 引擎；配了 Key 的源质量通常更好，没配则自动跳过。
 
@@ -359,6 +359,7 @@ python3 -m pytest tests/test_unit.py -q             # 单测（可选）
 
 ### 当前大致能力（v2.9.3）
 
+- **显式引擎域归因 + 恢复链止损 + 门禁同步（v2.9.4 新增）**：`--engine X` 显式指定引擎时补 `match_domains` 域判定，修复缓存 TTL 一刀切 general；单引擎无备选时跳过 L1 同引擎空跑；`config.yaml` 域规则增强（`org_entity` 加 unless 股东尽调词、`fund_query` 加 unless 政策法规词）；`mcp_launch.sh` 环境变量导出收窄；local-search 引擎注册表层收口与质量提升；门禁同步（module_size_gate / ENGINE_CATALOG）
 - **X 帖子完整打包 `argo tweet`（v2.9.3 新增）**：一条命令打包指定 X 帖子的正文、串/引用/转发与互动数据；默认纯文本，`--out` 落四件套（post.md/raw.json/manifest.json/CHECKLIST.md），`--media` 才下载图片/视频；主帖失败原因随产物可见
 - **浏览器登录态车道 `argo auth`（v2.9.3 新增）**：`argo auth login/status/logout` 自持站点持久浏览器 profile，扫码一次即可抓取需登录页面；cookie 只存 Chrome 自身加密存储，登录态结果标记 `login_state_used` 并拒绝入公共缓存（`ARGO_AUTH_FETCH` 开启）
 - **本地中文链质速双修（v2.9.3 新增）**：搜狗/百度跳转壳无会话解析成真实直链，保留结果 1→5 条；共识宽限自适应（首引擎交足即放行），英文分发 ~3.0s→2.2-2.5s
@@ -627,6 +628,15 @@ argo/
 
 ## 最近更新
 
+### v2.9.4：显式引擎域归因 + 恢复链止损 + 门禁同步
+
+- `route.py`：显式 `--engine X` 时补 `match_domains` 域判定，修复缓存 TTL 一刀切 general
+- `recovery.py`：显式单引擎无备选时跳过 L1 同引擎空跑，减少无意义 RTT
+- `config.yaml`：`org_entity` 加 unless 股东尽调词；`fund_query` 加 unless 政策法规词
+- `mcp_launch.sh`：`set -a` 收窄到 `. "$ENV_FILE"` 单行
+- `sub-skills/local-search/`：引擎注册表层收口与 search_v3 质量提升
+- 门禁同步：module_size_gate / ENGINE_CATALOG / domain_profiles.json 基准对齐
+
 ### v2.9.3：X 帖子完整打包 + 浏览器登录态车道 + 本地链质速双修
 
 - **新增**：`argo tweet`——一条命令打包 X 帖子正文、串/引用/转发与互动数据；默认纯文本不下载媒体，`--out` 落四件套（post.md/raw.json/manifest.json/CHECKLIST.md），`--media` 按需下载图片/视频；主帖失败原因随产物可见不静默
@@ -705,6 +715,7 @@ argo/
 
 | 版本 | 说明 |
 |------|------|
+| **v2.9.4** | **显式引擎域归因 + 恢复链止损 + 门禁同步**：`--engine X` 补 `match_domains` 域判定修复缓存 TTL 一刀切；单引擎无备选跳过 L1 空跑；`config.yaml` 域规则增强（org_entity/fund_query unless 词）；`mcp_launch.sh` 环境变量导出收窄；local-search 引擎注册表层收口与质量提升；门禁同步。 |
 | **v2.9.3** | **X 帖子完整打包 + 浏览器登录态车道 + 本地链质速双修**：新增 `argo tweet`（正文/串/引用/转发/媒体按需打包，`--out` 四件套）；新增 `argo auth` 浏览器登录态车道（站点持久 profile，cookie 只存 Chrome 加密存储，登录态结果不入公共缓存）；本地中文链搜狗/百度跳转壳无会话解析（保留 1→5 条）+ 共识宽限自适应（英文分发 ~3.0s→2.2-2.5s）；js-run 接入 fetch 链第一级（Chrome 指纹重试）；火车票中转+经停（漏斗 10→1 修为如实 10→10）；`--academic-deep` 一键学术深挖；43 引擎领域接线 + 3 零 key 金融源 + 意图门误锁修复；本地图片指纹 158ms→3.9ms；agent 消费瘦身（MCP 固定开销 −32%）。 |
 | **v2.9.2** | **DSH 0.2.1-alpha.1 适配验证 + 路由/守卫一批修复 + js-run 子技能**：DSH 插件三形态在最新版 DSH 0.2.1-alpha.1 实测启用；`argo mcp inject` 补 WorkBuddy 覆盖到第 7 宿主；TF-IDF 弱证据辅源化、死源地板 + 熔断槽位回填、配额耗尽引擎路由隔离、serp_guard 连坐误杀修复；engines/evidence 惰性导入（import −50%）与准入存在集合短路（open 261→99）；MCP 入口与数值参数守卫收口；新增 js-run 子技能（无浏览器跑网页 JS，P50 ≈1ms）。 |
 | **v2.9.1** | **内容质量优化 + 对抗内容农场 + 适配最新版本**：优化内容质量评估，提升对低质批量生成内容的识别与过滤能力；适配最新版本确保无缝协作；本地搜索新增自身安装树守卫，避免结果被自身源码污染。 |

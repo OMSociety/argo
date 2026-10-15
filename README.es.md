@@ -24,7 +24,7 @@
 <p align="center">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-blue">
   <img alt="python" src="https://img.shields.io/badge/python-3.9+-green">
-  <img alt="version" src="https://img.shields.io/badge/version-2.9.3-informational">
+  <img alt="version" src="https://img.shields.io/badge/version-2.9.4-informational">
   <img alt="engines" src="https://img.shields.io/badge/engines-265-orange">
   <img alt="mcp" src="https://img.shields.io/badge/MCP-19%20tools-purple">
 </p>
@@ -153,7 +153,7 @@ Los resultados incluyen `selection`, `absorption`, `credibility_fast`, `evidence
 
 ## Inicio rápido
 
-Elige cualquier camino. **GitHub es la única fuente de verdad de instalación** (`npx github:taxueseek/argo` o `install.sh`); recomendación actual **v2.9.3**. **No uses `npm install argo-search`** — la copia del registro npm es un **v1.0.1 no oficial y obsoleto** (no es este repo, incompleto, no se actualiza). Este paquete pone `private: true` para no publicarse en npm por error.
+Elige cualquier camino. **GitHub es la única fuente de verdad de instalación** (`npx github:taxueseek/argo` o `install.sh`); recomendación actual **v2.9.4**. **No uses `npm install argo-search`** — la copia del registro npm es un **v1.0.1 no oficial y obsoleto** (no es este repo, incompleto, no se actualiza). Este paquete pone `private: true` para no publicarse en npm por error.
 
 **Funciona sin configuración**: sin claves API corren motores gratis + `local_*` locales; los que requieren clave se omiten si faltan (y suelen mejorar cuando están).
 
@@ -333,6 +333,7 @@ python3 scripts/search.py --list-engines
 
 ### Conjunto aproximado de capacidades (v2.9.3)
 
+- **Atribución explícita de dominio de motor + cortador de cadena de recuperación + sincronización de puertas (nuevo en v2.9.4)**: `--engine X` complementa `match_domains` corrigiendo TTL de caché general; motor único sin alternativa omite ejecución vacía L1; reglas `config.yaml` mejoradas; exportación de variables de entorno `mcp_launch.sh` reducida; capa de registro de motores local cerrada y calidad mejorada; sincronización de puertas (module_size_gate / ENGINE_CATALOG)
 - **Empaquetado completo de posts de X, `argo tweet` (nuevo en v2.9.3)**: un comando empaqueta el texto completo, hilo/citas/retweets e interacciones de un post dado; por defecto solo texto, `--out` escribe el paquete de 4 archivos (post.md/raw.json/manifest.json/CHECKLIST.md), `--media` descarga imágenes/vídeos bajo demanda; los motivos de fallo quedan visibles en los artefactos
 - **Carril de estado de sesión del navegador, `argo auth` (nuevo en v2.9.3)**: `argo auth login/status/logout` mantiene un perfil de navegador persistente por sitio — escanea el QR una vez y las páginas que exigen sesión se vuelven accesibles; las cookies solo viven en el almacenamiento cifrado del propio Chrome, los resultados con sesión se marcan `login_state_used` y quedan excluidos de la caché compartida (activar con `ARGO_AUTH_FETCH`)
 - **Calidad + velocidad de la cadena local china (nuevo en v2.9.3)**: las shells de redirección de Sogou/Baidu se resuelven en URLs reales sin sesión, elevando los resultados conservados de 1 a 5; gracia de consenso adaptativa (el primer motor que entrega suficiente libera la espera), despacho en inglés ~3.0s→2.2-2.5s
@@ -552,6 +553,15 @@ argo/
 
 ## Actualizaciones recientes
 
+### v2.9.4: Atribución explícita de dominio de motor + cortador de cadena de recuperación + sincronización de puertas
+
+- `route.py`: `--engine X` complementa `match_domains`, corrigiendo TTL de caché general
+- `recovery.py`: motor único sin alternativa omite ejecución vacía L1
+- `config.yaml`: `org_entity` añade términos de diligencia; `fund_query` añade términos de regulación
+- `mcp_launch.sh`: `set -a` reducido a `. "$ENV_FILE"` línea única
+- `sub-skills/local-search/`: capa de registro cerrada y calidad mejorada
+- Sincronización de puertas: module_size_gate / ENGINE_CATALOG alineados
+
 ### v2.9.3: empaquetado completo de posts de X + carril de estado de sesión del navegador + calidad/velocidad de la cadena local
 
 - **Nuevo**: `argo tweet` — un comando empaqueta el texto completo, hilo/citas/retweets e interacciones de un post de X; por defecto solo texto, `--out` escribe el paquete de 4 archivos (post.md/raw.json/manifest.json/CHECKLIST.md), `--media` descarga imágenes/vídeos bajo demanda; los motivos de fallo quedan visibles en los artefactos
@@ -628,6 +638,7 @@ argo/
 
 | Versión | Notas |
 |---------|-------|
+| **v2.9.4** | **Atribución explícita de dominio de motor + cortador de cadena de recuperación + sincronización de puertas**: `--engine X` complementa `match_domains` corrigiendo TTL de caché general; motor único sin alternativa omite ejecución vacía L1; reglas `config.yaml` mejoradas; exportación `mcp_launch.sh` reducida; capa de registro local cerrada y calidad mejorada; sincronización de puertas. |
 | **v2.9.3** | **Empaquetado completo de posts de X + carril de estado de sesión del navegador + calidad/velocidad de la cadena local**: nuevo `argo tweet` (texto completo/hilo/citas/retweets/medios empaquetados bajo demanda, paquete de 4 archivos con `--out`); nuevo carril de sesión de navegador `argo auth` (perfil persistente por sitio, cookies solo en el almacenamiento cifrado de Chrome, resultados con sesión excluidos de la caché compartida); la cadena local china resuelve shells de Sogou/Baidu sin sesión (conservados 1→5) + gracia de consenso adaptativa (despacho en inglés ~3.0s→2.2-2.5s); js-run como primer carril de la cadena de fetch (reintentos con huella Chrome); consultas ferroviarias con transbordo/escala (embudo 10→1 corregido a un fiel 10→10); `--academic-deep` búsqueda académica profunda con una bandera; 43 motores conectados a dominios + 3 fuentes financieras sin clave + corrección del bloqueo falso de intención; huellas de imagen local 158ms→3.9ms; adelgazamiento del consumo por agentes (overhead fijo MCP −32%). |
 | **v2.9.2** | **Compatibilidad verificada con DSH 0.2.1-alpha.1 + tanda de correcciones de enrutamiento/guardas + sub-skill js-run**: las tres formas del plugin DSH verificadas en el último DSH 0.2.1-alpha.1; `argo mcp inject` añade WorkBuddy, cubriendo el 7.º host; degradación de evidencia débil TF-IDF a fuentes auxiliares, piso de fuentes muertas + relleno de slots del breaker, aislamiento de enrutamiento de motores con cuota agotada, corrección de falsos positivos en cascada de serp_guard; importaciones diferidas de engines/evidence (import −50%) y cortocircuito del conjunto de existencia en admisión (open 261→99); guardas de entrada MCP y de argumentos numéricos cerradas; nueva sub-skill js-run (JS web sin navegador, P50 ≈1ms). |
 | **v2.9.1** | **Optimización de calidad de contenido + resistencia a granjas de contenido + adaptación a la última versión**: evaluación de calidad de contenido mejorada, con mayor capacidad de identificar y filtrar contenido de baja calidad generado en masa; adaptación a la última versión para una colaboración sin fisuras; la búsqueda local añade una guarda de su propio árbol de instalación para evitar que los resultados se contaminen con su propio código fuente. |
