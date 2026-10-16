@@ -446,6 +446,8 @@ Usage:
   argo pdf       "url"            PDF 正文提取（--pages 1-5 / --password 口令）
   argo paper     "arxiv-id"       论文深读（--outline/--section/--latex/--cited-by）
   argo tweet     "<url|id>"       X 帖子完整打包（正文+串/引用/转发+媒体；--out 落盘）
+  argo x-search  "query"          X 关键词搜索（原生布尔语法 from:/-is:retweet/lang:；ego-browser 通道）
+  argo template  {{--list|<id>}}  查询模板（命名检索模式，展开并执行；--add 追加词）
   argo answer    "query"          直答（Seltz 带引用合成答案，置信口径=引用计数）
   argo watch     {{add|check|list|remove}}  观察模式（网页快照与变化检测，cron 可用）
   argo job       "query"          招聘岗位多平台聚合（BOSS/猎聘/智联/前程无忧/597/今日招聘）
@@ -567,6 +569,14 @@ def main():
         # 网络图走 `argo search`（image_search 域），本地图走这里——两者是
         # 「全网找图」与「在自己素材里找图」的分工，不重叠。
         "local-image": ("local_image.py", []),
+        # x-search：X 原生关键词搜索（ego-browser 通道）。X 布尔语法
+        # （from: / -is:retweet / min_faves: / lang:）只有 x.com/search 本体认，
+        # 通用网页引擎一律忽略——所以要「盯一批官方号 / 按关键词找发布」只能走它。
+        # 站点专用通道，与 tweet（单条打包）互补，不进搜索契约（同 paper/article）。
+        "x-search":  ("x_search.py", []),
+        # template：查询模板（命名检索模式 → 展开并转发给 search / x-search）。
+        # 注册表 references/query-templates.yaml，用户可加 ~/.config/argo/query-templates.yaml。
+        "template":  ("template_cli.py", []),
     }
 
     if sub not in scripts:

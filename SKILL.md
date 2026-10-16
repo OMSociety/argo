@@ -32,7 +32,7 @@ triggers:
 ## 快速上手
 
 ```bash
-argo search "查询词"                     # 自动路由搜索（常驻快路径自动启用；argo 不在 PATH 用 python3 scripts/search.py）
+argo search "查询词"                     # 自动路由搜索（常驻快路径自动启用）
 argo search "查询词" --json --fields agent  # Agent 消费档
 argo search "查询词" --verify 3           # 核验 top-3 并回填证据分
 python3 scripts/research.py "复杂问题" --json  # 取证包（扩词或多工作包 → dossier）
@@ -41,7 +41,7 @@ python3 scripts/research.py "复杂问题" --json  # 取证包（扩词或多工
 默认不附归档用的 candidates/sources；`--fields agent` 剥遥测只留答案（~4.3 KB），
 要来源追溯或归档才加 `--envelope`（`--archive` 自动带上）。
 
-深度研究只此一条。机器产出**取证包（dossier）**：来源、覆盖、缺口、是否达标，不是判断稿。Agent 先读 `references/research-protocol.md`，写出工作包再取证；判断按事实/推断/建议写。不要另装「专业深度研究」skill。
+深度研究只此一条，产出**取证包（dossier）**（来源/覆盖/缺口/达标，不是判断稿）：先读 `references/research-protocol.md` 写工作包再取证，判断按事实/推断/建议写。不要另装「专业深度研究」skill。
 
 ## 核心命令
 
@@ -63,14 +63,13 @@ python3 scripts/research.py "复杂问题" --json  # 取证包（扩词或多工
 ### 图片检索
 
 网络图走 `search`（`image_search` 域自动命中）；本地素材走 `argo local-image`
-（Vision 索引 + `--similar-to` 找相似图 + `--sheet` 出联络表）。
-**本地图默认关闭**，需 `ARGO_LOCAL_IMAGE=1`；详见 `references/usage.md`。
+（Vision 索引 + `--similar-to` 找相似图 + `--sheet` 出联络表；默认关，需 `ARGO_LOCAL_IMAGE=1`，见 `references/usage.md`）。
 
 ### 增强三工具
 
 ```bash
 # research — 取证（扩词或 --work-packages → 取证包 + 引用 + 达标检查）
-#   工作包可带 file_inputs（本地一手数据入账）+ recompute（可复算脚本，默认拒绝，需显式授权）
+#   工作包可带 file_inputs / recompute（默认拒绝，需显式授权）
 #   社交舆情：--mode social-sentiment --platforms xiaohongshu,reddit,twitter
 python3 scripts/research.py "查询" [--work-packages PATH|JSON] [--depth deep] [--json] [--verify N]
 
@@ -125,6 +124,7 @@ argo watch add|check|list|remove   # 观察模式（--json 供 cron）
 | **使用指南**：全命令、参数、86 开关总表、输出体积陷阱、日志反馈 | `references/usage.md` |
 | 深度研究协议：约定、工作包、取证包 vs 判断稿、达标检查 | `references/research-protocol.md` |
 | 约定 / 工作包 / 判断稿模板 | `references/research-templates.md` |
+| X 关键词搜索与查询模板（`argo x-search` / `argo template`，含机制与扩展） | `references/query-templates.md` |
 | 引擎全景：垂直域/社交/学术/本地引擎表 + 路由规则 | `references/engines.md` |
 | 学术检索：查询构造（arXiv/S2/GS 语法）、相关性五因子排序、引用网络挖掘、学术反模式与证据分级 | `references/academic-query.md` |
 | 架构：文件结构、证据流水线、量化公式、输出 JSON Schema、内容质量信号 | `references/architecture.md` |

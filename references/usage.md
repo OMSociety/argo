@@ -3,7 +3,7 @@
 > 本文受门禁保护（tests/test_usage_doc_gates.py）：文中命令必须存在于
 > bin/argo 分发表、`ARGO_*` 开关必须代码实存。改命令先改代码，本文随行。
 
-## 命令总览（24 个，唯一事实=bin/argo 分发表）
+## 命令总览（26 个，唯一事实=bin/argo 分发表）
 
 | 命令 | 一句话 |
 |------|--------|
@@ -20,6 +20,8 @@
 | `argo pdf` | PDF 正文提取（`--pages`/`--password`，`--outline`/`--section` 分节读取） |
 | `argo paper` | arXiv 论文深读（`--outline`/`--section`/`--latex`/`--cited-by`） |
 | `argo tweet` | X 帖子完整打包（正文全文+串/引用/转发+媒体，`--out` 落盘） |
+| `argo x-search` | X 关键词搜索（原生布尔语法 from:/-is:retweet/lang:；ego-browser 通道） |
+| `argo template` | 查询模板（命名检索模式，展开并转发给 search/x-search；`--list`/`--add`） |
 | `argo answer` | 直答（Seltz 带引用合成答案） |
 | `argo watch` | 网页变化监控（add/check/list/remove） |
 | `argo auth` | 浏览器登录态（login/status/logout；登录墙站点抓取自动带会话） |
@@ -280,6 +282,36 @@ argo tweet "20" --with-quotes --with-reposts --limit 50    # 在主 mode 上叠�
 - **零 Key、不碰 Cookie/登录态**；上游 FxTwitter（`api.fxtwitter.com`，备镜像 `api.fixupx.com`）。
 - **与 fetch 的分工**：`argo fetch` 是通用网页正文（抓 x.com 页面会经第三方 reader，无结构、无媒体）；X 的完整结构化数据只有本命令拿得到。
 
+### argo x-search — X 关键词搜索
+
+X 原生搜索是唯一吃 X 布尔语法的通道（`from:` / `-is:retweet` / `min_faves:` /
+`lang:` / `since:`），通用网页引擎一律忽略这些语法。借 ego-browser 驱动已登录的
+浏览器抓 `x.com/search`（同 `x_trending` 引擎的通道思路），需已安装 Ego Lite 且
+浏览器已登录 X。
+
+```bash
+argo x-search "OpenAI" -n 20                     # 关键词搜索
+argo x-search 'from:OpenAI -is:retweet' --json   # 盯人 + 去转发，JSON 输出
+argo x-search '(GPT OR Claude) release -is:retweet' --sort top   # 热门榜
+```
+
+- **与 `argo tweet` 的分工**：本命令**发现**（关键词 → 一批推文），`argo tweet`
+  **吸收**（单条 URL/ID → 整份内容）。
+- **与 `--engine fxtwitter` 的关系**：后者是 HTTP 免登录搜索通道，上游公开实例的
+  `/2/search` 已停用（恒返回空），关键词搜索请走本命令。
+
+### argo template — 查询模板
+
+命名好的检索模式，一步展开执行：取模板 → 展开成查询串 → 转发给模板的 command。
+注册表 `references/query-templates.yaml`（随包）+ `~/.config/argo/query-templates.yaml`
+（用户，零代码扩展）。完整说明见 `references/query-templates.md`。
+
+```bash
+argo template --list                              # 列出全部模板
+argo template ai_model_release --add "GPT-5"      # 模板 + 追加词（空格即 AND）
+argo template ai_model_release --dry-run          # 只看展开后的命令与查询串
+```
+
 ## 证据流程字段语义（v2.8.0）
 
 搜索输出自带可编程判定开关，回答「现在能不能下结论」：
@@ -535,7 +567,7 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 | `ARGO_STRAGGLER_GRACE_S` | 行为阈值/预算调参 | 默认经实测校准，勿轻动 |
 | `ARGO_TOOL_CALL_COALESCE` | 行为阈值/预算调参 | 默认经实测校准，勿轻动 |
 
-### 路径与数据位置（10）
+### 路径与数据位置（11）
 
 | 变量 | 作用 | 默认/备注 |
 |------|------|----------|
@@ -548,6 +580,7 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 | `ARGO_LOCAL_SEEK_PATH` | 数据/状态位置覆盖 | 默认惯例目录（argo paths 查看） |
 | `ARGO_LOCAL_SEEK_ROOTS` | 数据/状态位置覆盖 | 默认惯例目录（argo paths 查看） |
 | `ARGO_STATE_DIR` | 数据/状态位置覆盖 | 默认惯例目录（argo paths 查看） |
+| `ARGO_TEMPLATES_FILE` | 用户查询模板注册表路径覆盖 | 默认 `~/.config/argo/query-templates.yaml`（见 query-templates.md） |
 | `ARGO_USAGE_LOG_DIR` | 数据/状态位置覆盖 | 默认惯例目录（argo paths 查看） |
 
 ### MCP 运行配置（6）

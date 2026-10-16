@@ -60,6 +60,8 @@
     "packages/dsh-plugin/",
     "README.md",
     "SKILL.md",
+    "references/query-templates.yaml",
+    "references/query-templates.md",
     "LICENSE",
     "!**/__pycache__/**",
     "!**/*.pyc",
