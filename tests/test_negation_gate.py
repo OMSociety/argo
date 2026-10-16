@@ -58,6 +58,19 @@ class TestNegationGate(unittest.TestCase):
             exclude, _clean = parse_negation(query)
             self.assertIn(term, exclude, f"{query} → {exclude}")
 
+    def test_yesno_question_not_treated_as_negation(self):
+        """「X是不是Y」是「是否」疑问句式，不是否定过滤（2026-10-16 对抗审查）。
+
+        FP 实证："他是不是中国人"若排除「中国人」= 把问题主语射杀；修复前
+        该查询 exclude=['中国人']。
+        """
+        for query in ("他是不是中国人", "这是不是真的", "是不是该买"):
+            exclude, _clean = parse_negation(query)
+            self.assertEqual(exclude, [], f"{query} 不该产出排除项: {exclude}")
+        # 对照：真否定不受影响
+        exclude, _ = parse_negation("电脑不是华为的推荐")
+        self.assertIn("华为", exclude)
+
     def test_hyphenated_identifiers_take_fast_path(self):
         """连字符前是字母数字时不构成否定，必须保留快路径。"""
         for query in ("GPT-4o 价格", "2026-09-19 新闻", "SWE-bench 榜单"):
