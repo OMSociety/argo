@@ -18,7 +18,7 @@ import 付一次，而不是重写语言。收益相同，成本差两个数量�
   - 串行：请求执行持全局锁。原因：redirect_stdout 是进程级全局态，并发
     会串流；且 argo 内部本就高并发（并行效率 >1），CLI 层串行不损吞吐。
     连接接受与响应发送仍在多线程——排队不阻塞心跳/停止。
-  - 快路径：bin/argo 侧零 import 直连（socket 指针文件 `.daemon_sock` 落在
+  - 快路径：bin/argo 侧零 import 直连（socket 指针文件 `.daemon_sock-<树指纹>` 落在
     bin/argo 可预测的缓存根下，解耦 argo_paths 的深层解析）
   - 生命周期：`argo daemon start|status|stop|restart`；空闲 --idle-exit 秒
     自杀（默认 1800），不留僵尸；SIGTERM 同样清场
@@ -125,6 +125,33 @@ def _code_fingerprint(force: bool = False) -> str:
 
 
 
+_TREE_TAG: str | None = None
+
+
+def _tree_tag() -> str:
+    """本检出目录（ARGO_HOME realpath）的短指纹：daemon 落盘名字全部按树隔离。
+
+    为什么需要（2026-10-16 实证）：socket/pid/指针/自启标记/日志此前落在
+    共享状态根（~/.cache/unified-search）的固定名上，同机多个检出目录
+    （git worktree、多宿主软链、他人另一份 clone）互相踩：
+      - B 树 daemon 抢到固定 socket 名后，A 树 CLI 经指针连上的是 B 的进程
+        ——跑的是 B 的代码与配置；而指纹检测在 B 进程内只比对 B 自己的源码
+        树，A 的改动永远触发不了 stale，「改了不生效」且无法解释；
+      - pid 文件互相覆盖：A 树 `argo daemon stop` 杀的是 B 树的 daemon；
+      - 自启节流标记共享：A 树刚自启过，B 树 60s 内拉不起自己的 daemon。
+    名字带 ARGO_HOME 指纹后每树一个 daemon，互不抢、互不误杀。
+    兼容：旧固定名的在跑实例照常服务到空闲自杀（默认 30 分钟），新客户端按
+    新名字自启本树实例，无迁移动作；stop/status 只作用于本树实例。
+    两侧必须同算法同输入：bin/argo._tree_tag 与这里逐字一致（sha1(ARGO_HOME)
+    前 12 hex），测试 test_daemon.py 锁这份契约。
+    """
+    global _TREE_TAG
+    if _TREE_TAG is None:
+        import hashlib
+        _TREE_TAG = hashlib.sha1(ARGO_HOME.encode("utf-8")).hexdigest()[:12]
+    return _TREE_TAG
+
+
 def _cache_root() -> str:
     """bin/argo 可预测的缓存根（与 bin/argo._default_cache_root 同一逻辑）。
 
@@ -158,25 +185,25 @@ def _sock_path() -> str:
     哈希保不同状态根互不冲突；可预测性由指针文件承担（客户端只读指针，
     不算 socket 路径），所以这里怎么挪都不影响两端契约。
     """
-    native = str(state_path(SOCK_NAME))
+    native = str(state_path(SOCK_NAME + "-" + _tree_tag()))
     if os.name == "nt" or len(native.encode("utf-8")) <= 100:
         return native
     import hashlib
     h = hashlib.sha1(str(state_root()).encode("utf-8")).hexdigest()[:10]
     d = f"/tmp/argo-daemon-{os.getuid()}"
-    return os.path.join(d, f"{h}.sock")
+    return os.path.join(d, f"{h}-{_tree_tag()}.sock")
 
 
 def _pointer_path() -> str:
-    return os.path.join(_cache_root(), POINTER_NAME)
+    return os.path.join(_cache_root(), POINTER_NAME + "-" + _tree_tag())
 
 
 def _marker_path() -> str:
-    return os.path.join(_cache_root(), MARKER_NAME)
+    return os.path.join(_cache_root(), MARKER_NAME + "-" + _tree_tag())
 
 
 def _pid_path() -> str:
-    return str(state_path(PID_NAME))
+    return str(state_path(PID_NAME + "-" + _tree_tag()))
 
 
 def _pid_is_daemon(pid: int) -> bool:
@@ -216,7 +243,7 @@ def _pid_is_daemon(pid: int) -> bool:
 
 
 def _log_path() -> str:
-    return str(state_path(LOG_NAME))
+    return str(state_path(LOG_NAME + "-" + _tree_tag()))
 
 
 def _atomic_write(path: str, text: str) -> None:

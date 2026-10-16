@@ -10,7 +10,7 @@
     ARGO_NO_DAEMON=1 显式关闭也等价；daemon 死而指针在时静默回退不报错
   - 空闲自杀：--idle-exit 生效，socket 自清
 
-观察点与客户端同契约：socket 真实位置一律经指针文件 .daemon_sock 读出
+观察点与客户端同契约：socket 真实位置一律经指针文件 .daemon_sock-<树指纹> 读出
 （原生状态根路径可能超过 AF_UNIX 的 104 字节上限，daemon 会自动落短路径
 哈希位——tests 深层 tmp 目录正是这条兜底分支的日常触发场景）。
 
@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import unittest
 import subprocess
 import sys
 import time
@@ -48,8 +49,19 @@ def _env(tmp_path: Path) -> dict:
     return env
 
 
+def _tag() -> str:
+    """本检出目录的 daemon 名字指纹（与 scripts/daemon.py._tree_tag 同算法）。
+
+    daemon 的 socket/pid/指针/自启标记按检出目录隔离（2026-10-16），测试
+    断言的就是这些带指纹的名字，两边必须同源。
+    """
+    import hashlib
+    root = Path(__file__).resolve().parent.parent
+    return hashlib.sha1(str(root).encode("utf-8")).hexdigest()[:12]
+
+
 def _pointer(tmp_path: Path) -> Path:
-    return tmp_path / "state" / ".daemon_sock"
+    return tmp_path / "state" / (".daemon_sock-" + _tag())
 
 
 def _sock(tmp_path: Path) -> Path:
@@ -120,7 +132,7 @@ def _no_stray_daemon(tmp_path):
     命令行后 SIGTERM（防误杀复用 pid 的无关进程）。
     """
     yield
-    pid_path = tmp_path / "state" / "daemon.pid"
+    pid_path = tmp_path / "state" / ("daemon.pid-" + _tag())
     try:
         pid = int(pid_path.read_text(encoding="utf-8").strip())
     except (OSError, ValueError):
@@ -163,7 +175,7 @@ def test_lifecycle_ping_status_stop(tmp_path):
     _daemon(tmp_path, "stop")
     _wait_sock(tmp_path, False)
     assert not sock.exists(), "socket 未随 stop 清场"
-    assert not (tmp_path / "state" / "daemon.pid").exists(), "pid 未随 stop 清场"
+    assert not (tmp_path / "state" / ("daemon.pid-" + _tag())).exists(), "pid 未随 stop 清场"
 
 
 def test_run_list_engines_and_warm_reuse(tmp_path):
@@ -318,7 +330,7 @@ def test_client_falls_back_when_daemon_busy(tmp_path):
     """daemon 返回 busy 时客户端必须静默回退冷路径并正常出结果。"""
     state = tmp_path / "state"
     state.mkdir()
-    sock_path = state / "daemon.sock"
+    sock_path = state / ("daemon.sock-" + _tag())
 
     fake = subprocess.Popen(
         [sys.executable, "-c", (
@@ -337,7 +349,7 @@ def test_client_falls_back_when_daemon_busy(tmp_path):
             if sock_path.exists():
                 break
             time.sleep(0.05)
-        (state / ".daemon_sock").write_text(str(sock_path) + "\n", encoding="utf-8")
+        (state / (".daemon_sock-" + _tag())).write_text(str(sock_path) + "\n", encoding="utf-8")
         env = _env(tmp_path)
         env["ARGO_NO_DAEMON"] = ""  # 确保快路径开启
         r = subprocess.run([sys.executable, str(BIN), "search", "--list-engines", "--json"],
@@ -483,3 +495,56 @@ def test_pid_is_daemon_recognizes_both_launch_forms(monkeypatch):
     for out in cases_false:
         monkeypatch.setattr(_sp, "run", fake_ps(out))
         assert daemon_mod._pid_is_daemon(1234) is False, f"不应识别: {out}"
+
+
+# ── 按检出目录隔离（2026-10-16） ────────────────────────────────────────────
+
+class TestTreeScopedDaemonFiles(unittest.TestCase):
+    """daemon 全部落盘名字按检出目录隔离：同机多 worktree/clone 互不踩。
+
+    踩雷实证：同机 ~/.agents/skills/argo 与 /private/tmp/argo-head-check 两个
+    检出共存时，固定名的 socket/pid/指针会让 A 树 CLI 连上 B 树 daemon（跑
+    B 的旧代码且指纹检测发现不了）、A 树 stop 杀 B 树进程。
+    """
+
+    def test_all_five_names_carry_tree_tag(self):
+        import daemon as daemon_mod
+        tag = daemon_mod._tree_tag()
+        for name, path in (
+            ("sock", daemon_mod._sock_path()),
+            ("pid", daemon_mod._pid_path()),
+            ("pointer", daemon_mod._pointer_path()),
+            ("marker", daemon_mod._marker_path()),
+            ("log", daemon_mod._log_path()),
+        ):
+            self.assertIn(tag, path, f"{name} 未带树指纹: {path}")
+
+    def test_different_trees_get_different_names(self):
+        import daemon as daemon_mod
+        original_home = daemon_mod.ARGO_HOME
+        original_tag = daemon_mod._TREE_TAG
+        try:
+            daemon_mod.ARGO_HOME = "/tree/a/argo"
+            daemon_mod._TREE_TAG = None
+            tag_a = daemon_mod._tree_tag()
+            daemon_mod.ARGO_HOME = "/tree/b/argo"
+            daemon_mod._TREE_TAG = None
+            tag_b = daemon_mod._tree_tag()
+            self.assertNotEqual(tag_a, tag_b)
+            self.assertNotEqual(daemon_mod._sock_path().split("daemon.sock")[-1],
+                                "")
+        finally:
+            daemon_mod.ARGO_HOME = original_home
+            daemon_mod._TREE_TAG = original_tag
+
+    def test_bin_argo_tag_matches_daemon(self):
+        """两侧契约：bin/argo 与 daemon.py 对同一 ARGO_HOME 必须算出同一指纹。"""
+        import re as _re
+        import daemon as daemon_mod
+        bin_src = (ROOT / "bin" / "argo").read_text(encoding="utf-8")
+        m = _re.search(r"def _tree_tag\(\):.*?(?=\ndef |\n\n# )", bin_src, _re.S)
+        self.assertIsNotNone(m, "bin/argo 应定义 _tree_tag")
+        ns = {"ARGO_HOME": daemon_mod.ARGO_HOME}
+        exec(compile(m.group(0), "bin-argo-tree-tag", "exec"), ns)
+        self.assertEqual(ns["_tree_tag"](), daemon_mod._tree_tag(),
+                         "bin/argo 与 daemon.py 的树指纹不一致（两端会找不到彼此的 daemon）")

@@ -64,7 +64,7 @@ argo daemon stop      # 停止并清场（等在途请求收尾，上限 20s）
 - 按次环境变量（`FOO_KEY=x argo search`、`ARGO_*` 覆盖）随请求透传给 daemon，
   请求结束即还原，与冷路径行为一致。
 - socket 路径超 AF_UNIX 104 字节上限时自动落 `/tmp/argo-daemon-<uid>/`
-  短路径哈希位，客户端经指针文件 `.daemon_sock` 发现，无需感知。
+  短路径哈希位，客户端经指针文件 `.daemon_sock-<树指纹>` 发现，无需感知。
 
 ## search 完整参数
 

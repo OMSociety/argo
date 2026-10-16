@@ -217,6 +217,18 @@ def _self_capable() -> bool:
     return _util.find_spec("yaml") is not None
 
 
+def _tree_tag():
+    """本检出目录短指纹（与 scripts/daemon.py._tree_tag 同算法同输入）。
+
+    daemon 的 socket/pid/指针/自启标记按检出目录隔离（踩雷记录见 daemon.py
+    该函数 docstring）：共享状态根下多个 worktree/clone 会互抢 socket、互覆盖
+    pid、互踩自启节流。两边都取 sha1(ARGO_HOME realpath)[:12]；hashlib 在
+    函数内 import，不进 entrypoint 顶层零 import 纪律路径。
+    """
+    import hashlib
+    return hashlib.sha1(ARGO_HOME.encode("utf-8")).hexdigest()[:12]
+
+
 def _daemon_env():
     """透传给 daemon 的请求级环境变量（ARGO_* 全量 + 常见密钥命名）。
 
@@ -250,7 +262,7 @@ def _daemon_autostart(root, py):
     """
     if os.name == "nt":
         return 1  # Windows 无后台化，别拉（start 在前台阻塞）
-    marker = os.path.join(root, ".daemon_autostart")
+    marker = os.path.join(root, ".daemon_autostart-" + _tree_tag())
     try:
         if time.time() - os.stat(marker).st_mtime < 60:
             return 0
@@ -285,14 +297,14 @@ def _daemon_run(rest, py="") -> bool:
     绝不打印错误（会污染 agent 的 stdout 契约）。
 
     ARGO_NO_DAEMON=1 显式关掉；ARGO_DAEMON_TIMEOUT 覆盖客户端等待上限（秒）。
-    指针文件 .daemon_sock 由 daemon 写在 _default_cache_root() 下（bin 不读
+    指针文件 .daemon_sock-<树指纹> 由 daemon 写在 _default_cache_root() 下（bin 不读
     yaml、不 import scripts 就能算出的位置），内容是真实 socket 路径——两端
     状态根解析不一致时退化为快路径永不命中，不会错。
     """
     if os.environ.get("ARGO_NO_DAEMON", "").strip().lower() in ("1", "true", "yes"):
         return False
     root = os.environ.get("ARGO_STATE_DIR", "").strip() or _default_cache_root()
-    pointer = os.path.join(root, ".daemon_sock")
+    pointer = os.path.join(root, ".daemon_sock-" + _tree_tag())
     sock = ""
     try:
         with open(pointer, encoding="utf-8") as f:
