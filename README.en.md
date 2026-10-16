@@ -24,7 +24,7 @@
 <p align="center">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-blue">
   <img alt="python" src="https://img.shields.io/badge/python-3.9+-green">
-  <img alt="version" src="https://img.shields.io/badge/version-2.9.4-informational">
+  <img alt="version" src="https://img.shields.io/badge/version-2.9.5-informational">
   <img alt="engines" src="https://img.shields.io/badge/engines-265-orange">
   <img alt="mcp" src="https://img.shields.io/badge/MCP-19%20tools-purple">
 </p>
@@ -153,7 +153,7 @@ Results include `selection`, `absorption`, `credibility_fast`, `evidence_flags`,
 
 ## Quick start
 
-Pick any path. **GitHub is the only install source of truth** (`npx github:taxueseek/argo` or `install.sh`); current recommendation **v2.9.4**. **Do not `npm install argo-search`** — the npm registry copy is an **unofficial stale v1.0.1** (not this repo, incomplete, not updated). This package sets `private: true` so it is not published to npm by mistake.
+Pick any path. **GitHub is the only install source of truth** (`npx github:taxueseek/argo` or `install.sh`); current recommendation **v2.9.5**. **Do not `npm install argo-search`** — the npm registry copy is an **unofficial stale v1.0.1** (not this repo, incomplete, not updated). This package sets `private: true` so it is not published to npm by mistake.
 
 **Zero-config works**: without API keys, free engines + local `local_*` engines run; keyed engines are skipped when missing (and usually better when present).
 
@@ -291,6 +291,7 @@ python3 scripts/search.py --list-engines
 
 ### Rough capability set (v2.9.3)
 
+- **FX-rate dedicated domain + two-layer dedup + ranking false-kill fix (new in v2.9.5)**: `fx_query` answers rate/parity queries with live rate + daily news in 675ms (previously encyclopedia entries at 1411ms); dedup gains site-suffix normalization (zero-dep) + rapidfuzz fuzzy check (optional, `ARGO_DEDUP_FUZZY`, auto-fallback); fixes the separator ×0.6 false-kill during degraded rerank (official docs back on top); negation gains "not-X"; daemon names scoped per checkout
 - **Explicit engine domain attribution + recovery chain circuit-breaker + gate sync (new in v2.9.4)**: `--engine X` supplements `match_domains` domain determination, fixing cache TTL blanket-general; single-engine no-fallback skips L1 same-engine empty run; `config.yaml` domain rules enhanced (`org_entity` adds unless shareholder-diligence terms, `fund_query` adds unless policy-regulation terms); `mcp_launch.sh` env var export narrowed; local-search engine registry layer closure and quality improvement; gate sync (module_size_gate / ENGINE_CATALOG)
 - **Full X post packaging, `argo tweet` (new in v2.9.3)**: one command packs a given post's full text, thread/quote/repost context and engagement data; text-only by default, `--out` writes a 4-file bundle (post.md/raw.json/manifest.json/CHECKLIST.md), `--media` downloads images/videos on demand; failure reasons surface in the artifacts
 - **Browser login-state lane, `argo auth` (new in v2.9.3)**: `argo auth login/status/logout` keeps a persistent browser profile per site — scan the QR code once and login-required pages become fetchable; cookies stay in Chrome's own encrypted storage and never touch argo; login-state results are flagged `login_state_used` and excluded from the shared cache (enable with `ARGO_AUTH_FETCH`)
@@ -511,6 +512,15 @@ argo/
 
 ## Recent updates
 
+### v2.9.5: FX-rate dedicated domain + two-layer dedup + ranking false-kill fix + per-checkout daemon isolation
+
+- `config.yaml`: new `fx_query` domain — "RMB/USD exchange rate, central parity, offshore" queries no longer fall through macro-data dead-ends to encyclopedia entries; now live rate + daily parity news (675ms measured; previously 1411ms and off-target)
+- `search_rank.py`: two-layer dedup — title site-suffix normalization (zero-dep) + rapidfuzz fuzzy near-duplicate check (only inside the near-hit band; `ARGO_DEDUP_FUZZY=0` to disable, auto-fallback to pure minhash when not installed)
+- Fix: title separator false-kill during degraded rerank — titles containing `|` / `_` / `——` were uniformly ×0.6, pushing official docs down 40%; every auto/deep query on keyless setups was affected (judgment converged to the single rank_signals implementation)
+- `query_understanding.py`: negation understanding gains "not-X" (the interrogative "whether" is not misread as negation)
+- `daemon.py`: on-disk names (socket/pid/pointer/log) scoped per checkout — multi-worktree/clone daemon squatting, wrong-process kills, and "edits don't take effect" all rooted out
+- New optional dependency rapidfuzz (`pip install rapidfuzz`; installed by install.sh, core unaffected when missing)
+
 ### v2.9.4: Explicit engine domain attribution + recovery chain circuit-breaker + gate sync
 
 - `route.py`: explicit `--engine X` supplements `match_domains`, fixing cache TTL blanket-general
@@ -596,6 +606,7 @@ argo/
 
 | Version | Notes |
 |---------|-------|
+| **v2.9.5** | **FX-rate dedicated domain + two-layer dedup + ranking false-kill fix + per-checkout daemon isolation**: new `fx_query` domain (rate/parity queries: live rate + daily news in 675ms vs encyclopedia before); dedup gains site-suffix normalization (zero-dep) + rapidfuzz fuzzy check (optional, `ARGO_DEDUP_FUZZY`, fallback); fixes separator ×0.6 false-kill (official docs back on top); negation gains "not-X"; daemon names scoped per checkout. |
 | **v2.9.4** | **Explicit engine domain attribution + recovery chain circuit-breaker + gate sync**: `--engine X` supplements `match_domains` fixing cache TTL blanket-general; single-engine no-fallback skips L1 empty run; `config.yaml` domain rules enhanced (org_entity/fund_query unless terms); `mcp_launch.sh` env var export narrowed; local-search engine registry layer closure and quality improvement; gate sync. |
 | **v2.9.3** | **Full X post packaging + browser login-state lane + local-chain quality/speed fixes**: new `argo tweet` (full text/thread/quotes/reposts/media packed on demand, `--out` 4-file bundle); new `argo auth` browser login-state lane (persistent per-site profile, cookies stay in Chrome's encrypted storage, login-state results excluded from the shared cache); Chinese local chain resolves Sogou/Baidu redirect shells session-free (kept 1→5) + adaptive consensus grace (English dispatch ~3.0s→2.2-2.5s); js-run wired as the fetch chain's first lane (Chrome-fingerprint retries); rail transfer/stopover queries (funnel 10→1 fixed to a faithful 10→10); `--academic-deep` one-flag academic deep-dive; 43 engines wired into domains + 3 keyless finance sources + intent-gate false-lock fix; local image fingerprints 158ms→3.9ms; agent-consumption slimming (MCP fixed overhead −32%). |
 | **v2.9.2** | **DSH 0.2.1-alpha.1 compatibility verified + routing/guard fixes + js-run sub-skill**: the DSH plugin's three forms verified enabled on the latest DSH 0.2.1-alpha.1; `argo mcp inject` adds WorkBuddy, covering a 7th host; TF-IDF weak-evidence demotion to auxiliary sources, dead-source floor + breaker slot backfill, quota-exhausted engine routing isolation, serp_guard collateral false-positive fixes; engines/evidence lazy imports (import −50%) and admission existence-set short-circuit (open 261→99); MCP entry and numeric-argument guards tightened; new js-run sub-skill (browser-free web JS, P50 ≈1ms). |

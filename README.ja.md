@@ -24,7 +24,7 @@
 <p align="center">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-blue">
   <img alt="python" src="https://img.shields.io/badge/python-3.9+-green">
-  <img alt="version" src="https://img.shields.io/badge/version-2.9.4-informational">
+  <img alt="version" src="https://img.shields.io/badge/version-2.9.5-informational">
   <img alt="engines" src="https://img.shields.io/badge/engines-265-orange">
   <img alt="mcp" src="https://img.shields.io/badge/MCP-19%20tools-purple">
 </p>
@@ -153,7 +153,7 @@ freshness  ≈ 公開時刻（「2015 年以来」のような歴史比較年は
 
 ## クイックスタート
 
-どれか 1 つで十分です。**インストールの来源は GitHub のみ**（`npx github:taxueseek/argo` または `install.sh`）、現在推奨 **v2.9.4**。**`npm install argo-search` は使わないでください**——npm registry 上のそれは**非公式の古い v1.0.1**（本リポジトリ外、機能不足、更新されない）。本パッケージは `private: true` で npm 誤公開を防ぎます。
+どれか 1 つで十分です。**インストールの来源は GitHub のみ**（`npx github:taxueseek/argo` または `install.sh`）、現在推奨 **v2.9.5**。**`npm install argo-search` は使わないでください**——npm registry 上のそれは**非公式の古い v1.0.1**（本リポジトリ外、機能不足、更新されない）。本パッケージは `private: true` で npm 誤公開を防ぎます。
 
 **ゼロ設定で動く**：API Key なしなら無料エンジン + ローカル `local_*`。Key があるソースは品質が上がりやすく、無いものは自動スキップ。
 
@@ -333,6 +333,7 @@ python3 scripts/search.py --list-engines
 
 ### 現時点の能力概要（v2.9.3）
 
+- **為替専用ドメイン + 二層重複排除 + 順位誤殺修正（v2.9.5 新規）**: `fx_query` がレート/中心相場クエリに生レート + 毎日ニュースを 675ms で返す（修正前は 1411ms で百科事典）；重複排除にサイト suffix 正規化（ゼロ依存）+ rapidfuzz ファジーチェック（オプション、`ARGO_DEDUP_FUZZY`、自動フォールバック付き）を追加；劣化リランク時の区切り ×0.6 誤殺を修正（公式ドキュメントが前列に復帰）；否定に「不是X」を追加；daemon 名をチェックアウト別に隔離
 - **明示的エンジンドメイン帰属 + 回復チェーン遮断 + ゲート同期（v2.9.4 新規）**: `--engine X` で `match_domains` を補完しキャッシュ TTL 一般化を修正；単一エンジンでフォールバックなしの場合 L1 空実行をスキップ；`config.yaml` ドメインルール強化；`mcp_launch.sh` 環境変数エクスポートを收窄；ローカル検索エンジンレジストリ層の閉鎖と品質向上；ゲート同期（module_size_gate / ENGINE_CATALOG）
 - **X 投稿の完全パッケージ `argo tweet`（v2.9.3 新規）**：1 コマンドで指定投稿の全文・スレッド/引用/リポスト・インタラクションデータをパッケージ；デフォルトはテキストのみ、`--out` で 4 ファイル一式（post.md/raw.json/manifest.json/CHECKLIST.md）、`--media` で画像/動画を必要時にダウンロード；失敗理由は成果物に可視
 - **ブラウザログイン状態車道 `argo auth`（v2.9.3 新規）**：`argo auth login/status/logout` がサイト別の永続ブラウザプロファイルを保持 — QR を一度スキャンすればログイン必須ページも取得可能に；Cookie は Chrome 自身の暗号化ストレージにのみ保存され argo は読み出さない；ログイン状態の結果は `login_state_used` を付け共有キャッシュから除外（`ARGO_AUTH_FETCH` で有効化）
@@ -553,6 +554,15 @@ argo/
 
 ## 最近の更新
 
+### v2.9.5: 為替専用ドメイン + 二層重複排除 + 順位誤殺修正 + チェックアウト別 daemon 隔離
+
+- `config.yaml`: 新ドメイン `fx_query` —「人民元/米ドル レート、中心相場、オフショア」系のクエリはマクロ域の空回りを経て百科事典項目に落ちることはなく、生レート + 毎日の中心相場ニュースを返す（実測 675ms、修正前は 1411ms かつ的外れ）
+- `search_rank.py`: 重複排除を二層に — タイトルのサイト suffix 正規化（ゼロ依存）+ rapidfuzz ファジー近重复チェック（近似命中帯内のみ起動；`ARGO_DEDUP_FUZZY=0` で切断、未インストールなら純 minhash に自動フォールバック）
+- 修正: 劣化リランク時のタイトル区切り誤殺 — `|` / `_` / `——` を含むタイトルは一律 ×0.6 で公式ドキュメントが 40% 圧下されていた；Bocha キーなしの auto/deep クエリ全部が影響（判定は rank_signals の単一実装に収束）
+- `query_understanding.py`: 否定理解に「不是X」を追加（疑問形「是不是」は否定と誤判定しない）
+- `daemon.py`: socket/pid/ポインタ等のオンディスク名をチェックアウト別に隔離 — マルチ worktree/clone による daemon の奪い合い・誤殺・「変更が効かない」の三故障を根絶
+- 新規オプション依存 rapidfuzz（`pip install rapidfuzz`；install.sh が自動導入、未インストールでもコア機能に影響なし）
+
 ### v2.9.4: 明示的エンジンドメイン帰属 + 回復チェーン遮断 + ゲート同期
 
 - `route.py`: `--engine X` で `match_domains` を補完しキャッシュ TTL 一般化を修正
@@ -638,6 +648,7 @@ argo/
 
 | 版 | 内容 |
 |----|------|
+| **v2.9.5** | **為替専用ドメイン + 二層重複排除 + 順位誤殺修正 + チェックアウト別 daemon 隔離**: 新ドメイン `fx_query`（レート/中心相場を 675ms で生レート+日次ニュース、修正前は百科事典）；重複排除にサイト suffix 正規化（ゼロ依存）+ rapidfuzz ファジーチェック（オプション、`ARGO_DEDUP_FUZZY`、フォールバック付き）を追加；区切り ×0.6 誤殺を修正（公式ドキュメントが前列に）；否定に「不是X」を追加；daemon 名をチェックアウト別に隔離。 |
 | **v2.9.4** | **明示的エンジンドメイン帰属 + 回復チェーン遮断 + ゲート同期**: `--engine X` で `match_domains` を補完しキャッシュ TTL 一般化を修正；単一エンジンでフォールバックなしの場合 L1 空実行をスキップ；`config.yaml` ドメインルール強化；`mcp_launch.sh` 環境変数エクスポートを收窄；ローカル検索エンジンレジストリ層の閉鎖と品質向上；ゲート同期。 |
 | **v2.9.3** | **X 投稿の完全パッケージ + ブラウザログイン状態車道 + ローカルチェーンの質・速度修正**：新規 `argo tweet`（全文/スレッド/引用/リポスト/メディアを必要時にパッケージ、`--out` で 4 ファイル一式）；新規 `argo auth` ブラウザログイン状態車道（サイト別永続プロファイル、Cookie は Chrome の暗号化ストレージのみ、ログイン状態の結果は共有キャッシュ除外）；中国語ローカルチェーンが Sogou/Baidu リダイレクト殻をセッションなしで解決（保持 1→5）+ コンセンサス猶予適応化（英語ディスパッチ ~3.0s→2.2-2.5s）；js-run を fetch チェーン第一車道に接線（Chrome フィンガープリント再試行）；鉄道乗り継ぎ・経停クエリ（ファンネル 10→1 を実態どおり 10→10 に修復）；`--academic-deep` ワンフラグ学術深掘り；43 エンジンのドメイン配線 + キー不要金融ソース 3 件 + インテントゲート誤ロック修正；ローカル画像フィンガープリント 158ms→3.9ms；エージェント消費スリム化（MCP 固定オーバーヘッド −32%）。 |
 | **v2.9.2** | **DSH 0.2.1-alpha.1 の適合検証 + ルーティング/ガード修正一括 + js-run サブスキル**：DSH プラグインの三形態を最新 DSH 0.2.1-alpha.1 で実検証；`argo mcp inject` に WorkBuddy を追加し 7 番目のホストまで対応；TF-IDF 弱証拠の補助源降格、死源フロア + サーキットブレーカー枠の再充填、クォータ枯渇エンジンのルーティング分離、serp_guard の巻き込み誤検知修正；engines/evidence 遅延インポート（import −50%）とアドミッション存在集合ショートカート（open 261→99）；MCP 入口と数値引数ガードの収口；js-run サブスキル新規追加（ブラウザなしでウェブ JS、P50 ≈1ms）。 |
