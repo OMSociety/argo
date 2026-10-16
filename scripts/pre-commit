@@ -1,0 +1,41 @@
+#!/bin/sh
+# argo 提交前快门禁（pre-commit hook）。
+#
+# 为什么需要（2026-10-16 流程洞实证）：并发代理往主管线接线时没跑测试——
+# 6 道门禁红 + 阻塞全量收集，故障在树里躺了幾小时才被人工发现。「改了没
+# 验证就提交」没有机制拦截，只靠自觉。本 hook 把拦截点放在提交层。
+#
+# 只跑快的四道（实测合计 ~8s）：static_lint（语法/重复键/未声明 env）、
+# module_size_gate（1000 行门禁与祖父登记）、usage_doc（ARGO_* 开关总表）、
+# consistency（版本/徽章/工具数五语对账）。全量回归 ~4 分钟留给 CI 或手动
+# （python3 -m pytest tests/ -q），不进 hook——hook 慢于 20s 就会被用户
+# --no-verify 绕过，那是更坏的结局。
+#
+# 安装：bash scripts/install.sh 自动装（链式：不覆盖 privacy-guard 等既有
+# hook，装成 hooks/pre-commit-argo 并追一行调用）。手动：
+#   cp scripts/pre-commit "$(git rev-parse --git-common-dir)/hooks/pre-commit-argo"
+# 跳过（不推荐）：git commit --no-verify
+set -e
+
+# 仓库根：git 运行时 cwd 即工作树根；装在 hooks/ 下或被拷贝到别处时，
+# 脚本相对推导会指向 .git 目录（2026-10-17 实测踩中），故以 show-toplevel
+# 为准、脚本相对为兜底（原产地 scripts/ 形态手动跑也成立）。
+root=$(git rev-parse --show-toplevel 2>/dev/null || true)
+if [ -z "$root" ] || [ ! -d "$root/tests" ]; then
+    here=$(cd "$(dirname "$0")" && pwd)
+    root=$(cd "$here/.." && pwd)
+fi
+cd "$root" || exit 1
+
+PY=$(command -v python3 || command -v python || true)
+if [ -z "$PY" ]; then
+    echo "[pre-commit] 找不到 python3/python，跳过了门禁（应视为失败）" >&2
+    exit 1
+fi
+
+echo "[pre-commit] argo 快门禁（~8s；全量回归请手动跑 tests/）..."
+"$PY" -m pytest -q \
+    tests/test_static_lint_gate.py \
+    tests/test_module_size_gate.py \
+    tests/test_usage_doc_gates.py \
+    tests/test_consistency_gates.py

@@ -132,6 +132,40 @@ if [[ "$SKIP_PIP" != "1" ]]; then
     || echo "[warn] pip 安装 rapidfuzz 失败（可选依赖）。缺失时去重回退纯 minhash，需要模糊近重复复核时手动: pip install rapidfuzz"
 fi
 
+# ── pre-commit 快门禁 hook（2026-10-16 流程洞实证后新增） ──────────────────
+# 背景：并发代理接线没跑测试，6 道门禁红 + 阻塞全量收集，故障在树里躺了几小时
+# 才被人工发现。拦截点放在提交层：只跑四道快门禁（~8s），全量回归留给手动。
+# 链式而非覆盖：hooks/pre-commit 可能已是 privacy-guard 等用户自有防线
+# （2026-10-17 实测本机就是），argo 门禁装成独立文件 pre-commit-argo，再向
+# 既有 hook 追一行调用（幂等：grep 到标记行才追加）。既有 hook 先exit 1 时
+# 我们的不会跑到——隐私/密钥防线优先，正确。
+if command -v git >/dev/null 2>&1 && { [ -d "$INSTALL_DIR/.git" ] || [ -f "$INSTALL_DIR/.git" ]; }; then
+  _common=$(cd "$INSTALL_DIR" && git rev-parse --git-common-dir 2>/dev/null || true)
+  case "$_common" in
+    /*) ;;
+    "") _common="" ;;
+    *)  _common="$INSTALL_DIR/$_common" ;;
+  esac
+  if [ -n "$_common" ] && [ -d "$_common" ]; then
+    _hooks_dir="$_common/hooks"
+    mkdir -p "$_hooks_dir"
+    cp "$INSTALL_DIR/scripts/pre-commit" "$_hooks_dir/pre-commit-argo" \
+      && chmod +x "$_hooks_dir/pre-commit-argo" || {
+        echo "[warn] pre-commit-argo 安装失败（不影响 argo 本体使用）"
+      }
+    if [ ! -e "$_hooks_dir/pre-commit" ]; then
+      cp "$_hooks_dir/pre-commit-argo" "$_hooks_dir/pre-commit"
+      echo "==> 已装 pre-commit 快门禁 hook（~8s；git commit --no-verify 可跳过）"
+    elif grep -q "pre-commit-argo" "$_hooks_dir/pre-commit" 2>/dev/null; then
+      echo "==> pre-commit 已接入 argo 快门禁（无需重复追加）"
+    else
+      printf '\n# argo 快门禁（2026-10-17 追加；独立文件，删掉下面一行即可解链）\n[ -x "$(dirname "$0")/pre-commit-argo" ] && "$(dirname "$0")/pre-commit-argo"\n' >> "$_hooks_dir/pre-commit" \
+        && echo "==> argo 快门禁已链入既有 pre-commit（未覆盖你的 hook）"
+    fi
+  fi
+fi
+
+
 if [[ ${#LINK_ARGS[@]} -gt 0 ]] || [[ -n "${ARGO_LINK_TARGETS:-}" ]] || [[ -f "$INSTALL_DIR/installs.local.yaml" ]]; then
   echo "==> 链接 Skill 入口（符号链接回真源，不复制）…"
   python3 "$INSTALL_DIR/scripts/link_source.py" "${LINK_ARGS[@]+"${LINK_ARGS[@]}"}" || {
