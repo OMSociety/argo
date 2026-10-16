@@ -479,7 +479,7 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 
 ## 功能开关总表（`ARGO_*`，唯一事实=源码扫描）
 
-> 90 个开关按六类 MECE。原则：调试/运行配置不进模型上下文（MCP schema 不暴露）；
+> 93 个开关按六类 MECE。原则：调试/运行配置不进模型上下文（MCP schema 不暴露）；
 > 本表由门禁与源码双向锁定——文档里的开关必须代码实存，代码新增开关必须入表。
 
 ### 能力开关（36）
@@ -548,7 +548,7 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 | `ARGO_YDC_API_KEY` | 对应引擎/服务的凭据（you.com） | 缺密钥=该源跳过或降级 |
 | `ARGO_ZHIHU_ACCESS_SECRET` | 对应引擎/服务的凭据 | 缺密钥=该源跳过或降级 |
 
-### 行为调参（17）
+### 行为调参（20）
 
 | 变量 | 作用 | 默认/备注 |
 |------|------|----------|
@@ -560,6 +560,9 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 | `ARGO_DEDUP_FUZZY` | ('minhash 去重的 rapidfuzz 模糊近重复复核（近似命中带内启用）', '默认开；=0 关；未装 rapidfuzz 时自动回退纯 minhash') | 见 rank_signals.py docstring |
 | `ARGO_DEDUP_FUZZY_THR` | 行为阈值/预算调参 | 默认 0.88（token_set_ratio 判定线） |
 | `ARGO_DEDUP_FUZZY_BAND` | 行为阈值/预算调参 | 默认 0.55（minhash 近似命中带下限） |
+| `ARGO_TFIDF_RERANK` | ('精排降级时的零依赖 TF-IDF 语义抛光（防 SERP 壳链回顶）', '默认开；=0 关；fast/budget 档内建跳过') | 见 rerank_tfidf.py docstring |
+| `ARGO_NUMBER_CROSSCHECK` | ('数字交叉验证信号（多源同指标数值分歧标记）', '默认开；仅 deep/auto 且结果 ≥3；=0 关') | 见 fact_crosscheck.py docstring |
+| `ARGO_TEXT_LEXICON` | 行为阈值/预算调参 | 数字交叉验证的指标词表 JSON 路径（默认 backends/text_lexicon.json） |
 | `ARGO_LOCAL_SEEK_GRACE_S` | 本地命中并入的宽限窗秒数 | 默认 0.25；覆盖 seek 常规 60~140ms |
 | `ARGO_MAX_PARALLEL_ENGINES` | 单轮编排并发引擎数上限（config.yaml `execution.max_parallel_engines` 的环境覆盖，供 A/B 对拍/运维应急） | 默认随配置（6）；非法值回落配置不报错 |
 | `ARGO_MINHASH_THRESHOLD` | 行为阈值/预算调参 | 默认经实测校准，勿轻动 |

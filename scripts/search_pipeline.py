@@ -56,6 +56,7 @@ from engine_env import env_flag
 from variant_recall import augment_with_variants
 from phrase_filter import apply_phrase_filter, extract_phrases
 from except_sets import OPT_IMPORT, SHAPE_BENIGN
+from postprocess_signals import apply_tfidf_polish, detect_number_conflict
 from search_attribution import usage_log_attribution
 from search_output import _collect_errors, _slow_query_ttl, build_funnel
 from search_rank import (
@@ -142,6 +143,7 @@ class _SearchRun:
     reranker_status: str = "skipped_short"
     local_rerank_on: bool = False
     fact_alignment: dict[str, Any] | None = None
+    number_conflict: dict[str, Any] | None = None
     noise_dropped: list[dict[str, Any]] = field(default_factory=list)
     funnel: dict[str, Any] | None = None
     result_payload: dict[str, Any] | None = None
@@ -704,7 +706,16 @@ def postprocess(req: _SearchRequest, run: _SearchRun, hooks: Any) -> _SearchRun:
         except Exception as e:
             _log(
                 f"本地五维 rerank 跳过: {type(e).__name__}")
-    elif not local_rerank_on and reranker_status in _RERANK_DEGRADED_STATUSES:
+    # TF-IDF 语义抛光 + none 兜底（方案 A；实现与开关在 postprocess_signals）。
+    # 2026-10-16 提取：特性钩子各带 try/except 与开关，留在主管线会把它顶破
+    # 模块体积门禁（1070 > 上限 1033），且放大主管线的异常面。ran=False
+    # 覆盖「开关关 / fast 档 / 结果不足 / 执行失败」——无论哪种本轮排序都
+    # 没有 TF-IDF 贡献，none 兜底都应生效（含 rerank_tfidf 抛异常的边缘态，
+    # 此前该态会被误留 stale rank_method）。
+    merged, rank_method, _tfidf_ran = apply_tfidf_polish(
+        query, merged, max_results, mode, reranker_status, rank_method, _log)
+    if not local_rerank_on and reranker_status in _RERANK_DEGRADED_STATUSES \
+            and not _tfidf_ran:
         rank_method = "none"
 
     _tock(timing, "rerank", _tk_rerank)
@@ -717,6 +728,12 @@ def postprocess(req: _SearchRequest, run: _SearchRun, hooks: Any) -> _SearchRun:
 
     # ── P0-004：关键事实交叉标记（仅 deep/auto 且结果 ≥3；fast 跳过）──
     fact_alignment: dict[str, Any] | None = _align_facts_safe(merged, mode, depth)
+
+    # 数字交叉验证信号（方案 A；实现与开关在 postprocess_signals）。
+    # 只 deep/auto 且结果 ≥3 时启用（函数内部门控），前 10 条做 O(n) 正则
+    # 对比（<1ms）；有分歧时 values[i] 与 sources[i] 同序配对，进 payload
+    # 供调用方决定是否 fetch 原文核对。
+    number_conflict = detect_number_conflict(query, merged, mode, depth, _log)
 
     _tock(timing, "signals", _tk_signals)
     _tk_cache_write = _tick(timing)
@@ -781,6 +798,7 @@ def postprocess(req: _SearchRequest, run: _SearchRun, hooks: Any) -> _SearchRun:
         reranker_status=reranker_status,
         local_rerank_on=local_rerank_on,
         fact_alignment=fact_alignment,
+        number_conflict=number_conflict,
         noise_dropped=_noise_dropped,
         funnel=funnel,
         result_payload=result_payload,
@@ -823,6 +841,7 @@ def finalize(req: _SearchRequest, run: _SearchRun, hooks: Any) -> dict[str, Any]
     reranker_status = run.reranker_status
     local_rerank_on = run.local_rerank_on
     fact_alignment = run.fact_alignment
+    number_conflict = run.number_conflict
     _noise_dropped = run.noise_dropped
     funnel = run.funnel
     result_payload = run.result_payload
@@ -989,6 +1008,7 @@ def finalize(req: _SearchRequest, run: _SearchRun, hooks: Any) -> dict[str, Any]
         "local_rerank_on": local_rerank_on,
         "recovery": recovery_info,
         "fact_alignment": fact_alignment,
+        "number_conflict": number_conflict,
         "exclude_terms": exclude_terms,
         "excluded_count": excluded_count,
         "time_filtered": time_filtered,
