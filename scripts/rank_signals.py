@@ -647,3 +647,91 @@ def domain_score_floors() -> dict[str, dict[str, dict[str, float]]]:
         except Exception:
             _SCORE_FLOORS_CACHE = {}
     return _SCORE_FLOORS_CACHE
+
+
+# ── 模糊近重复判定（rapidfuzz，可选依赖）─────────────────────────────────────
+#
+# 背景（2026-10-16 实测）：minhash_dedupe 的字符集 Jaccard 对「同文换站后缀/
+# 语序」的内容对给分低（「X - 知乎」vs「X | 知乎专栏」，token 集合差一个后缀
+# 词），实测 15 个真实结果池漏合 3 条跨站镜像条目。rapidfuzz token_set_ratio
+# 补这一带；只在其 minhash 分落在 [band_lo, threshold) 的近似命中带内启用
+# ——带外不调（实测每查询 0-6 次调用、<2.5ms；全量逐对 800 条要 2.34s，
+# 热路径付不起，故必须有这道闸）。
+#
+# 形态与 curl_cffi 一致：可选依赖，缺失时静默回退纯 minhash 判定
+# （本函数返回 False，调用方行为与接入前逐位一致）；ARGO_DEDUP_FUZZY=0 可
+# 整体关闭。阈值可用 ARGO_DEDUP_FUZZY_THR / ARGO_DEDUP_FUZZY_BAND 覆盖。
+
+_RF_FUZZ: Any = None
+_RF_TRIED = False
+
+
+# ── 标题站后缀归一化（零依赖）───────────────────────────────────────────────
+#
+# 跨站同文对的差异几乎全是结尾的站归属后缀（「- 知乎」「| 知乎专栏」
+# 「_百度百家号」）：不剥掉时字符集 Jaccard 被一个后缀词拉低（真重复对
+# minhash 实测 0.375-0.75，都不过 0.85 阈值）。剥掉再算 minhash，同文对
+# 相似度自然升过阈值——不需要第二套相似度度量。
+#
+# 边界（2026-10-16 实测）：只剥「结尾处 分隔符+已知站名(+≤6 字尾缀)」，
+# 「我在知乎的日子」「CSDN 编程指北」这类站名在中间/开头的不动；
+# 纯「- 知乎」标题剥为空（无内容可留，交由后续空签判据处理）。
+
+_SITE_SUFFIX_RE = None
+
+
+def normalize_title_suffix(title: str) -> str:
+    """剥掉结尾的站归属后缀（「X - 知乎」→「X」）；无后缀原样返回。"""
+    global _SITE_SUFFIX_RE
+    if not title:
+        return title
+    if _SITE_SUFFIX_RE is None:
+        import re as _re
+        _SITE_SUFFIX_RE = _re.compile(
+            r"\s*[-_|·—–:：]\s*"
+            r"(知乎|知乎专栏|百度百家号|腾讯新闻|网易|新浪|搜狐|头条|简书|CSDN|掘金|"
+            r"博客园|oschina|开源中国|bilibili|哔哩哔哩|微信公众号|微信|微博|小红书|"
+            r"豆瓣|贴吧|虎嗅|36氪|少数派)"
+            r"[一-龥A-Za-z]{0,6}\s*$"
+        )
+    return _SITE_SUFFIX_RE.sub("", title)
+
+
+def _rf_token_set_ratio(a: str, b: str) -> float:
+    """懒加载 rapidfuzz 的 token_set_ratio（×100 归一到 0-1）；缺失返回 -1。"""
+    global _RF_FUZZ, _RF_TRIED
+    if not _RF_TRIED:
+        _RF_TRIED = True
+        try:
+            from rapidfuzz import fuzz as _fuzz
+            _RF_FUZZ = _fuzz.token_set_ratio
+        except Exception:
+            _RF_FUZZ = None
+    if _RF_FUZZ is None:
+        return -1.0
+    try:
+        return float(_RF_FUZZ(a, b)) / 100.0
+    except Exception:
+        return -1.0
+
+
+def fuzzy_near_dup(sig_a: str, sig_b: str, minhash_sim: float,
+                   band_lo: float = 0.55, threshold: float = 0.88) -> bool:
+    """近似命中带内的模糊近重复判定（minhash 未过阈值时的第二判据）。
+
+    minhash_sim 是调用方已算出的字符集相似度；落在 [band_lo, threshold)
+    才继续问 rapidfuzz，低于 band_lo 直接 False（省掉绝大部分逐对调用）。
+    rapidfuzz 缺失、开关关闭、判据异常，一律 False（回退纯 minhash 语义）。
+    """
+    if not sig_a or not sig_b:
+        return False
+    if not _env_flag("ARGO_DEDUP_FUZZY"):
+        return False
+    try:
+        band = float(get_env("ARGO_DEDUP_FUZZY_BAND") or band_lo)
+        thr = float(get_env("ARGO_DEDUP_FUZZY_THR") or threshold)
+    except (TypeError, ValueError):
+        band, thr = band_lo, threshold
+    if not (band <= minhash_sim < thr):
+        return False
+    return _rf_token_set_ratio(sig_a, sig_b) >= thr
