@@ -95,9 +95,11 @@ if (-not $SkipPip) {
     Write-Host "==> 安装依赖 (PyYAML)…"
     & $script:py -m pip install pyyaml
     if ($LASTEXITCODE -ne 0) { Write-Host "[warn] pip 安装 PyYAML 失败，可手动: pip install pyyaml" }
-    Write-Host "==> 安装可选增强 (curl_cffi: TLS 指纹伪造，缺失不影响核心功能)…"
+    Write-Host "==> 安装可选增强 (curl_cffi: TLS 指纹伪造；rapidfuzz: 去重模糊近重复复核；缺失不影响核心功能)…"
     & $script:py -m pip install curl_cffi
     if ($LASTEXITCODE -ne 0) { Write-Host "[warn] pip 安装 curl_cffi 失败（可选依赖）" }
+    & $script:py -m pip install rapidfuzz
+    if ($LASTEXITCODE -ne 0) { Write-Host "[warn] pip 安装 rapidfuzz 失败（可选依赖，缺失时去重回退纯 minhash）" }
 }
 
 if ($LinkTargets.Count -gt 0 -or (Test-Path (Join-Path $InstallDir "installs.local.yaml"))) {
