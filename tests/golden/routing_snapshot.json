@@ -1,0 +1,1401 @@
+{
+ "version": 1,
+ "generated_by": "scripts/gen_routing_snapshot.py",
+ "compare_keys": [
+  "domain",
+  "kind"
+ ],
+ "note": "engines 仅存档不比对（随熔断/配额波动）；expect/forbid 是语料自带的标注，失配由 precision/negative 测试与 --check 双报",
+ "entries": [
+  {
+   "query": "AAPL stock price",
+   "domain": "us_stock",
+   "kind": "regex",
+   "engines": [
+    "finviz",
+    "eastmoney"
+   ],
+   "expect": "us_stock",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "Apple Inc headquarters",
+   "domain": "org_entity",
+   "kind": "regex",
+   "engines": [
+    "wikidata",
+    "wikipedia"
+   ],
+   "expect": "org_entity",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "CISA KEV 漏洞",
+   "domain": "security_search",
+   "kind": "regex",
+   "engines": [
+    "nvd",
+    "anysearch"
+   ],
+   "expect": "security_search",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "CVE-2021-44228 severity",
+   "domain": "security_search",
+   "kind": "regex",
+   "engines": [
+    "nvd",
+    "anysearch"
+   ],
+   "expect": "security_search",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "Crawl4AI pruning content filter extraction",
+   "domain": "general_search",
+   "kind": "regex",
+   "engines": [
+    "anysearch",
+    "local_bing"
+   ],
+   "expect": "general_search",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "Cristiano Ronaldo club",
+   "domain": "sports_search",
+   "kind": "regex",
+   "engines": [
+    "thesportsdb",
+    "jolpica"
+   ],
+   "expect": "sports_search",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "DeepSeek Harness DSH 插件开发",
+   "domain": "general_search",
+   "kind": "tfidf",
+   "engines": [
+    "github",
+    "anysearch"
+   ],
+   "expect": null,
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "Inception movie director",
+   "domain": "film_search",
+   "kind": "tfidf",
+   "engines": [
+    "imdb",
+    "douban_movie"
+   ],
+   "expect": "film_search",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "Interstellar film cast",
+   "domain": "film_search",
+   "kind": "tfidf",
+   "engines": [
+    "imdb",
+    "douban_movie"
+   ],
+   "expect": "film_search",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "Kevin 的 项目",
+   "domain": "chinese_general",
+   "kind": "tfidf",
+   "engines": [
+    "anysearch",
+    "octen"
+   ],
+   "expect": null,
+   "forbid": "vehicle_data",
+   "src": "SUBSTRING_ACCIDENTS"
+  },
+  {
+   "query": "LeBron James team",
+   "domain": "sports_search",
+   "kind": "regex",
+   "engines": [
+    "thesportsdb",
+    "jolpica"
+   ],
+   "expect": "sports_search",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "MLB 季后赛 赛程",
+   "domain": "sports_search",
+   "kind": "tfidf",
+   "engines": [
+    "thesportsdb",
+    "jolpica"
+   ],
+   "expect": "sports_search",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "NASA founding year",
+   "domain": "org_entity",
+   "kind": "regex",
+   "engines": [
+    "wikidata",
+    "wikipedia"
+   ],
+   "expect": "org_entity",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "NBA 球队 排名",
+   "domain": "sports_search",
+   "kind": "tfidf",
+   "engines": [
+    "thesportsdb",
+    "jolpica"
+   ],
+   "expect": "sports_search",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "RFC 9110",
+   "domain": "rfc_search",
+   "kind": "regex",
+   "engines": [
+    "rfc_editor",
+    "anysearch"
+   ],
+   "expect": "rfc_search",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "React vs Vue",
+   "domain": "english_tech",
+   "kind": "tfidf",
+   "engines": [
+    "octen",
+    "anysearch"
+   ],
+   "expect": null,
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "Taylor Swift album",
+   "domain": "media_search",
+   "kind": "regex",
+   "engines": [
+    "itunes",
+    "musicbrainz"
+   ],
+   "expect": "media_search",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "US CPI",
+   "domain": "macro_data",
+   "kind": "regex",
+   "engines": [
+    "fred",
+    "fx_rate"
+   ],
+   "expect": "macro_data",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "World Cup 2022 winner",
+   "domain": "sports_search",
+   "kind": "tfidf",
+   "engines": [
+    "thesportsdb",
+    "jolpica"
+   ],
+   "expect": "sports_search",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "best wood for beginner woodworking",
+   "domain": "general_search",
+   "kind": "tfidf",
+   "engines": [
+    "anysearch",
+    "local_bing"
+   ],
+   "expect": null,
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "drugstore 连锁",
+   "domain": "general_search",
+   "kind": "tfidf",
+   "engines": [
+    "anysearch",
+    "local_bing"
+   ],
+   "expect": null,
+   "forbid": "chem_search",
+   "src": "SUBSTRING_ACCIDENTS"
+  },
+  {
+   "query": "hello world",
+   "domain": "general_search",
+   "kind": "tfidf",
+   "engines": [
+    "anysearch",
+    "local_bing"
+   ],
+   "expect": null,
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "hn search 讨论",
+   "domain": "hackernews_search",
+   "kind": "tfidf",
+   "engines": [
+    "anysearch",
+    "local_bing"
+   ],
+   "expect": "hackernews_search",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "how often should I water tomato plants",
+   "domain": "general_search",
+   "kind": "tfidf",
+   "engines": [
+    "anysearch",
+    "local_bing"
+   ],
+   "expect": null,
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "how to cook pasta carbonara",
+   "domain": "english_tech",
+   "kind": "tfidf",
+   "engines": [
+    "octen",
+    "anysearch"
+   ],
+   "expect": null,
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "log4j 漏洞 CVSS",
+   "domain": "security_search",
+   "kind": "regex",
+   "engines": [
+    "nvd",
+    "anysearch"
+   ],
+   "expect": "security_search",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "monetary policy tightening 2026",
+   "domain": "general_search",
+   "kind": "tfidf",
+   "engines": [
+    "anysearch",
+    "local_bing"
+   ],
+   "expect": null,
+   "forbid": "art_museum",
+   "src": "SUBSTRING_ACCIDENTS"
+  },
+  {
+   "query": "nbalive 直播 源",
+   "domain": "chinese_general",
+   "kind": "tfidf",
+   "engines": [
+    "anysearch",
+    "octen"
+   ],
+   "expect": null,
+   "forbid": "sports_search",
+   "src": "SUBSTRING_ACCIDENTS"
+  },
+  {
+   "query": "newspaper 行业 衰退",
+   "domain": "chinese_general",
+   "kind": "tfidf",
+   "engines": [
+    "anysearch",
+    "octen"
+   ],
+   "expect": null,
+   "forbid": "academic",
+   "src": "SUBSTRING_ACCIDENTS"
+  },
+  {
+   "query": "notch 设计 模式",
+   "domain": "chinese_general",
+   "kind": "regex",
+   "engines": [
+    "anysearch",
+    "octen"
+   ],
+   "expect": null,
+   "forbid": "medical",
+   "src": "SUBSTRING_ACCIDENTS"
+  },
+  {
+   "query": "npm express 弃用",
+   "domain": "package_intel",
+   "kind": "regex",
+   "engines": [
+    "deps_dev",
+    "anysearch"
+   ],
+   "expect": "package_intel",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "pnpm file: directory dependency no content hash reinstall",
+   "domain": "general_search",
+   "kind": "regex",
+   "engines": [
+    "anysearch",
+    "local_bing"
+   ],
+   "expect": null,
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "price of iPhone 15",
+   "domain": "general_search",
+   "kind": "tfidf",
+   "engines": [
+    "anysearch",
+    "local_bing"
+   ],
+   "expect": null,
+   "forbid": "stock_query",
+   "src": "SUBSTRING_ACCIDENTS"
+  },
+  {
+   "query": "python asyncio tutorial",
+   "domain": "english_tech",
+   "kind": "regex",
+   "engines": [
+    "octen",
+    "anysearch"
+   ],
+   "expect": "english_tech",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "python 生命周期 停止支持",
+   "domain": "lifecycle_search",
+   "kind": "regex",
+   "engines": [
+    "endoflife",
+    "anysearch"
+   ],
+   "expect": "lifecycle_search",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "requests pypi",
+   "domain": "package_search",
+   "kind": "regex",
+   "engines": [
+    "pypi",
+    "crates"
+   ],
+   "expect": "package_search",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "settlement 结算 周期",
+   "domain": "general_search",
+   "kind": "tfidf",
+   "engines": [
+    "anysearch",
+    "doaj"
+   ],
+   "expect": null,
+   "forbid": "astro_space",
+   "src": "SUBSTRING_ACCIDENTS"
+  },
+  {
+   "query": "technique for reducing latency",
+   "domain": "general_search",
+   "kind": "tfidf",
+   "engines": [
+    "anysearch",
+    "local_bing"
+   ],
+   "expect": null,
+   "forbid": "hackernews_search",
+   "src": "SUBSTRING_ACCIDENTS"
+  },
+  {
+   "query": "transformer attention paper",
+   "domain": "academic",
+   "kind": "tfidf",
+   "engines": [
+    "arxiv",
+    "openreview"
+   ],
+   "expect": "academic",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "weather Tokyo",
+   "domain": "weather_query",
+   "kind": "tfidf",
+   "engines": [
+    "weather_cn",
+    "weather"
+   ],
+   "expect": "weather_query",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "where is Eiffel Tower",
+   "domain": "geo_places",
+   "kind": "tfidf",
+   "engines": [
+    "local_openstreetmap"
+   ],
+   "expect": "geo_places",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "who invented the printing press",
+   "domain": "general_search",
+   "kind": "tfidf",
+   "engines": [
+    "anysearch",
+    "local_bing"
+   ],
+   "expect": null,
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "who wrote the linux kernel",
+   "domain": "general_search",
+   "kind": "tfidf",
+   "engines": [
+    "anysearch",
+    "local_bing"
+   ],
+   "expect": null,
+   "forbid": "org_entity",
+   "src": "SUBSTRING_ACCIDENTS"
+  },
+  {
+   "query": "Как написать скрипт",
+   "domain": "general_search",
+   "kind": "tfidf",
+   "engines": [
+    "anysearch",
+    "local_bing"
+   ],
+   "expect": null,
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "أخبار التكنولوجيا",
+   "domain": "world_news",
+   "kind": "regex",
+   "engines": [
+    "anysearch",
+    "aljazeera"
+   ],
+   "expect": null,
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "อากาศ กรุงเทพ",
+   "domain": "general_search",
+   "kind": "tfidf",
+   "engines": [
+    "anysearch",
+    "local_bing"
+   ],
+   "expect": null,
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "アニメ おすすめ",
+   "domain": "general_search",
+   "kind": "tfidf",
+   "engines": [
+    "qiita",
+    "anysearch"
+   ],
+   "expect": null,
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "エッフェル塔 どこ",
+   "domain": "geo_places",
+   "kind": "tfidf",
+   "engines": [
+    "local_openstreetmap",
+    "anysearch"
+   ],
+   "expect": "geo_places",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "トヨタ 株価",
+   "domain": "general_search",
+   "kind": "tfidf",
+   "engines": [
+    "anysearch",
+    "local_bing"
+   ],
+   "expect": null,
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "メッシ クラブ",
+   "domain": "sports_search",
+   "kind": "tfidf",
+   "engines": [
+    "thesportsdb",
+    "anysearch"
+   ],
+   "expect": "sports_search",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "三体 小说 书评",
+   "domain": "book_search",
+   "kind": "tfidf",
+   "engines": [
+    "weread",
+    "douban_book"
+   ],
+   "expect": "book_search",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "上海 天气 怎么样",
+   "domain": "weather_query",
+   "kind": "tfidf",
+   "engines": [
+    "open_meteo",
+    "weather_cn"
+   ],
+   "expect": "weather_query",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "上海天气 未来一周",
+   "domain": "weather_query",
+   "kind": "tfidf",
+   "engines": [
+    "open_meteo",
+    "weather_cn"
+   ],
+   "expect": "weather_query",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "上证指数 行情",
+   "domain": "stock_query",
+   "kind": "tfidf",
+   "engines": [
+    "sina_quote",
+    "eastmoney"
+   ],
+   "expect": "stock_query",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "中国 8541 2023 进出口",
+   "domain": "trade_stats",
+   "kind": "tfidf",
+   "engines": [
+    "un_comtrade",
+    "anysearch"
+   ],
+   "expect": "trade_stats",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "中国 GDP",
+   "domain": "macro_data",
+   "kind": "regex",
+   "engines": [
+    "worldbank",
+    "fred"
+   ],
+   "expect": "macro_data",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "临床指南 糖尿病",
+   "domain": "medical",
+   "kind": "tfidf",
+   "engines": [
+    "clinicaltrials",
+    "anysearch"
+   ],
+   "expect": "medical",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "北京 今天 天气",
+   "domain": "weather_query",
+   "kind": "tfidf",
+   "engines": [
+    "open_meteo",
+    "weather_cn"
+   ],
+   "expect": "weather_query",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "北京 地铁 时刻表",
+   "domain": "transport_rt",
+   "kind": "tfidf",
+   "engines": [
+    "gbfs_nyc",
+    "local_openstreetmap"
+   ],
+   "expect": "transport_rt",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "北京 天气",
+   "domain": "weather_query",
+   "kind": "tfidf",
+   "engines": [
+    "open_meteo",
+    "weather_cn"
+   ],
+   "expect": "weather_query",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "卫星 TLE 轨道根数",
+   "domain": "astro_space",
+   "kind": "tfidf",
+   "engines": [
+    "noaa_swpc",
+    "satnogs"
+   ],
+   "expect": "astro_space",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "周杰伦 专辑",
+   "domain": "media_search",
+   "kind": "tfidf",
+   "engines": [
+    "itunes",
+    "musicbrainz"
+   ],
+   "expect": "media_search",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "周杰伦 新歌 专辑",
+   "domain": "media_search",
+   "kind": "tfidf",
+   "engines": [
+    "qq_music",
+    "itunes"
+   ],
+   "expect": "media_search",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "国务院职能",
+   "domain": "org_entity",
+   "kind": "tfidf",
+   "engines": [
+    "wikidata",
+    "wikipedia"
+   ],
+   "expect": "org_entity",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "土壤 重金属 检测",
+   "domain": "soil_agri",
+   "kind": "tfidf",
+   "engines": [
+    "usda",
+    "openfoodfacts"
+   ],
+   "expect": "soil_agri",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "埃菲尔铁塔 位置",
+   "domain": "geo_places",
+   "kind": "tfidf",
+   "engines": [
+    "local_openstreetmap",
+    "wikipedia"
+   ],
+   "expect": "geo_places",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "埃菲尔铁塔 在哪里",
+   "domain": "geo_places",
+   "kind": "tfidf",
+   "engines": [
+    "local_openstreetmap"
+   ],
+   "expect": "geo_places",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "埃菲尔铁塔 经纬度",
+   "domain": "geo_places",
+   "kind": "tfidf",
+   "engines": [
+    "local_openstreetmap",
+    "wikipedia"
+   ],
+   "expect": "geo_places",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "埃菲尔铁塔在哪",
+   "domain": "geo_places",
+   "kind": "tfidf",
+   "engines": [
+    "local_openstreetmap",
+    "wikipedia"
+   ],
+   "expect": "geo_places",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "塔罗牌 入门教程",
+   "domain": "chinese_tech_deep",
+   "kind": "tfidf",
+   "engines": [
+    "octen",
+    "juejin"
+   ],
+   "expect": null,
+   "forbid": "geo_places",
+   "src": "SUBSTRING_ACCIDENTS"
+  },
+  {
+   "query": "如何学习机器学习",
+   "domain": "chinese_tech_deep",
+   "kind": "tfidf",
+   "engines": [
+    "octen",
+    "juejin"
+   ],
+   "expect": null,
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "宮崎駿 アニメ 映画",
+   "domain": "film_search",
+   "kind": "tfidf",
+   "engines": [
+    "imdb",
+    "anysearch"
+   ],
+   "expect": "film_search",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "富士山 標高",
+   "domain": "geo_places",
+   "kind": "regex",
+   "engines": [
+    "local_openstreetmap",
+    "wikipedia"
+   ],
+   "expect": "geo_places",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "川菜 做法",
+   "domain": "chinese_general",
+   "kind": "regex",
+   "engines": [
+    "anysearch",
+    "octen"
+   ],
+   "expect": null,
+   "forbid": "geo_places",
+   "src": "SUBSTRING_ACCIDENTS"
+  },
+  {
+   "query": "库里 球队",
+   "domain": "sports_search",
+   "kind": "tfidf",
+   "engines": [
+    "thesportsdb",
+    "jolpica"
+   ],
+   "expect": "sports_search",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "怎么把排骨炖得软烂",
+   "domain": "chinese_general",
+   "kind": "regex",
+   "engines": [
+    "anysearch",
+    "octen"
+   ],
+   "expect": null,
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "杭州亚运会 场馆",
+   "domain": "sports_search",
+   "kind": "regex",
+   "engines": [
+    "thesportsdb",
+    "jolpica"
+   ],
+   "expect": "sports_search",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "東京 おすすめ ラーメン 屋 はどこ",
+   "domain": "geo_places",
+   "kind": "tfidf",
+   "engines": [
+    "local_openstreetmap",
+    "anysearch"
+   ],
+   "expect": "geo_places",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "東京 地図",
+   "domain": "geo_places",
+   "kind": "tfidf",
+   "engines": [
+    "local_openstreetmap",
+    "anysearch"
+   ],
+   "expect": "geo_places",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "東京の天気",
+   "domain": "weather_query",
+   "kind": "tfidf",
+   "engines": [
+    "open_meteo",
+    "weather_cn"
+   ],
+   "expect": "weather_query",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "梅西 俱乐部",
+   "domain": "sports_search",
+   "kind": "tfidf",
+   "engines": [
+    "thesportsdb",
+    "jolpica"
+   ],
+   "expect": "sports_search",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "沪深300 基金净值",
+   "domain": "fund_query",
+   "kind": "tfidf",
+   "engines": [
+    "eastmoney",
+    "anysearch"
+   ],
+   "expect": "fund_query",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "沪深300 基金定投",
+   "domain": "fund_query",
+   "kind": "tfidf",
+   "engines": [
+    "eastmoney",
+    "anysearch"
+   ],
+   "expect": "fund_query",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "深度学习 paper 论文",
+   "domain": "academic",
+   "kind": "tfidf",
+   "engines": [
+    "local_arxiv",
+    "arxiv"
+   ],
+   "expect": "academic",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "深蹲膝盖疼怎么恢复",
+   "domain": "chinese_general",
+   "kind": "tfidf",
+   "engines": [
+    "anysearch",
+    "octen"
+   ],
+   "expect": null,
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "清华大学 创办年份",
+   "domain": "org_entity",
+   "kind": "tfidf",
+   "engines": [
+    "wikidata",
+    "wikipedia"
+   ],
+   "expect": "org_entity",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "火影忍者 番剧 声优",
+   "domain": "anime_encyclopedia",
+   "kind": "tfidf",
+   "engines": [
+    "moegirl",
+    "bangumi"
+   ],
+   "expect": "anime_encyclopedia",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "电影 主演 是谁",
+   "domain": "film_search",
+   "kind": "tfidf",
+   "engines": [
+    "imdb",
+    "tvmaze"
+   ],
+   "expect": "film_search",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "看NBA视频 集锦",
+   "domain": "sports_search",
+   "kind": "tfidf",
+   "engines": [
+    "thesportsdb",
+    "jolpica"
+   ],
+   "expect": "sports_search",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "糖尿病 症状 用药",
+   "domain": "medical",
+   "kind": "regex",
+   "engines": [
+    "clinicaltrials",
+    "anysearch"
+   ],
+   "expect": "medical",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "肖申克的救赎 主演",
+   "domain": "film_search",
+   "kind": "tfidf",
+   "engines": [
+    "imdb",
+    "douban_movie"
+   ],
+   "expect": "film_search",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "腾讯元宝 yuanbao.com URL 参数 搜索",
+   "domain": "chinese_general",
+   "kind": "tfidf",
+   "engines": [
+    "anysearch",
+    "octen"
+   ],
+   "expect": null,
+   "forbid": "sports_search",
+   "src": "SUBSTRING_ACCIDENTS"
+  },
+  {
+   "query": "苹果股价 行情",
+   "domain": "stock_query",
+   "kind": "tfidf",
+   "engines": [
+    "sina_quote",
+    "eastmoney"
+   ],
+   "expect": "stock_query",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "药品 说明书",
+   "domain": "medical",
+   "kind": "tfidf",
+   "engines": [
+    "clinicaltrials",
+    "anysearch"
+   ],
+   "expect": "medical",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "莫奈 monet 画作",
+   "domain": "art_museum",
+   "kind": "tfidf",
+   "engines": [
+    "met_museum",
+    "wikipedia"
+   ],
+   "expect": "art_museum",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "财联社 快讯",
+   "domain": "cls_telegraph_search",
+   "kind": "regex",
+   "engines": [
+    "cls_telegraph",
+    "jin10"
+   ],
+   "expect": "cls_telegraph_search",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "财联社 电报 快讯",
+   "domain": "cls_telegraph_search",
+   "kind": "regex",
+   "engines": [
+    "cls_telegraph",
+    "jin10"
+   ],
+   "expect": "cls_telegraph_search",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "贵州茅台股价",
+   "domain": "stock_query",
+   "kind": "tfidf",
+   "engines": [
+    "sina_quote",
+    "eastmoney"
+   ],
+   "expect": "stock_query",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "车辆 VIN 查询",
+   "domain": "vehicle_data",
+   "kind": "tfidf",
+   "engines": [
+    "nhtsa_vpic",
+    "anysearch"
+   ],
+   "expect": "vehicle_data",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "阿司匹林 分子式",
+   "domain": "chem_search",
+   "kind": "regex",
+   "engines": [
+    "pubchem",
+    "openalex"
+   ],
+   "expect": "chem_search",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "附近好吃的本帮菜馆",
+   "domain": "chinese_general",
+   "kind": "regex",
+   "engines": [
+    "anysearch",
+    "local_openstreetmap"
+   ],
+   "expect": "chinese_general",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "黄河 流经省份",
+   "domain": "geo_places",
+   "kind": "tfidf",
+   "engines": [
+    "local_openstreetmap",
+    "wikipedia"
+   ],
+   "expect": "geo_places",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "강아지 사료 추천",
+   "domain": "general_search",
+   "kind": "tfidf",
+   "engines": [
+    "kor_law",
+    "anysearch"
+   ],
+   "expect": null,
+   "forbid": "geo_places",
+   "src": "SUBSTRING_ACCIDENTS"
+  },
+  {
+   "query": "국경 분쟁",
+   "domain": "geo_places",
+   "kind": "regex",
+   "engines": [
+    "local_openstreetmap",
+    "anysearch"
+   ],
+   "expect": "geo_places",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "국경일 휴무",
+   "domain": "general_search",
+   "kind": "tfidf",
+   "engines": [
+    "anysearch",
+    "local_bing"
+   ],
+   "expect": null,
+   "forbid": "geo_places",
+   "src": "SUBSTRING_ACCIDENTS"
+  },
+  {
+   "query": "기생충 영화 감독",
+   "domain": "film_search",
+   "kind": "regex",
+   "engines": [
+    "imdb",
+    "anysearch"
+   ],
+   "expect": "film_search",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "부산 맛집",
+   "domain": "general_search",
+   "kind": "tfidf",
+   "engines": [
+    "anysearch",
+    "local_bing"
+   ],
+   "expect": null,
+   "forbid": "geo_places",
+   "src": "SUBSTRING_ACCIDENTS"
+  },
+  {
+   "query": "삼성전자 주가",
+   "domain": "general_search",
+   "kind": "tfidf",
+   "engines": [
+    "anysearch",
+    "local_bing"
+   ],
+   "expect": null,
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "손흥민 팀",
+   "domain": "sports_search",
+   "kind": "regex",
+   "engines": [
+    "thesportsdb",
+    "anysearch"
+   ],
+   "expect": "sports_search",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "에펠탑 어디",
+   "domain": "geo_places",
+   "kind": "regex",
+   "engines": [
+    "local_openstreetmap",
+    "anysearch"
+   ],
+   "expect": "geo_places",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "일본 자동차 산업",
+   "domain": "general_search",
+   "kind": "tfidf",
+   "engines": [
+    "anysearch",
+    "local_bing"
+   ],
+   "expect": null,
+   "forbid": "geo_places",
+   "src": "SUBSTRING_ACCIDENTS"
+  },
+  {
+   "query": "중국 산업 정책",
+   "domain": "general_search",
+   "kind": "tfidf",
+   "engines": [
+    "anysearch",
+    "local_bing"
+   ],
+   "expect": null,
+   "forbid": "geo_places",
+   "src": "SUBSTRING_ACCIDENTS"
+  },
+  {
+   "query": "한강 지도",
+   "domain": "geo_places",
+   "kind": "regex",
+   "engines": [
+    "local_openstreetmap",
+    "anysearch"
+   ],
+   "expect": "geo_places",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "한국 반도체 산업",
+   "domain": "general_search",
+   "kind": "tfidf",
+   "engines": [
+    "anysearch",
+    "local_bing"
+   ],
+   "expect": null,
+   "forbid": "geo_places",
+   "src": "SUBSTRING_ACCIDENTS"
+  },
+  {
+   "query": "한국 영화 추천",
+   "domain": "film_search",
+   "kind": "regex",
+   "engines": [
+    "imdb",
+    "anysearch"
+   ],
+   "expect": null,
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "한반도 지도",
+   "domain": "geo_places",
+   "kind": "regex",
+   "engines": [
+    "local_openstreetmap",
+    "anysearch"
+   ],
+   "expect": "geo_places",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  }
+ ]
+}
