@@ -47,6 +47,8 @@ class TestNegationGate(unittest.TestCase):
             ("不想看恐怖片", "恐怖片"),
             ("不要广告的新闻", "广告"),
             ("排除广告的新闻", "广告"),
+            ("不是财报的估值分析", "财报"),   # 2026-10-16 方案一从 v2 回收
+            ("电脑不是华为的推荐", "华为"),
             ("python -django framework", "django"),
             ("NOT java tutorial", "java"),
             ("without ads news", "ads"),
