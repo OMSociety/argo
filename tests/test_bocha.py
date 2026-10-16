@@ -333,7 +333,10 @@ class TestModalCardRouting(unittest.TestCase):
         cases = {
             "北京天气": "weather_query",
             "今日A股收盘": "stock_query",
-            "美元兑人民币": "macro_data",
+            # 2026-10-16：美元兑人民币改由 fx_query 独享（汇率先行域），
+            # 宏观位换用真正的宏观查询
+            "美国 CPI 最新": "macro_data",
+            "美元兑人民币": "fx_query",
             "咳嗽症状": "medical",
         }
         for q, expect in cases.items():

@@ -152,6 +152,8 @@ def test_every_rule_compiles_and_survives_compilation():
         ("fund_query", "公募基金运作管理办法 修订 逐条解读"),
         # org_entity unless（2026-10-14）：岗位职责/求职不锁进 wikidata
         ("org_entity", "AI搜索产品经理 岗位要求 职责"),
+        # fx_query unless（2026-10-16）：外汇储备是宏观存量概念，不进汇率牌价域
+        ("fx_query", "外汇储备 最新 数据"),
     ],
 )
 def test_unless_has_a_negative_case(domain_name, query):
@@ -168,7 +170,8 @@ def test_unless_has_a_negative_case(domain_name, query):
 
 def test_unless_declared_domains_are_covered_by_negative_cases():
     """声明了 unless 的域，必须在上面的反例表里出现（新增域时别忘配反例）。"""
-    covered = {"weather_query", "geo_places", "academic", "fund_query", "org_entity"}
+    covered = {"weather_query", "geo_places", "academic", "fund_query", "org_entity",
+               "fx_query"}
     declared = {d.get("name") for d in DOMAINS
                 if any(_split_pattern_entry(p)[1] for p in _entries_of(d))}
     missing = sorted(declared - covered)

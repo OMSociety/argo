@@ -93,6 +93,16 @@ _NARROW_TOP2_DEBT = {
     "dataset_search", "earth_science", "energy_grid", "film_search",
     "global_event", "outbreak_health", "patent_search", "soil_agri",
     "standards", "transport_rt",
+    # ── 2026-10-16：fx_query 建域时登记 ───────────────────────────────────
+    #
+    # 前 2 位 fx_rate（open.er-api 即期汇率）+ eastmoney（财经资讯站内检索，
+    # 「人民币兑美元中间价报 6.72」类快讯的原生来源）都是免费无密钥专源。
+    # 不把 anysearch 提前的理由：汇率是答案型查询，二手网页会在精排里挤掉
+    # 6.7x 这类一手数字（原 macro_data 路径的实测事故正是通用源兜底交付了
+    # 百科词条）。保底有两条明确通道：fallback=anysearch（combo 位次 4）
+    # + 零结果恢复链 L3/switch_engine 拉通用源。建域实测两源均非零返回
+    # （675ms，含中间价快讯与双向即期汇率）。
+    "fx_query",
 }
 
 

@@ -344,7 +344,7 @@ python3 scripts/search.py --list-engines
 - **Inyección MCP de un comando (nuevo en v2.8.4)**: `argo mcp inject` para Claude Code / Cursor / Windsurf / Codex / OpenCode / Cline (escritura atómica + backup + deshacer; fuente `mcp/clients.yaml`)
 - **Mejoras de búsqueda estructurada (nuevo en v2.8.4)**: normalización + variantes + puerta de complejidad; sintaxis social primero; TF-IDF sigue mirando tras descartar un motor chino; `--include-local`
 - **Keenable (nuevo en v2.8.4)**: motor web general extra (HTTP declarativo L1, prueba gratis, `ARGO_KEENABLE_API_KEY`)
-- **265 fuentes, 94 dominios** (229 sin clave): web general + finanzas / macro / cine / deportes / geo / orgs / media / química / academia / código (fuente de verdad: `config.yaml`)
+- **265 fuentes, 95 dominios** (229 sin clave): web general + finanzas / macro / cine / deportes / geo / orgs / media / química / academia / código (fuente de verdad: `config.yaml`)
 - **19 herramientas MCP** (alineadas con la superficie CLI): search, research, evidence, clarify, fetch, screenshot, PDF, social, archivos locales, crawl, preview local, recompute, texto completo de artículos WeChat, agregación de empleo, extracción estructurada, preflight de URLs por lotes, respuesta directa, observación de cambios web, entradas de cita DOI
 - **Búsqueda multilingüe**: chino, inglés, japonés, coreano, cirílico, tailandés, árabe, hebreo, griego, devanagari, …; el enrutamiento y los params de motor siguen el idioma; consultas no chinas evitan fuentes solo en chino (Zhihu / Sogou WeChat / snapshots A-share, etc.)
 - **Compuertas de recuperación vertical**: la recuperación de vacío no «filtra» pypi / npm / flash news a cine o deportes

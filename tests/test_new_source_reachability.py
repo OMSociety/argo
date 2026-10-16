@@ -267,7 +267,12 @@ _DORMANT_ALLOWLIST: dict[str, str] = {
     # 路由）。汇率主路径由 fx_rate（位次 5，同窗口外但历史更久）承担；
     # frankfurter 的价值口径是 ECB 官方参考价，走 macro_data 零结果恢复链
     # （test_domain_zero_result_recovery 锁定 fb[:4] 含它）与 deep/research。
-    "frankfurter": "macro_data 位次 6：ECB 官方汇率口径，走零结果恢复链/deep 档（FX 主路径是 fx_rate）",
+    #
+    # 2026-10-16：fx_rate / frankfurter 从本台账**撤账**——新建 fx_query 域
+    # （汇率先行域，位于 macro_data 之前）把 fx_rate 提到位次 1、frankfurter
+    # 提到位次 3，auto/balanced 预算窗（budget=3）内可达，「人民币汇率/中间价」
+    # 类查询不再需要经 macro_data 的恢复链兜底。macro_data 两个位次上的休眠
+    # 由 fx_query 的接线覆盖，故两条登记一并删除。
     # 2026-09-16：academic 域接入 openreview/biorxiv 后，原第 3 位的 crossref
     # 被推到第 5 位因而休眠。这与 dblp/europepmc 是同一笔账：academic 的
     # combo 有 8 个源，而 fast 档 budget=2（must_keep 腾位后实际只留 2 个），
@@ -288,7 +293,6 @@ _DORMANT_ALLOWLIST: dict[str, str] = {
     # auto/balanced（budget 3，含 TF-IDF 注入的 open_meteo）仍可达，海外
     # 城市 wttr 语义无替代源，保留在本域 + fallback 链/显式 --engine 触达。
     "weather": "weather_query 位次 4（快源前置让位 weather_cn）：海外城市仍主用，fast 档靠 fallback 链兜底",
-    "fx_rate": "待接线：macro_data 位次 5",
     "fxtwitter": "social 域位次 6：社交引擎另有专用通道，待核实是否真休眠",
     "gleif": "待接线：org_entity 位次 6",
     "keenable": "待接线：english_tech 位次 4",

@@ -80,7 +80,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 
 | 引擎 | 状态 | 费用 | 频率上限 | 需自备密钥 | 什么时候用到 | 说明 |
 |---|---|---|---|---|---|---|
-| `anysearch` | 可直接用 | 免费 | 2000/天 | — | 域 ai_model、域 book_search、域 chinese_general、域 claim_check、域 code_search、域 crypto_search、域 dataset_search、域 earth_science、域 energy_grid、域 english_tech、域 financial_news、域 fund_query、域 game_search、域 hackernews_search、域 image_search、域 japan_law、域 kor_law、域 law_text、域 legal、域 lifecycle_search、域 local_code、域 local_general、域 macro_data、域 medical、域 meme_slang、域 outbreak_health、域 package_intel、域 prediction_market、域 redskill_search、域 rfc_search、域 sec_filings、域 security_search、域 semantic_discovery、域 shopping、域 skill_search、域 soil_agri、域 sports_search、域 stackoverflow_search、域 stock_query、域 ths_hot_search、域 trade_stats、域 transport_rt、域 us_fundamentals、域 us_legal、域 us_stock、域 v2ex_search、域 vehicle_data、域 wechat_search、域 wenshu_query、域 world_news、域 zhihu_content、深度研究 boost、语义画像命中、通用兜底链 | 通用搜索主力，进程内 JSON-RPC（HttpClient），零 token |
+| `anysearch` | 可直接用 | 免费 | 2000/天 | — | 域 ai_model、域 book_search、域 chinese_general、域 claim_check、域 code_search、域 crypto_search、域 dataset_search、域 earth_science、域 energy_grid、域 english_tech、域 financial_news、域 fund_query、域 fx_query、域 game_search、域 hackernews_search、域 image_search、域 japan_law、域 kor_law、域 law_text、域 legal、域 lifecycle_search、域 local_code、域 local_general、域 macro_data、域 medical、域 meme_slang、域 outbreak_health、域 package_intel、域 prediction_market、域 redskill_search、域 rfc_search、域 sec_filings、域 security_search、域 semantic_discovery、域 shopping、域 skill_search、域 soil_agri、域 sports_search、域 stackoverflow_search、域 stock_query、域 ths_hot_search、域 trade_stats、域 transport_rt、域 us_fundamentals、域 us_legal、域 us_stock、域 v2ex_search、域 vehicle_data、域 wechat_search、域 wenshu_query、域 world_news、域 zhihu_content、深度研究 boost、语义画像命中、通用兜底链 | 通用搜索主力，进程内 JSON-RPC（HttpClient），零 token |
 | `firecrawl` | 可直接用 | 免费 | 1000/月 | — | 域 semantic_discovery、通用兜底链 | Firecrawl 云搜索（search+全文markdown，JS渲染/学术/PDF垂直，keyless 免费层 1000 credits/月） |
 | `lieu` | 可直接用 | 免费 | 不限 | — | 域 semantic_discovery、语义画像命中 | webring 专用搜索（只索引加入 webring 的小众站点，HTML 解析） |
 | `local_baidu` | 可直接用 | 免费 | 不限 | — | 语义画像命中、通用兜底链 | 百度本地 |
@@ -328,10 +328,10 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 | 引擎 | 状态 | 费用 | 频率上限 | 需自备密钥 | 什么时候用到 | 说明 |
 |---|---|---|---|---|---|---|
 | `cninfo` | 可直接用 | 免费 | 不限 | — | 域 company_search、域 financial_news | 巨潮资讯网官方公告（A股公告第一官方源，免认证） |
-| `eastmoney` | 可直接用 | 免费 | 不限 | — | 域 financial_news、域 fund_query、域 stock_query、域 us_stock、语义画像命中 | 东方财富，金融数据首选 |
+| `eastmoney` | 可直接用 | 免费 | 不限 | — | 域 financial_news、域 fund_query、域 fx_query、域 stock_query、域 us_stock、语义画像命中 | 东方财富，金融数据首选 |
 | `em_flow` | 可直接用 | 免费 | 不限 | — | 域 stock_query | 东财资金流向（个股主力/北向/板块，push2.eastmoney.com 免认证） |
 | `finviz` | 可直接用 | 免费 | 不限 | — | 域 us_stock | Finviz 美股快照（HTML，免认证） |
-| `frankfurter` | 可直接用 | 免费 | 不限 | — | 域 macro_data | Frankfurter ECB 官方参考汇率（免认证，2026-10-06 接入） |
+| `frankfurter` | 可直接用 | 免费 | 不限 | — | 域 fx_query、域 macro_data | Frankfurter ECB 官方参考汇率（免认证，2026-10-06 接入） |
 | `sec_companyfacts` | 可直接用 | 免费 | 不限 | — | 域 us_fundamentals | SEC XBRL companyfacts 年度结构化财务（营收/净利/资产/EPS，免认证） |
 | `sec_edgar` | 可直接用 | 免费 | 不限 | — | 域 sec_filings | SEC EDGAR 美国证监会官方全文检索（公司/财报/申报，免认证） |
 | `seeking_alpha` | 可直接用 | 免费 | 不限 | — | 域 us_stock | Seeking Alpha 美股分析（HTML，反爬较强） |
@@ -391,7 +391,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 |---|---|---|---|---|---|---|
 | `eurostat` | 可直接用 | 免费 | 不限 | — | 域 macro_data | 欧盟统计局宏观数据（EU 国家 GDP/人均GDP/失业率/人口，ec.europa.eu SDMX 免认证） |
 | `fred` | 可直接用 | 免费 | 不限 | — | 域 macro_data | FRED 宏观时序数据（CPI/失业率/国债收益率/GDP/M2，免认证） |
-| `fx_rate` | 可直接用 | 免费 | 不限 | — | 域 macro_data | 实时汇率（open.er-api.com 免认证） |
+| `fx_rate` | 可直接用 | 免费 | 不限 | — | 域 fx_query、域 macro_data | 实时汇率（open.er-api.com 免认证） |
 | `un_comtrade` | 可直接用 | 免费 | 不限 | — | 域 trade_stats | UN Comtrade 双边贸易（国家+HS 码+年份+流向；preview 免 key） |
 | `worldbank` | 可直接用 | 免费 | 不限 | — | 域 macro_data | 世界银行宏观指标（GDP/通胀/失业/人口，api.worldbank.org 免认证） |
 | `nbs_stats` | 已停用 | 免费 | 不限 | — | 域 macro_data | 国家统计局分省/全国宏观数据（GDP/CPI/PPI/人口，data.stats.gov.cn V2 免认证） |
@@ -453,7 +453,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 
 ## 六、分发域清单（自动生成）
 
-共 94 个业务域；命中即按域内的组合取源（多意图时按配置顺序取，窄意图域排在宽泛域之前）。自己看某个域为什么选这些源，看 `config.yaml` 的 `domains` 段。
+共 95 个业务域；命中即按域内的组合取源（多意图时按配置顺序取，窄意图域排在宽泛域之前）。自己看某个域为什么选这些源，看 `config.yaml` 的 `domains` 段。
 
 | 域 | 主源 | 组合 |
 |---|---|---|
@@ -472,6 +472,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 | `us_fundamentals` | `sec_companyfacts` | `sec_companyfacts`、`anysearch` |
 | `us_stock` | `finviz` | `finviz`、`exa`、`yahoo_finance`、`seeking_alpha`、`anysearch`、`eastmoney`、`tencent_kline` |
 | `stock_query` | `sina_quote` | `sina_quote`、`tencent_quote`、`em_flow`、`eastmoney`、`anysearch` |
+| `fx_query` | `fx_rate` | `fx_rate`、`eastmoney`、`frankfurter`、`anysearch` |
 | `macro_data` | `fred` | `fred`、`worldbank`、`nbs_stats`、`eurostat`、`fx_rate`、`frankfurter`、`anysearch` |
 | `chem_search` | `pubchem` | `pubchem`、`openalex` |
 | `species_search` | `gbif` | `gbif`、`iplant`、`wikipedia`、`obis`、`worms` |

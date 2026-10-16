@@ -63,6 +63,8 @@ from rank_signals import (  # noqa: E402,F401
     domain_concentration_penalty as _domain_concentration_penalty,
     domain_penalty_enabled as _domain_penalty_enabled,
     domain_score_floors as _domain_score_floors,
+    fuzzy_near_dup,
+    normalize_title_suffix,
     host_of as _host_of,
     relevance_units as _relevance_units,
     relevance_v2_enabled as _relevance_v2_enabled,
@@ -92,7 +94,7 @@ _ENGINE_FUSION_WEIGHTS: dict[str, float] = {
     "github": 1.2, "pypi": 1.2, "npm": 1.2, "crates": 1.2, "mdn": 1.2,
     "stackoverflow": 1.1, "imdb": 1.2, "thesportsdb": 1.2, "itunes": 1.2,
     "finviz": 1.2, "sina_quote": 1.2, "tencent_quote": 1.2, "eastmoney": 1.2,
-    "fred": 1.3, "worldbank": 1.3, "nbs_stats": 1.3, "eurostat": 1.3,
+    "fred": 1.3, "worldbank": 1.3, "nbs_stats": 1.3, "eurostat": 1.3, "fx_rate": 1.2, "frankfurter": 1.2,
     # 通用引擎（基线）
     "duckduckgo": 1.0, "local_bing": 1.0, "local_duckduckgo": 1.0,
     "local_google": 1.0, "anysearch": 1.05, "byted": 1.1, "bocha": 1.0,
@@ -332,7 +334,9 @@ def _content_similarity(a: str, b: str) -> float:
 
 
 def _content_sig(r: dict[str, Any]) -> str:
-    return f"{r.get('title', '') or ''} {r.get('snippet', '') or ''}".strip()
+    # 站后缀先剥（normalize_title_suffix）：跨站同文对差异几乎全在结尾后缀，不剥 minhash 过不了阈值。
+    title = normalize_title_suffix(r.get("title", "") or "")
+    return f"{title} {r.get('snippet', '') or ''}".strip()
 
 
 def _distinct_data_rows(ka: str, kb: str) -> bool:
@@ -352,7 +356,6 @@ def _distinct_data_rows(ka: str, kb: str) -> bool:
 
 _RERANK_POOL_FACTOR = 3
 
-
 _RERANK_POOL_MIN = 15
 
 
@@ -367,7 +370,7 @@ def minhash_dedupe(
 ) -> tuple[list[dict[str, Any]], int]:
     """结果级近重复去重（MMR 前置）：同一事件多引擎同质网页堆叠时去重。
 
-    流程：URL 归一键已去重 → 剩余按(score, selection)降序贪心，content_similarity ≥ threshold 视为近重复，仅留首条。
+    流程：URL 归一键已去重 → 剩余按(score, selection)降序贪心，content_similarity ≥ threshold 视为近重复，仅留首条；minhash 落在 [0.55, 0.85) 近似命中带内时再由 rapidfuzz token_set_ratio 复核（可选依赖，ARGO_DEDUP_FUZZY=0 关，实现见 rank_signals.fuzzy_near_dup）。
     开关：ARGO_MINHASH_DEDUPE=0 时关闭；默认开启（阈值可由 ARGO_MINHASH_THRESHOLD 覆盖，默认 0.85）。
     返回 (deduped, removed_count)，每条被移除的结果记 `_near_dup=True`。
 
@@ -401,9 +404,11 @@ def minhash_dedupe(
             break
         sig = _content_sig(r)
         rkey = _canonical_url(r.get("url", ""))
+        # 数据行豁免先于模糊判定：fred/worldbank 观测期行只差日期数值，不排除会被 token_set_ratio 并成一条。
         is_dup = any(
-            _content_similarity(sig, ks) >= threshold
-            and not _distinct_data_rows(rkey, ku)
+            not _distinct_data_rows(rkey, ku)
+            and ((_sim := _content_similarity(sig, ks)) >= threshold
+                 or fuzzy_near_dup(sig, ks, _sim))
             for ks, ku in kept_keys
         )
         if is_dup:

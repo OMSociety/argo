@@ -212,7 +212,43 @@ domains:
     sina_quote: {relevance: 1.0, authority: 0.85, freshness: 0.85}
     tencent_quote: {relevance: 1.0, authority: 0.85, freshness: 0.85}
     em_flow: {relevance: 0.9, authority: 0.85, freshness: 0.85}
-- desc: 宏观数据查询（FRED 时序数据 + 实时汇率）
+- desc: 汇率/中间价查询（实时汇率快照 + 每日中间价牌价，答案型）
+  # 2026-10-16 新增。此前「人民币 汇率 中间价」类查询落到 macro_data：
+  # 该域 combo 以 fred/worldbank 打头且 early_stop_min_results=1，FRED 对
+  # 人民币汇率返回 0 条 → 零结果恢复链拉来 local_bing，交付维基/百科词条；
+  # 而 fx_rate 虽在 combo 里却位于次 5（fast 预算窗 2、auto 3，永不参与自动
+  # 路由），且单别名词（「人民币汇率」）会解析出 CNY→CNY 退化货币对。
+  # 本域把 FX 意图提到 macro_data 之前独拥：fx_rate 进位次 1 进预算窗，
+  # eastmoney（东方财富资讯检索，中间价/在岸离岸快讯的原生来源）进位次 2
+  # 补「今日中间价」的时效语义；frankfurter（ECB 官方参考价）留位次 3 走
+  # deep/恢复链。early_stop_min_results=3：fx_rate 一次只产 2 条（即期+
+  # 反向），不足以单独收工，强制 eastmoney 并行补位；3 条以上才停。
+  engines_combo:
+  - fx_rate
+  - eastmoney
+  - frankfurter
+  - anysearch
+  fallback: anysearch
+  name: fx_query
+  parallel: true
+  patterns:
+  - 中间价|牌价|汇率|外币兑换|换汇
+  - (?i)(exchange\s+rate|fx\s+rate|currency\s+rate|usd\s*/?\s*cny|usdcny|cny\s*/?\s*usd|\bcnh\b|offshore\s+yuan)
+  - 离岸人民币|在岸人民币|离岸美元
+  - (人民币|美元|欧元|英镑|日元|港币|港元|加元|澳元|瑞郎|新加坡元).{0,6}(升值|贬值|买入价|卖出价|钞买价|汇买价|中间价|走势)
+  - (人民币|美元|欧元|英镑|日元|港币|港元|加元|澳元|瑞郎|新加坡元)\s*[/／兑対]\s*(人民币|美元|欧元|英镑|日元|港币|港元|加元|澳元|瑞郎|新加坡元)
+  - {match: 外汇, unless: 储备}
+  primary: fx_rate
+  early_stop_min_results: 3
+  # 源保底分（score_floors）：汇率快照是「答案型」结果（标题是数字而非网页，
+  # token 覆盖率天然低）；权威/时效保底避免被泛新闻页压制。
+  score_floors:
+    fx_rate: {relevance: 1.0, authority: 0.85, freshness: 0.9}
+    eastmoney: {relevance: 0.9, authority: 0.8, freshness: 0.85}
+- desc: 宏观数据查询（FRED 时序数据 + 官方口径宏观值）
+  # 汇率/中间价意图由 fx_query 域独享（先于本域命中），本域不再声明
+  # 「汇率|兑人民币|兑美元」触发词；fx_rate/frankfurter 留在 combo 供
+  # deep/research 与零结果恢复链触达（test_domain_zero_result_recovery 锁定）。
   engines_combo:
   - fred
   - worldbank
@@ -226,7 +262,7 @@ domains:
   parallel: false
   patterns:
   - (?i)(美国|美).{0,4}(CPI|通胀|失业率|非农|PPI|GDP增速|零售销售|M2|PCE)
-  - (通胀率|失业率|非农就业|国债收益率|美债收益率|十年期国债|10年期国债|三十年期国债|30年期国债|两年期国债|2年期国债|联邦基金利率|美联储利率|隔夜回购|SOFR|美元指数|货币供应|汇率|兑人民币|兑美元)
+  - (通胀率|失业率|非农就业|国债收益率|美债收益率|十年期国债|10年期国债|三十年期国债|30年期国债|两年期国债|2年期国债|联邦基金利率|美联储利率|隔夜回购|SOFR|美元指数|货币供应)
   - (?i)\b(US\s+CPI|unemployment\s+rate|treasury\s+yield|fed\s+funds\s+rate|nonfarm\s+payrolls?|US\s+GDP|M2\s+supply|USD\s+CNY|exchange\s+rate)\b
   - (中国|美国|日本|德国|印度|世界).{0,6}(GDP|通胀|CPI|失业率|人口数据|人口统计|贸易额|贸易数据|进出口|经济增长)
   - (GDP|通货膨胀|CPI|失业率|人口数据|经济增长率)

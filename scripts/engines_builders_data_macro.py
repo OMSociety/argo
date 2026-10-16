@@ -141,11 +141,107 @@ def _build_fred_engine(spec: dict[str, Any]) -> Any:
 # ── 汇率引擎（open.er-api.com 免认证） ───────────────────────────────────────
 
 _CURRENCY_ALIASES: dict[str, str] = {
-    "人民币": "CNY", "美元": "USD", "欧元": "EUR", "英镑": "GBP", "日元": "JPY",
-    "港币": "HKD", "澳元": "AUD", "加元": "CAD", "瑞郎": "CHF", "新西兰元": "NZD",
+    "人民币": "CNY", "在岸人民币": "CNY", "离岸人民币": "CNH",
+    "美元": "USD", "美金": "USD", "欧元": "EUR", "英镑": "GBP", "日元": "JPY",
+    "港币": "HKD", "港元": "HKD", "澳门元": "MOP", "澳元": "AUD",
+    "加元": "CAD", "瑞郎": "CHF", "新西兰元": "NZD",
     "新加坡元": "SGD", "韩元": "KRW", "卢布": "RUB", "印度卢比": "INR",
     "泰铢": "THB", "林吉特": "MYR", "印尼盾": "IDR", "越南盾": "VND",
+    "台币": "TWD", "新台币": "TWD", "比索": "PHP", "里拉": "TRY",
 }
+
+# 合法 ISO 4217 代码集合（别名表 + 常见直报代码）。查询里的任意三字母大写
+# 缩写（GDP/CPI/ETF/IPO/AI…）不能被当成货币代码——此前 `USD GDP 汇率` 会把
+# GDP 当 target，接口必然 404；`CPI 汇率` 更糟，两个缩写凑出一对假货币。
+_ISO_CODES: frozenset[str] = frozenset(_CURRENCY_ALIASES.values()) | frozenset({
+    "AED", "ARS", "BRL", "CLP", "COP", "CZK", "DKK", "EGP", "ILS", "ISK",
+    "KWD", "MXN", "NOK", "PKR", "PLN", "QAR", "RON", "SAR", "SEK", "SGD",
+    "THB", "TWD", "UAH", "VND", "ZAR", "CNH", "MOP", "PHP", "TRY",
+})
+
+
+def parse_fx_pair(q: str) -> tuple[str, str]:
+    """从查询文本解析 (base, target) 货币对；解析不出返回 ("", "")。
+
+    规则（按优先级）：
+    0. 「X兑Y / X对Y / X/Y / X比Y」显式方向——出现在查询里即以它为准；
+    1. 两个合法 ISO 代码；
+    2. 一个代码 + 一个中文别名；
+    3. 两个中文别名；
+    4. 单个中文别名 → 该货币对 CNY（人民币自身 → USD/CNY 市场惯例报价）。
+
+    报价方向采市场惯例：中文财经语境里「人民币兑美元」的牌价数字是
+    1 美元 = 6.7x 人民币（USD/CNY），「日元兑美元跌到 150」是 USD/JPY。
+    EUR/GBP/AUD/NZD 是豁免组（它们对 USD 的惯例报价是 X/USD）。引擎本身
+    同时返回反向汇率一行，交换只影响标题口径，不丢信息。
+    """
+
+    def _match_currency(token: str) -> str:
+        """精确匹配别名或代码；失败时前缀匹配（人民币汇率→人民币）。"""
+        token = token.strip()
+        if not token:
+            return ""
+        if token in _CURRENCY_ALIASES:
+            return _CURRENCY_ALIASES[token]
+        if re.fullmatch(r"[A-Z]{3}", token.upper()) and token.upper() in _ISO_CODES:
+            return token.upper()
+        # 前缀匹配：token 以某别名开头，或某别名以 token 开头。
+        # 长别名优先（「离岸人民币」优先于「人民币」被「人民币汇率」误命中）。
+        for name in sorted(_CURRENCY_ALIASES, key=len, reverse=True):
+            if token.startswith(name) or name.startswith(token):
+                return _CURRENCY_ALIASES[name]
+        return ""
+
+    def _norm(s: str) -> str:
+        return s.strip(" 的是多少报查一下今天今日现在最新价位汇率中间价卖出价买入价行情走势")
+
+    codes = [c for c in re.findall(r"\b([A-Z]{3})\b", q.upper()) if c in _ISO_CODES]
+    aliases = [c for c in sorted(_CURRENCY_ALIASES, key=len, reverse=True) if c in q]
+    base, target = "", ""
+    if len(codes) >= 2:
+        base, target = codes[0], codes[1]
+    elif len(codes) == 1 and aliases:
+        if codes[0] in ("CNY", "USD", "EUR"):
+            base, target = codes[0], _CURRENCY_ALIASES[aliases[0]]
+        else:
+            base, target = "CNY", codes[0]
+    elif len(aliases) >= 2:
+        base, target = _CURRENCY_ALIASES[aliases[0]], _CURRENCY_ALIASES[aliases[1]]
+    elif len(aliases) == 1:
+        # 单别名单货币：非人民币货币 → 它对 CNY（「美元汇率」= 1 美元 = x 人民币，
+        # 与央行中间价同口径）；人民币自身 → USD/CNY（「人民币汇率」问的是
+        # 1 美元兑多少人民币，这是唯一有市场行情的报价方向）。
+        code = _CURRENCY_ALIASES[aliases[0]]
+        base, target = ("USD", "CNY") if code == "CNY" else (code, "CNY")
+
+    # 显式方向词：「X兑Y」「X对Y」「X/Y」「X比Y」——出现在查询里即以它为准。
+    # split 取首末两段分别解析，中间的噪音词（「今日」「中间价」）不参与。
+    sep = re.search(r"[/／]|兑|対|对|比", q)
+    if sep:
+        left, right = q[:sep.start()], q[sep.end():]
+        lc = _match_currency(_norm(left)) or _match_currency(left)
+        # 右侧只取尾段前 6 字（「美元 中间价 今日」里兑后还有牌价词）
+        rc = _match_currency(_norm(right)) or _match_currency(right[:6])
+        if lc and rc:
+            if lc == rc:
+                return "", ""  # 显式同货币对（「人民币兑人民币」）= 无效查询
+            base, target = lc, rc
+
+    # CNY/JPY 等货币对 USD 的报价方向采市场惯例：EUR/GBP/AUD/NZD 之外，
+    # 中文财经语境里「日元兑美元跌到 150」的数字是 USD/JPY，不是 JPY/USD；
+    # 「人民币兑美元报 6.72」同理是 USD/CNY。引擎同时返回反向汇率一行，
+    # 交换只影响标题口径，不丢信息。
+    _USD_BASE_EXEMPT = frozenset({"EUR", "GBP", "AUD", "NZD"})
+    if base and target and base != target:
+        if base == "CNY":
+            base, target = target, base
+        elif target == "USD" and base not in _USD_BASE_EXEMPT:
+            base, target = "USD", base
+        elif base == "USD" and target in _USD_BASE_EXEMPT:
+            base, target = target, "USD"
+    if base == target:
+        base, target = "", ""  # 退化对（CNY→CNY）不出网，交由其它源回答
+    return base, target
 
 def _build_fx_rate_engine(spec: dict[str, Any]) -> Any:
     """实时汇率（open.er-api.com/v6/latest，免认证）。
@@ -158,7 +254,7 @@ def _build_fx_rate_engine(spec: dict[str, Any]) -> Any:
     @safe_search
     def _engine(query: str, n: int = 3, _timeout: float | None = None, **kwargs) -> list[dict[str, Any]]:
         to = _timeout or timeout
-        base, target = _parse_pair(query)
+        base, target = parse_fx_pair(query)
         if not base or not target:
             return []
         try:
@@ -193,47 +289,6 @@ def _build_fx_rate_engine(spec: dict[str, Any]) -> Any:
             })
         return results
 
-    def _parse_pair(q: str) -> tuple[str, str]:
-        import re as _re
-
-        def _match_currency(token: str) -> str:
-            """精确匹配别名或代码；失败时前缀匹配（人民币汇率→人民币）。"""
-            token = token.strip()
-            if not token:
-                return ""
-            if token in _CURRENCY_ALIASES:
-                return _CURRENCY_ALIASES[token]
-            if _re.fullmatch(r"[A-Z]{3}", token):
-                return token
-            # 前缀匹配：token 以某别名开头，或某别名以 token 开头
-            for name, code in _CURRENCY_ALIASES.items():
-                if token.startswith(name) or name.startswith(token):
-                    return code
-            return ""
-
-        codes = _re.findall(r"\b([A-Z]{3})\b", q.upper())
-        aliases = [c for c in _CURRENCY_ALIASES if c in q]
-        base, target = "", ""
-        if len(codes) >= 2:
-            base, target = codes[0], codes[1]
-        elif len(codes) == 1 and aliases:
-            if codes[0] in ("CNY", "USD", "EUR"):
-                base, target = codes[0], _CURRENCY_ALIASES[aliases[0]]
-            else:
-                base, target = "CNY", codes[0]
-        elif len(aliases) >= 2:
-            base, target = _CURRENCY_ALIASES[aliases[0]], _CURRENCY_ALIASES[aliases[1]]
-        elif len(aliases) == 1:
-            base, target = "CNY", _CURRENCY_ALIASES[aliases[0]]
-        # 中文"兑"字方向修正：X兑Y → base=X, target=Y
-        if "兑" in q:
-            seg = q.split("兑")
-            if len(seg) == 2:
-                lc = _match_currency(seg[0])
-                rc = _match_currency(seg[1])
-                if lc and rc:
-                    base, target = lc, rc
-        return base, target
     return _engine
 
 
