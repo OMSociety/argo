@@ -61,6 +61,41 @@ def is_high_consequence_domain(domain: str | None) -> bool:
 
 # ── A. fetch 证据提取 ──────────────────────────────────────────────────────────
 
+# ── A0. Agent 档摘要（600-800 字） ──────────────────────────────────────────
+#
+# 借鉴 DeepSeek Search 的 summary 语义（600-800 字「给模型阅读」，与 100-200
+# 字给人看的 snippet 分档）。Argo 的吸收断层在这：snippet 太短不够推理，
+# fetch 全文太贵——中间缺一档。
+#
+# 做法是截断+句界对齐，不是句子压缩：本地无 LLM 的前提下，压缩要么引入
+# 外接服务要么引入幻觉，而「readability 正文的前 800 字、切在句界上」是
+# 可解释、零成本、不撒谎的做法。真正的摘要合成是 Agent 的活——Argo 的
+# 设计契约：只产证据，判断归 Agent。
+
+_SENT_END = ("。", "！", "？", "；", ".", "!", "?", ";", "\n")
+
+
+def summarize_for_agent(content: str, max_chars: int = 800) -> str:
+    """正文 → ≤max_chars 的 Agent 档摘要；空正文/过短原样返回。"""
+    if not content or not content.strip():
+        return ""
+    text = content.strip()
+    if len(text) <= max_chars:
+        return text
+    window = text[:max_chars]
+    # 取窗内最靠后的任一句界（中英文句号/叹问/分号/换行）——靠后=预算内
+    # 最大化。30% 利用率下限：界太靠前（如前 3 字就句号）时效利用率太低，
+    # 不如硬切。窗内完全没有句界才硬切——半句话比硬切更伤 Agent 理解。
+    best = -1
+    for mark in _SENT_END:
+        idx = window.rfind(mark)
+        if idx > best:
+            best = idx
+    if best >= max_chars * 0.3:
+        return window[: best + 1].strip()
+    return window.strip()
+
+
 def extract_fetch_evidence(fetch_result: dict[str, Any]) -> Optional[dict[str, Any]]:
     """从 fetch_v3 结果提取正文级证据分。
 
@@ -127,6 +162,9 @@ def extract_fetch_evidence(fetch_result: dict[str, Any]) -> Optional[dict[str, A
     return {
         "url": url,
         "absorption": absorption,
+        # Agent 档摘要：与证据一起落缓存，之后任何搜索回填即得——不重新
+        # 抓取也有 600-800 字档（DeepSeek summary 语义，见 summarize_for_agent）。
+        "summary": summarize_for_agent(content),
         "quality_score": evidence.get("quality_score", fetch_result.get("quality_score")),
         "content_ok": evidence.get("content_ok", fetch_result.get("content_ok")),
         "word_count": evidence.get("word_count", len(content)),
@@ -204,6 +242,8 @@ def backfill_results(results: list[dict[str, Any]],
         if ev and ev.get("absorption") is not None:
             r["has_fetched_evidence"] = True
             r["post_fetch_absorption"] = ev.get("absorption")
+            if ev.get("summary"):
+                r["summary"] = ev["summary"]
             r["fetched_evidence"] = {
                 k: ev.get(k) for k in (
                     "quality_score", "word_count", "content_ok",
@@ -442,6 +482,8 @@ def verify_results(results: list[dict[str, Any]],
         })
         r["has_fetched_evidence"] = True
         r["post_fetch_absorption"] = round(post, 3)
+        if ev.get("summary"):
+            r["summary"] = ev["summary"]
         r["fetch_suggested"] = False
 
     # 并行 fetch：URL 独立，串行最坏 top_k×timeout
