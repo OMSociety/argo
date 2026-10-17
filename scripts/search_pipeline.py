@@ -507,7 +507,15 @@ def postprocess(req: _SearchRequest, run: _SearchRun, hooks: Any) -> _SearchRun:
         pass
     _tk_recovery = _tick(timing)
     _recovery_engines: set[str] = set()
-    if not merged:
+    # 查询词回声（2026-10-17 实锤）：有结果但整批退化时同样要恢复——
+    # `if not merged` 只看「有没有结果」，不看「是不是垃圾」。判据与理由见
+    # query_signals.is_query_echo（rerank 尚未执行，只能用零网络成本的词面）。
+    try:
+        from postprocess_signals import echo_recovery_needed as _echo_needed
+        _echo_triggered = _echo_needed(merged, query)
+    except OPT_IMPORT + SHAPE_BENIGN:  # 守卫不可用不设卡（fail-open）
+        _echo_triggered = False
+    if not merged or _echo_triggered:
         # ── 恢复链 L0：early-stop 误判时补跑被跳过的同域引擎 ──
         # （同域优先于 L3 换跨域引擎；实现在 recovery_l0）。死线 = 用户
         # 声明的整体超时扣掉 dispatch 已耗墙钟——补跑不得把总时长推出
@@ -530,7 +538,7 @@ def postprocess(req: _SearchRequest, run: _SearchRun, hooks: Any) -> _SearchRun:
         if _l0_merged and _l0_info:
             recovery_info = _l0_info
             merged = _l0_merged
-    if not merged:
+    if not merged or _echo_triggered:
         try:
             from recovery import run_recovery
             tried = list(raw_results.keys()) or list(engines)
@@ -540,7 +548,11 @@ def postprocess(req: _SearchRequest, run: _SearchRun, hooks: Any) -> _SearchRun:
             # macro_data「中国GDP」零结果、恢复链空转）。engines_fallback
             # 里是路由的定向保底声明（域未试成员优先），代价可控。
             rec_level = _max_rec_level
-            if fallback_engines and decision.get("domain") not in (
+            if _echo_triggered:
+                # 退化是「引擎选错了」而非「查询写得不好」：L1 放宽 / L2 换词
+                # 都救不了「上游把整句当单词查」，必须换引擎（L3）。
+                rec_level = "L3"
+            elif fallback_engines and decision.get("domain") not in (
                     None, "", "general", "general_search") \
                     and (rec_level is None or rec_level < "L3"):
                 rec_level = "L3"
@@ -597,6 +609,14 @@ def postprocess(req: _SearchRequest, run: _SearchRun, hooks: Any) -> _SearchRun:
                         for r in goods:
                             r.setdefault("_engine", eng)
                             r.setdefault("_recovered", True)
+                        # 回声不算「恢复成功」（判据与理由见
+                        # postprocess_signals.drop_echo_items）：不拦则 L1 放宽
+                        # 查询后收工，L3 换引擎永不执行。
+                        try:
+                            from postprocess_signals import drop_echo_items as _drop_echo
+                            goods = _drop_echo(goods, rq)
+                        except OPT_IMPORT + SHAPE_BENIGN:
+                            pass
                     return goods
 
                 if len(rengines) <= 1:

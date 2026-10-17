@@ -170,7 +170,13 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "（跨站同文对差异几乎全在结尾后缀，零依赖；归一化逻辑在 rank_signals）；"
               "同日 −2 空行补偿后净 +5，上限 1024→1029"),
     "scripts/search_pipeline.py": (
-        1053, "搜索编排主管线（路由→分派→融合→恢复→漏斗输出）；"
+        1073, "搜索编排主管线（路由→分派→融合→恢复→漏斗输出）；"
+              "2026-10-17 +20：查询词回声守卫接线（恢复链触发 + 档位提升到 L3 "
+              "+ L1 假恢复过滤）——修「anysearch 超时后 local_bing 把整句当单词"
+              "查、回声被原样交付」；判据与两个信号本体（echo_recovery_needed / "
+              "drop_echo_items）全在 postprocess_signals.py，本文件只留三处调用点"
+              "（与 search_attribution / L0 同一手法）；"
+              "2026-10-16 +19：两个可选信号钩子（TF-IDF 抛光 / 数字交叉验证）"
               "2026-10-16 +19：两个可选信号钩子（TF-IDF 抛光 / 数字交叉验证）"
               "接线后主管线曾到 1070——方案二梳理提出到 postprocess_signals.py，"
               "本文件只留每特性 3~4 行调用点（与 search_attribution 同形态），"

@@ -96,3 +96,55 @@ def detect_number_conflict(
         if log:
             log(f"数字交叉验证跳过: {type(e).__name__}")
     return None
+
+
+# ── 查询词回声（2026-10-17 实锤）──────────────────────────────────────────────
+# 上游把整句当单词去查时，返回的是查询中某一个词的词典释义/同主题页。
+# 判据与理由在 query_signals.is_query_echo；这里只做「后处理侧」的接线：
+# 主管线（search_pipeline）只留调用点，逻辑不落在那里。
+
+
+def echo_recovery_needed(results: list[dict[str, Any]], query: str) -> bool:
+    """恢复链是否该因「查询词回声」触发——有结果、但整批是查询某一个词的
+    词典释义（判据见 query_signals.is_query_echo）。
+
+    零结果走 `if not merged` 的老路；这里补的是「有结果却是垃圾」：anysearch
+    超时后仅剩的 local_bing 回声会被原样交付（2026-10-17 实锤）。
+    """
+    try:
+        from query_signals import is_query_echo
+    except ImportError:
+        return False  # 判据不可用不拦（fail-open）
+    return bool(results) and is_query_echo(results, query)
+
+
+def drop_echo_items(results: list[dict[str, Any]],
+                   query: str) -> list[dict[str, Any]]:
+    """过滤查询词回声条目，让恢复链继续往「换引擎」走。
+
+    恢复链的 L1 放宽查询后，原引擎仍会返回同一批词典释义；若把它们算作
+    「恢复成功」，L3 换引擎永不执行（2026-10-17 实测 level_used=L1 而交付的
+    仍是回声）。
+
+    两段判据，缺一不可：
+      1. 整批先过 is_query_echo——它要求「≥3 条」正是为了不误伤一两条短标题
+         的正确答案（实测 "Paris capital" 对 "what is the capital of France"
+         只命中 capital 一个词，但那就是答案）；
+      2. 整批判定为回声后，再逐条剔除「只命中 1 个查询词」的条目——一批里
+         混着的好结果不该被连坐。
+    """
+    if not results:
+        return results
+    try:
+        from query_signals import is_query_echo
+        from tfidf_router import tokenize
+    except ImportError:
+        return results  # 判据不可用不过滤（fail-open）
+    if not is_query_echo(results, query):
+        return results
+    q_set = set(tokenize(query))
+    return [
+        r for r in results
+        if not (isinstance(r, dict)
+                and 0 < len(q_set & set(tokenize(r.get("title") or ""))) <= 1)
+    ]

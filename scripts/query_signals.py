@@ -63,6 +63,53 @@ def cumulative_sufficient(raw_results: dict[str, list[dict[str, Any]]],
     return _sufficient_internal(merged, mode, min_results, query)
 
 
+def is_query_echo(results: list[dict[str, Any]], query: str) -> bool:
+    """这批结果是否是「查询词回声」——上游把整句当单词去查，返回查询中
+    **某一个词**的词典释义/同主题页。
+
+    2026-10-17 实锤：「keyboard switch lube service 2026」全批命中
+    "Online Virtual Keyboard"、「best mechanical keyboard for typing 2026」
+    全批命中 "BEST 的词典释义"——整批标题都在回声**同一个**查询词。
+
+    判据只看标题：snippet 里的功能词（for/the/and…）会把单条覆盖抬到 2，
+    判据即被击穿——实测 "Shop Best Buy for electronics" 仅因含 for 就
+    cov=2，而标题侧仍只有 best 一个词。标题是结果的核心，功能词出现率低。
+
+    只判整批、不判单条：长尾查询本就有弱命中，单条覆盖 1 词完全正常；
+    整批都只覆盖同一个词才是「上游降级」的信号。零网络成本（只读文本与
+    查询词元），可在早停（rerank 之前，rel 尚不存在）与输出层（恢复链）
+    复用——这与 cache_guard.is_degraded_results 的「整批退化」同构，区别是
+    那里读 rerank 的 relevance，这里读词面。
+    """
+    if not query or not query.strip() or not results:
+        return False
+    try:
+        from tfidf_router import tokenize
+    except ImportError:
+        return False  # 分词不可用不判（fail-open）
+    q_set = set(tokenize(query))
+    # 查询词 <4 不判：短查询的结果标题天然只命中一两个词，拦它即误伤（实测
+    # 「OpenAI MCP specification」的专利/论文结果只命中 specification 一个词，
+    # 却被判回声 → 恢复链误触发，白打两个引擎还把金标输出撑大）。
+    if len(q_set) < 4:
+        return False
+    # 至少 3 条结果才判：一两条短标题完全可能是正确答案（实测
+    # 「what is the capital of France」→ "Paris capital" 只命中 capital 一个词，
+    # 但那就是答案）。
+    if len(results) < 3:
+        return False
+    covered_terms: set[str] = set()
+    for r in results:
+        if isinstance(r, dict):
+            covered_terms |= (q_set & set(tokenize(r.get("title") or "")))
+    # 判据取「整批标题覆盖的**不同**查询词数恰好为 1」：
+    #   0 个 = 完全无关，归 covered 判据管（算进来会让离线 mock 误触发恢复链，
+    #         实测 test_funnel 的 called 从 2 涨到 4）；
+    #   1 个 = 整批都在回声同一个词（"Online Virtual Keyboard" 之类）；
+    #   ≥2 个 = 结果确实在回答查询的不同侧面，不是回声。
+    return len(covered_terms) == 1
+
+
 def query_coverage_ok(results: list[dict[str, Any]], query: str) -> bool:
     """查询-结果词面覆盖守卫（fast/auto 早停质量门槛）。
 
@@ -95,6 +142,8 @@ def query_coverage_ok(results: list[dict[str, Any]], query: str) -> bool:
         1 for r in results if len(set(tokenize(r.get("title") or ""))) <= 1
     )
     if len(q_set) >= 3 and single_token_titles * 2 > len(results):
+        return False
+    if is_query_echo(results, query):
         return False
     covered = 0
     for r in results:

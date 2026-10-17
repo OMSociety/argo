@@ -104,6 +104,52 @@ GOOD_RESULTS = [
 ]
 
 
+# ── 事故样本（2026-10-17 实锤：查询词回声）────────────────────────────────────
+# local_bing 把整句当单词去查，返回的是查询里「keyboard」这一个词的词典释义/
+# 同主题页。与 09-02 那次的差别：结果**与查询有词面交集**（都含 keyboard），
+# 于是「零交集」判据放行，早停照常收工、anysearch 被 cancelled，回声即成答案。
+
+ECHO_QUERY = "keyboard switch lube service 2026"
+
+ECHO_GARBAGE = [
+    {"title": "Online Virtual Keyboard - Qwertia",
+     "url": "https://qwertia.com/online-keyboard",
+     "snippet": "Type online with a virtual keyboard, no download needed.",
+     "source": "local_bing"},
+    {"title": "Amazon.com: Keyboard",
+     "url": "https://www.amazon.com/s?k=keyboard",
+     "snippet": "Shop keyboards on Amazon. Free shipping on eligible orders.",
+     "source": "local_bing"},
+    {"title": "Computer keyboard - Wikipedia",
+     "url": "https://en.wikipedia.org/wiki/Computer_keyboard",
+     "snippet": "A computer keyboard is an input device modeled after the typewriter.",
+     "source": "local_bing"},
+    {"title": "On-Screen Keyboard for Windows - Comfort Software Group",
+     "url": "https://www.comfort-software.com/on-screen-keyboard.html",
+     "snippet": "On-Screen Keyboard is a virtual keyboard for Windows.",
+     "source": "local_bing"},
+    {"title": "Keyboard Tester - Check Your Keyboard Keys",
+     "url": "https://keyboardtester.com/",
+     "snippet": "Test every key on your keyboard with this online tool.",
+     "source": "local_bing"},
+]
+
+ECHO_GOOD = [
+    {"title": "How to Lube Mechanical Keyboard Switches With Krytox",
+     "url": "https://example.com/lube-guide",
+     "snippet": "Lubricating switch springs and stems reduces scratchiness.",
+     "source": "anysearch"},
+    {"title": "Switch Lube Service",
+     "url": "https://kbdfans.com/switch-lube-service",
+     "snippet": "Professional switch lubing service for mechanical keyboards.",
+     "source": "anysearch"},
+    {"title": "Mechanical Keyboard Switch Lubing & Modification",
+     "url": "https://example.com/lubing-mods",
+     "snippet": "A full guide to switch lubing, films and springs.",
+     "source": "anysearch"},
+]
+
+
 # ── 1. 守卫单元 ───────────────────────────────────────────────────────────────
 
 class TestQueryCoverageGuard(unittest.TestCase):
@@ -146,6 +192,43 @@ class TestQueryCoverageGuard(unittest.TestCase):
             [{"title": "irrelevant title", "snippet": "body text",
               "source": "worldbank"}],
             mode="auto", min_results=1, query="china gdp 2024"))
+
+    def test_query_echo_not_sufficient(self):
+        """查询词回声（2026-10-17）：每条最多命中 1 个查询词 → 拒早停。
+
+        这批结果与查询**有**词面交集（都含 keyboard），旧的「零交集」判据
+        会放行；实锤里正是这一点让早停照常收工、anysearch 被 cancelled。
+        """
+        self.assertFalse(_results_sufficient(
+            ECHO_GARBAGE, mode="auto", query=ECHO_QUERY))
+        self.assertFalse(_results_sufficient(
+            ECHO_GARBAGE, mode="fast", query=ECHO_QUERY))
+
+    def test_multi_word_hits_not_blocked(self):
+        """正常结果同时命中多个查询词 → 放行（守卫不误伤好结果）。"""
+        self.assertTrue(_results_sufficient(
+            ECHO_GOOD, mode="auto", query=ECHO_QUERY))
+        self.assertTrue(_results_sufficient(
+            ECHO_GOOD, mode="fast", query=ECHO_QUERY))
+
+    def test_echo_rule_skipped_for_short_query(self):
+        """查询词 <3 时不启用回声判据：短查询本就难以多词命中，拦它即误伤。"""
+        self.assertTrue(_results_sufficient(
+            [{"title": "Keyboard", "snippet": "keyboard info",
+              "source": "local_bing"},
+             {"title": "Keyboard layout", "snippet": "keyboard layout info",
+              "source": "local_bing"},
+             {"title": "Keyboard tester", "snippet": "test your keyboard",
+              "source": "local_bing"}],
+            mode="auto", query="keyboard"))
+        self.assertTrue(_results_sufficient(
+            [{"title": "Keyboard switch", "snippet": "keyboard switch info",
+              "source": "local_bing"},
+             {"title": "Keyboard switches", "snippet": "switches for keyboard",
+              "source": "local_bing"},
+             {"title": "Mechanical keyboard", "snippet": "keyboard details",
+              "source": "local_bing"}],
+            mode="auto", query="keyboard switch"))
 
 
 # ── 2. 执行集成（真实路由决策 + mock 引擎）────────────────────────────────────
@@ -213,6 +296,52 @@ class TestEarlyStopRescueIntegration(unittest.TestCase):
         out, calls = self._execute(QUERY, decision, fake)
         self.assertIn("local_bing", calls)
         self.assertIn("local_bing", out.get("engines_used", []))
+
+    def test_echo_primary_rescued_by_second_engine(self):
+        """实锤回放（2026-10-17）：local_bing 回声 → 守卫拒早停 → anysearch 补跑。
+
+        修复前：回声结果与查询有词面交集（都含 keyboard），守卫放行 →
+        local_bing 先到即收工，anysearch 被 cancelled，8 条回声成最终答案。
+        """
+        decision = route_query(ECHO_QUERY, mode="fast", depth="fast", context="search")
+        self.assertIn("anysearch", decision["engines_combo"])
+        self.assertIn("local_bing", decision["engines_combo"])
+
+        def fake(_q: str, eng: str, **_k: Any) -> list:
+            if eng == "local_bing":
+                return ECHO_GARBAGE
+            if eng == "anysearch":
+                return ECHO_GOOD
+            return []
+
+        out, calls = self._execute(ECHO_QUERY, decision, fake)
+        self.assertIn("anysearch", calls, "回声结果应触发次引擎补跑")
+        self.assertIn("anysearch", out.get("engines_used", []))
+        merged = " ".join(r.get("title", "") for r in out.get("results", []))
+        self.assertIn("Lube", merged, "融合结果应包含救援来源")
+
+    def test_echo_output_triggers_recovery(self):
+        """回声不得成为最终输出：唯一可用引擎是回声源时，恢复链必须换引擎。
+
+        这是 2026-10-17 实锤的另一半——早停守卫只能保证「不丢弃更好的结果」，
+        当 anysearch 超时、只剩 local_bing 回声时，得由恢复链换引擎兜底。
+        """
+        decision = route_query(ECHO_QUERY, mode="auto", depth="fast", context="search")
+
+        def fake(_q: str, eng: str, **_k: Any) -> list:
+            if eng == "local_bing":
+                return ECHO_GARBAGE   # 主源：整批查询词回声
+            if eng == "anysearch":
+                return []             # 次源：模拟超时/无结果
+            return ECHO_GOOD          # 救援源（uapi/firecrawl/parallel_free…）
+
+        out, calls = self._execute(ECHO_QUERY, decision, fake)
+        titles = " ".join(r.get("title", "") for r in out.get("results", []))
+        self.assertNotIn("Virtual Keyboard", titles,
+                         "回声结果不得成为最终输出")
+        self.assertTrue(out.get("recovery"), "应记录恢复链触发")
+        self.assertNotEqual(out["recovery"].get("level_used"), "L1",
+                            "放宽查询救不了「引擎选错」，必须到 L3 换引擎")
 
 
 # ── 3. 路由金标钉（结构契约，与 matrix_search_eval ROUTE_MATRIX 增补同源）──────
