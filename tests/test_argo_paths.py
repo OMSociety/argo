@@ -228,3 +228,19 @@ class TestFileLock:
         with argo_paths.file_lock(data, timeout=1.0):
             assert (tmp_path / ".quota.json.lock").exists(), "锁文件未落在独立路径"
             assert not data.exists(), "保护一个尚未创建的数据文件不该先建它"
+
+
+def test_lock_roundtrip_check_leaves_no_sidecar(tmp_path, monkeypatch):
+    """paths --check 的锁自检不得泄漏 sidecar（2026-10-17）。
+
+    _check_lock_roundtrip 的 finally 只 unlink 锁本体（.lock-check），而
+    file_lock 真正加锁在 sidecar（.{name}.lock）上——每跑一次 --check 就在
+    状态根残留一个 ..lock-check.lock（现场实证：0 字节孤儿文件）。
+    """
+    lock_dir = tmp_path / "state"
+    monkeypatch.setattr(argo_paths, "state_path",
+                        lambda *parts: lock_dir.joinpath(*parts))
+    status, detail = argo_paths._check_lock_roundtrip(0.6)
+    assert status in ("pass", "warn"), detail
+    leftovers = [p.name for p in lock_dir.iterdir() if p.name.endswith(".lock")]
+    assert leftovers == [], f"锁 sidecar 泄漏：{leftovers}"

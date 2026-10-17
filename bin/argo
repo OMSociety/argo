@@ -250,6 +250,14 @@ def _daemon_env():
     return env
 
 
+def _clear_autostart_marker(root):
+    """删自启节流 marker。仅 daemon 陈尸场景用（见 _daemon_run ECONNREFUSED 分支）。"""
+    try:
+        os.unlink(os.path.join(root, ".daemon_autostart-" + _tree_tag()))
+    except OSError:
+        pass
+
+
 def _daemon_autostart(root, py):
     """指针缺失/失效时后台拉起 daemon（fire-and-forget，不拖慢本次调用）。
 
@@ -269,6 +277,17 @@ def _daemon_autostart(root, py):
     except OSError:
         pass
     try:
+        devnull = open(os.devnull, "wb")
+        subprocess.Popen(
+            [py or sys.executable, os.path.join(SCRIPTS, "daemon.py"), "start"],
+            stdout=devnull, stderr=devnull, stdin=devnull,
+            start_new_session=True, close_fds=True)
+    except Exception:
+        return 1
+    # 节流 marker 写在 Popen **成功之后**：先写后拉的话，Popen 抛异常时
+    # marker 已落盘，之后 60s 不再尝试拉起（2026-10-17 审查发现 5）。
+    # 拉起风暴由 daemon start 自身的 stub 互斥 + _alive 检查兜底，不靠它。
+    try:
         d = os.path.dirname(marker)
         if d:
             os.makedirs(d, exist_ok=True)
@@ -276,15 +295,7 @@ def _daemon_autostart(root, py):
             f.write(str(int(time.time())))
     except OSError:
         pass
-    try:
-        devnull = open(os.devnull, "wb")
-        subprocess.Popen(
-            [py or sys.executable, os.path.join(SCRIPTS, "daemon.py"), "start"],
-            stdout=devnull, stderr=devnull, stdin=devnull,
-            start_new_session=True, close_fds=True)
-        return 0
-    except Exception:
-        return 1
+    return 0
 
 
 def _daemon_run(rest, py="") -> bool:
@@ -343,13 +354,22 @@ def _daemon_run(rest, py="") -> bool:
                 s.close()
             except OSError:
                 pass
-    except Exception:
+    except Exception as e:
         # 整段（含 socket 创建）静默回退：契约是「任何失败不打断 search」，
         # 此前 socket() 在 try 外，创建失败会穿出 main 直接 traceback。
         # 顺带自愈：daemon 被 kill -9/OOM 后 socket 文件还在、connect 恒
         # ECONNREFUSED，而清理陈尸只发生在 daemon 自己的 _alive()/start 里，
         # 客户端从不调用它——不补这一手，快路径会一直失效到有人手跑
         # `argo daemon start/status/stop`（2026-10-12 审查发现 4）。
+        #
+        # ECONNREFUSED 是「对端明确死亡」的信号（2026-10-17 审查发现 1）：
+        # 此时若 60s 节流 marker 还新鲜，_daemon_autostart 会静默 return——
+        # 既不重拉也不清尸，窗口内每笔 search 反复付 ~2.2s 冷跑。先删
+        # marker 再拉，让这次自愈真正发生；防重复拉起由 daemon start 的
+        # stub 互斥 + _alive 兜底，不会引发拉起风暴。空闲自杀路径无此问题
+        # （daemon 退出时连 marker 一起清，scripts/daemon.py 退役清理段）。
+        if isinstance(e, ConnectionRefusedError):
+            _clear_autostart_marker(root)
         _daemon_autostart(root, py)
         return False
     if not buf:

@@ -305,7 +305,11 @@ def _check_lock_roundtrip(hold_s: float) -> tuple[str, str]:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 proc.kill()
-        for p in (child.name, str(lock_path)):
+        for p in (child.name, str(lock_path),
+                  # file_lock 的真身是 sidecar（.{name}.lock，见 file_lock
+                  # 实现）：只删 lock_path 本体会每次 --check 泄漏一个
+                  # ..lock-check.lock（2026-10-17 审查发现 6，现场实证）。
+                  str(lock_path.parent / f".{lock_path.name}.lock")):
             try:
                 os.unlink(p)
             except OSError:

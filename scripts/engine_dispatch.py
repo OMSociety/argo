@@ -466,8 +466,11 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
 
         # per-engine 缓存
         if not skip_cache:
+            # 键用 retrieval_query（clean_query）而非原始 query：实际发往引擎
+            # 的是 retrieval_query（389-400 行），键与内容必须同源——否则
+            # clean_query 逻辑一变，同键会照发旧语义的结果（2026-10-17 审查）。
             eng_hit = cache.get_engine(
-                query, eng, max_results, domain=domain, mode=mode, depth=depth,
+                retrieval_query, eng, max_results, domain=domain, mode=mode, depth=depth,
                 since=eng_since, until=eng_until,
                 engine_domain=engine_domain, engine_sub_domain=engine_sub_domain,
             )
@@ -613,7 +616,8 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
         if not skip_cache and not is_state_failure_outcome(outcome):
             attempt_cache_write(
                 lambda: cache.set_engine(
-                    query, eng, max_results, goods if goods else [],
+                    # 与上方 get_engine 同源：键=实际检索词（retrieval_query）
+                    retrieval_query, eng, max_results, goods if goods else [],
                     domain=domain, mode=mode, depth=depth,
                     since=eng_since, until=eng_until,
                     engine_domain=engine_domain, engine_sub_domain=engine_sub_domain,

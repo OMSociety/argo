@@ -113,6 +113,24 @@ def _uds(sock: Path, req: dict, timeout: float = 30.0) -> dict:
     return json.loads(buf.decode("utf-8", "replace"))
 
 
+def _uds_raw(sock: Path, raw: bytes, timeout: float = 10.0) -> bytes:
+    """发原始字节（测畸形请求：空请求 / 非 dict JSON 体）。"""
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(timeout)
+    try:
+        s.connect(str(sock))
+        s.sendall(raw)
+        buf = b""
+        while not buf.endswith(b"\n"):
+            chunk = s.recv(65536)
+            if not chunk:
+                break
+            buf += chunk
+    finally:
+        s.close()
+    return buf
+
+
 @pytest.fixture()
 def running(tmp_path):
     info = _start(tmp_path)
@@ -176,6 +194,28 @@ def test_lifecycle_ping_status_stop(tmp_path):
     _wait_sock(tmp_path, False)
     assert not sock.exists(), "socket 未随 stop 清场"
     assert not (tmp_path / "state" / ("daemon.pid-" + _tag())).exists(), "pid 未随 stop 清场"
+
+
+def test_malformed_requests_get_error_response(running, tmp_path):
+    """空请求 / 非 dict JSON 体必须回错误响应，而不是 handler 线程死亡（EOF）。
+
+    修复前（2026-10-17 审查发现 2）：req 只在 JSON 解析成功后绑定——空请求、
+    超 1MB、解析成数组时，发送段 `req.get("send_timeout")` 抛 NameError/
+    AttributeError，穿不透 except OSError，handler 带 traceback 死掉，
+    「空请求」「请求超长」这两个特意准备的响应永远没发出去。
+    """
+    sock = _sock(tmp_path)
+    # 空请求（只有换行）
+    buf = _uds_raw(sock, b"\n")
+    assert buf, "空请求应收到错误响应（修复前是 EOF）"
+    assert json.loads(buf.decode("utf-8", "replace"))["error"] == "空请求"
+    # 非 dict JSON 体（数组）：解析成功但 op 取不到 → 未知 op 错误响应
+    buf = _uds_raw(sock, b"[1, 2]\n")
+    assert buf, "数组体应收到错误响应而不是断连"
+    resp = json.loads(buf.decode("utf-8", "replace"))
+    assert resp["ok"] is False, f"数组体应报错，实得 {resp}"
+    # handler 池没被前面的事故打死：ping 仍正常应答
+    assert _uds(sock, {"op": "ping"})["ok"] is True
 
 
 def test_run_list_engines_and_warm_reuse(tmp_path):

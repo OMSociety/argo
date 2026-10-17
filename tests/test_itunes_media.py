@@ -18,6 +18,11 @@
 全部用 mock，不发真实请求。
 """
 
+# PEP 604（`bytes | None`）注解在 3.9 求值即 TypeError：没有这行，整个文件
+# 在 collect 阶段炸掉，30 个用例静默丢失（2026-10-17 实测：全量回归必须
+# --ignore 本文件才能跑）。测试文件与 scripts/ 同受 MIN_PYTHON=3.9 约束。
+from __future__ import annotations
+
 import json
 import sys
 from pathlib import Path

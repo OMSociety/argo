@@ -108,6 +108,22 @@ class TestEngineIsolation:
         got = sc._l2.find_similar("小红书 AI 绘画 评价精选", "不存在的引擎", "social", limit=50)
         assert got == [], "未知引擎不应命中他人缓存"
 
+    def test_negative_cache_not_served_as_soft_hit(self, sc):
+        """负缓存（空结果条目）不得作为软命中交出（2026-10-17）。
+
+        修复前：语义软命中把**别的查询**的空负缓存当有效命中交出——实测
+        sim=0.75 时「苹果 2025 营收」的瞬时失败会变成「苹果 2025 年营收」的
+        答案（cached=true、count=0），上层无法区分「没结果」与「别的查询失败」。
+        """
+        sc.set("苹果 2025 营收", "eastmoney", 10,
+               {"results": []}, domain="financial")
+        # 精确键仍能读到负缓存（既有语义：同一查询的瞬时失败照常短缓存）
+        exact = sc.get("苹果 2025 营收", "eastmoney", 10, domain="financial")
+        assert exact is not None, "精确键的负缓存语义不变"
+        # 词面近似的查询不得吃进那条负缓存
+        got = sc.get("苹果 2025 年营收", "eastmoney", 10, domain="financial")
+        assert got is None, f"负缓存不应作为软命中交出：{got}"
+
     def test_fetch_and_evidence_are_isolated(self, sc):
         """fetch 与 evidence 作为不同 engine 值必须隔离（URL 词面近似场景）。"""
         url = "https://developers.openai.com/api/docs/guides/image-prompting"

@@ -106,7 +106,10 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "助手 + timeout×5 与 max_chars×6 共 11 处裸 int() 转换，"
               "非法类型显式 -32602，测试 test_mcp_param_guard.py 锁行为）"),
     "scripts/engines_base.py": (
-        1501, "引擎基类 + HTTP 出口 + 输出映射，与 100+ 源声明的字段契约绑在一起；"
+        1508, "引擎基类 + HTTP 出口 + 输出映射，与 100+ 源声明的字段契约绑在一起；"
+              "2026-10-17 +7：http_open 错误体归因读加 KeyError 兜底——3.9 的 "
+              "HTTPError(fp=None) 首次 .read() 抛 KeyError('file')，漏接把「诚实"
+              "上报 403」退化成静默空结果（tests/test_bocha.py 403 可见性用例）；"
               "2026-10-10 −12：serp 守卫接线+误杀账本拆到 serp_kill_log.py（尺寸门"
               "哲学：加东西先拆模块），本处留薄委托；"
               "2026-09-26 +42：SERP 垃圾守卫接线（守卫本体独立在 serp_guard.py，此处只留"
@@ -120,7 +123,7 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "_redact_secrets fallback 加基本脱敏（Bearer token + key=value）；"
               "2026-09-28 +2：_detect_anti_bot head 区按需 lower（性能优化）"),
     "scripts/cache.py": (
-        1357, "结果缓存 + 路由软命中 + 指纹；「键/存储/命中策略」三段的第二段"
+        1385, "结果缓存 + 路由软命中 + 指纹；「键/存储/命中策略」三段的第二段"
               "已落地——2026-10-16 命中判据层（normalize_query / minhash "
               "query_similarity / split_qualifiers / is_freshness_sensitive_query"
               "共 ~115 行）整段拆至 cache_similarity.py，本文件只剩存储实现与门面"
@@ -142,9 +145,14 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "日末延长不压缩）；"
               "2026-10-15 B-4：+113（cache.enabled / max_size_mb 死配置接线 + "
               "_conn() 连接上下文管理器修 fd 泄漏）——超出当时上限 1382，"
-              "本次拆模块一并收口"),
+              "本次拆模块一并收口；"
+              "2026-10-17 +28：①软命中跳过负缓存来源（空 results 条目不当命中"
+              "交出，4 行）；②SearchCache.set 加 recovered 形参——恢复链成功"
+              "的批次整批退化时降级短 TTL 写入而非硬拒（治「重复查询重付 "
+              "dispatch+恢复链」结构性循环，12 行；策略常量在 cache_guard."
+              "RECOVERED_DEGRADED_TTL）；随动上限 1357 → 1385"),
     "scripts/engine_dispatch.py": (
-        1029, "引擎编排调度器（wave-1 竞速 / wave-2 补全 / 串行对冲 / 收账）；"
+        1033, "引擎编排调度器（wave-1 竞速 / wave-2 补全 / 串行对冲 / 收账）；"
               "不拆的理由：三个分支共用同一棵闭包（raw_results / engine_latency / "
               "engine_done_ms / abandoned_ms / quota_batch 等 15 处共享状态），"
               "拆分会把闭包状态摊成参数面，风险与 diff 面都大于 1000 行本身的 "
@@ -153,7 +161,10 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "2026-10-16 +29：tail_grace_fn 分层尾宽接线（默认关，"
               "ARGO_ADAPTIVE_TAIL，对拍见 docs-local/调度对拍_尾宽分层与并发_"
               "2026-10-16.md）+ 审查收口（gate 关闭时永不起步的队列条目不计入 "
-              "分层判据——死条目会把尾宽拉长，方向反了），上限 1000 → 1029 随动登记"),
+              "分层判据——死条目会把尾宽拉长，方向反了），上限 1000 → 1029 随动登记；"
+              "2026-10-17 +4：per-engine 缓存 get/set 键从 query 改为 "
+              "retrieval_query（键与实际检索词同源，clean_query 变更不再发旧语义"
+              "结果），上限 1029 → 1033 随动登记"),
     "scripts/http_client.py": (
         1027, "HTTP 客户端（UA 轮换 + Cookie 积累 + 重试 + 主机节流）；"
               "2026-09-27 +8：host throttle buckets 加 LRU 淘汰（100 个上限）；"
@@ -182,7 +193,10 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "2026-10-16 +1：_content_sig 末尾接 normalize_title_suffix 剥站后缀"
               "（跨站同文对差异几乎全在结尾后缀，零依赖；归一化逻辑在 rank_signals）"),
     "scripts/search_pipeline.py": (
-        1073, "搜索编排主管线（路由→分派→融合→恢复→漏斗输出）；"
+        1076, "搜索编排主管线（路由→分派→融合→恢复→漏斗输出）；"
+              "2026-10-17 +3：finalize 的 cache.set 透传 recovered 标记（恢复成功"
+              "批次整批退化时降级短 TTL 写入，判据与常量在 cache_guard，存储侧"
+              "改动在 cache.SearchCache.set）；"
               "2026-10-17 +20：查询词回声守卫接线（恢复链触发 + 档位提升到 L3 "
               "+ L1 假恢复过滤）——修「anysearch 超时后 local_bing 把整句当单词"
               "查、回声被原样交付」；判据与两个信号本体（echo_recovery_needed / "

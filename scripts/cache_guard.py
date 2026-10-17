@@ -184,6 +184,12 @@ DEGRADED_BATCH_RATIO = 0.7
 # 可判定条目数下限。低于此不判：样本太少时比例不可信，且宁可漏拦不误伤。
 DEGRADED_MIN_SCORED = 3
 
+# 恢复批降级写入的 TTL（秒）。恢复链成功产出的批次若整批低相关，不硬拒
+# （硬拒会把「难查询的恢复成果」挡在缓存外，重复查询每次重付 dispatch+恢复
+# 链全程——2026-10-17 实测同查询 21s 内 3 次恢复链），降级为 10 分钟短缓存：
+# 给重复查询留命中，又不长期固化低相关结果。
+RECOVERED_DEGRADED_TTL = 600
+
 
 def _entry_relevance(item: Any) -> float | None:
     """取单条结果的相关性；取不到返回 None。

@@ -889,6 +889,9 @@ def finalize(req: _SearchRequest, run: _SearchRun, hooks: Any) -> dict[str, Any]
             lambda: cache.set(
                 query, cache_engine_key, max_results, result_payload,
                 domain=domain, ttl=effective_ttl, mode=mode, depth=depth,
+                # 恢复成功的批次标记给写侧：整批退化时降级短 TTL 而非硬拒
+                # （硬拒会让重复查询重付 dispatch+恢复链全程，cache.set 注释）。
+                recovered=bool((recovery_info or {}).get("recovered")),
             ),
             context="finalize.cache_set",
         )

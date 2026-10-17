@@ -259,3 +259,61 @@ class TestRejectionDoesNotKillTheQuery:
         assert outcomes == [("t_eng", "ok")], (
             f"per-engine 写入被拒不得改写成 error，实得 {outcomes}")
         assert out["errors"] == []
+
+
+class TestRecoveredDegradedWrite:
+    """恢复链成功的退化批次：不硬拒，降级为短 TTL 写入（2026-10-17）。
+
+    硬拒的结构性后果：越难查的查询越容易触发恢复、恢复结果越可能低相关、
+    越写不进缓存——重复查询每次重付 dispatch+恢复链全程（实测同查询
+    21 秒内 3 次恢复链）。短 TTL 给重复查询留命中，又不长期固化低相关。
+    """
+
+    @pytest.fixture()
+    def sc(self, tmp_path):
+        from cache import SearchCache
+        return SearchCache(db_path=str(tmp_path / "cache.db"))
+
+    def _payload(self, n=5):
+        return {"results": [_r(0.10, url=f"https://x.com/{i}") for i in range(n)],
+                "engines_used": ["auto"]}
+
+    def test_normal_write_still_rejected(self, sc):
+        """既有语义不动：不带 recovered 标记的退化批仍然硬拒。"""
+        with pytest.raises(DegradedCacheRejected):
+            sc.set("难查询", "auto", 10, self._payload(), mode="auto")
+
+    def test_recovered_batch_writes_and_serves(self, sc):
+        """recovered=True：退化批写入成功，重复查询能命中。"""
+        sc.set("难查询", "auto", 10, self._payload(), mode="auto", recovered=True)
+        hit = sc.get("难查询", "auto", 10, mode="auto")
+        assert hit is not None, "恢复批应写入缓存"
+        assert len(hit.get("results") or []) == 5
+
+    def test_recovered_batch_ttl_capped(self, sc):
+        """恢复批的 TTL 必须被压到 RECOVERED_DEGRADED_TTL 以内（不长期固化）。"""
+        import sqlite3
+        from cache_guard import RECOVERED_DEGRADED_TTL
+        sc.set("难查询", "auto", 10, self._payload(), mode="auto", recovered=True)
+        with sqlite3.connect(str(sc._l2._db_path)) as conn:
+            row = conn.execute(
+                "SELECT ttl FROM search_cache WHERE query = ?",
+                ("难查询",)).fetchone()
+        assert row is not None, "条目应落库"
+        assert row[0] <= RECOVERED_DEGRADED_TTL, \
+            f"恢复批 TTL 应 ≤{RECOVERED_DEGRADED_TTL}s，实际 {row[0]}s"
+
+    def test_recovered_healthy_batch_uses_normal_ttl(self, sc):
+        """恢复批若并不退化，走正常 TTL 路径（不被短帽误伤）。"""
+        from cache_guard import RECOVERED_DEGRADED_TTL
+        import sqlite3
+        good = {"results": [_r(0.61, url=f"https://x.com/{i}") for i in range(5)],
+                "engines_used": ["auto"]}
+        sc.set("好查询", "auto", 10, good, mode="auto", recovered=True)
+        with sqlite3.connect(str(sc._l2._db_path)) as conn:
+            row = conn.execute(
+                "SELECT ttl FROM search_cache WHERE query = ?",
+                ("好查询",)).fetchone()
+        assert row is not None
+        assert row[0] > RECOVERED_DEGRADED_TTL, \
+            f"健康恢复批不应被短帽压到 {row[0]}s"

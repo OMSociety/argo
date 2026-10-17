@@ -770,6 +770,24 @@ class TestStaticLintGate(unittest.TestCase):
             min_version_scan.scan_text(legal, (3, 9)), [],
             "异类引号被误报（3.9 合法）")
 
+        # 字面 {{ }} 转义 + 收尾引号（3.9 合法，ast.parse 实证）不得误报
+        # ——2026-10-17 修 scanner 自身：此前不剥收尾引号、不认 {{ 转义，
+        # chrome_cdp.py:735 / citations.py:333 被误判成 PEP 701，连累
+        # pre-commit 第一道门禁全红。
+        escaped = 'x = f"{{method:{json.dumps(method)},"\n'
+        self.assertEqual(
+            min_version_scan.scan_text(escaped, (3, 9)), [],
+            "{{ 转义被判成 PEP 701（3.9 合法）——scanner 转义处理回归")
+        bibtex = 'return f"@{entry}{{{_bibtex_key(meta, used_keys)},\\n" + s\n'
+        self.assertEqual(
+            min_version_scan.scan_text(bibtex, (3, 9)), [],
+            "citations.py:333 形态（{{ 转义 + 尾部拼接）被误报")
+        # 反向验证：转义处理没有放过真字段内嵌同类引号（獠牙还在）
+        still_bad = 'y = f"outer {d[\\"inner\\"]}"\n'
+        self.assertTrue(
+            min_version_scan.scan_text(still_bad, (3, 9)),
+            "字段内同类引号没被抓住——转义修正把规则修钝了")
+
         # PEP 604 用在真类型上、且不在注解位（无 future import）→ 3.9 会崩
         risky = ("CACHE: dict[str, int] = {}\n"
                  "Handler = Callable | None\n")

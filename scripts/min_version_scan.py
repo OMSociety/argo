@@ -267,6 +267,16 @@ def _pep701_by_string_token(tokens: list) -> list[tuple[int, str]]:
 
     3.12+ 上不会走到这里（由 FSTRING_START 分支处理），保留是为了本模块在
     老解释器上跑出同样结论。
+
+    不变量（2026-10-17 重写，此前一版「剥收尾引号」的修法拔掉了真獠牙）：
+      - `{{` / `}}` 是**字段外**的字面花括号转义，不改变字段深度——按普通
+        括号计数会把合法 f-string（chrome_cdp.py:735 的 `f"{{method:...},"`）
+        误判成 PEP 701，连累 pre-commit 第一道门禁全红；
+      - 字段内每个 `}` 都关闭字段（`}}` 字面转义只在字段外出现）；
+      - 扫完整个 body 后 depth>0 ⇒ 字段未闭合。低版本 tokenizer 在第一个
+        同类引号处截断 token（`f"...{get_env(["`），片段必然带着未闭合的
+        `{`——这正是 PEP 701 写法在低版本 token 流里的形态；合法 f-string
+        的所有字段必然在串内闭合。
     """
     findings: list[tuple[int, str]] = []
     for tok in tokens:
@@ -276,18 +286,27 @@ def _pep701_by_string_token(tokens: list) -> list[tuple[int, str]]:
         if len(text) < 3 or text[0] not in "fF":
             continue
         quote = _quote_of(text)
-        rest = text[1 + len(quote):]
-        depth, i = 0, 0
-        while i < len(rest):
-            ch = rest[i]
-            if ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth = max(0, depth - 1)
-            elif depth > 0 and rest.startswith(quote, i):
-                findings.append((tok.start[0], _PEP701_MSG))
+        body = text[1 + len(quote):]
+        if body.endswith(quote):
+            body = body[:-len(quote)]
+        depth, i, n = 0, 0, len(body)
+        flagged = False
+        while i < n:
+            ch = body[i]
+            if ch == "{" or ch == "}":
+                if depth == 0 and body.startswith(ch * 2, i):
+                    i += 2  # 字面花括号转义（仅字段外合法）
+                    continue
+                depth += 1 if ch == "{" else -1
+                depth = max(0, depth)
+            elif depth > 0 and body.startswith(quote, i):
+                flagged = True  # 字段内出现同类引号：PEP 701 本体
                 break
             i += 1
+        if not flagged and depth > 0:
+            flagged = True  # 串尾字段未闭合：同类引号截断片段的形态
+        if flagged:
+            findings.append((tok.start[0], _PEP701_MSG))
     return findings
 
 

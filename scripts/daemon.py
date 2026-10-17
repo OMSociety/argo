@@ -443,12 +443,20 @@ class _Server:
                     break
                 buf += chunk
             resp: dict = {"ok": False, "error": "空请求"}
+            # req 必须先绑定再使用：空请求 / 超 1MB / 解析失败 / 非 dict 体
+            # （如 JSON 数组）时 475 行的 `req.get("send_timeout")` 会
+            # NameError/AttributeError——两者都穿不透下面的 except OSError，
+            # handler 线程带 traceback 死掉，上面特意准备的错误响应永远没
+            # 发送，客户端拿 EOF 回退冷跑（2026-10-17 审查发现 2）。
+            req: dict = {}
             if len(buf) > MAX_REQ_BYTES:
                 resp = {"ok": False, "error": "请求超长"}
                 buf = b""
             if buf.strip():
                 try:
-                    req = json.loads(buf.decode("utf-8", "replace"))
+                    parsed = json.loads(buf.decode("utf-8", "replace"))
+                    if isinstance(parsed, dict):
+                        req = parsed
                     op = req.get("op")
                     if op == "ping":
                         now = time.monotonic()

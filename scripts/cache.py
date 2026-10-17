@@ -42,7 +42,12 @@ except ImportError:
 
 # 本地状态目录唯一来源（env ARGO_STATE_DIR → config cache.db_path 父目录 → 旧路径）
 import argo_paths
-from cache_guard import assert_not_degraded, assert_not_failed_state  # 写入守卫（2026-09-27 拆出；失败态守卫 2026-09-29 增补）
+from cache_guard import (
+    DegradedCacheRejected,
+    RECOVERED_DEGRADED_TTL,
+    assert_not_degraded,
+    assert_not_failed_state,  # 写入守卫（2026-09-27 拆出；失败态守卫 2026-09-29 增补）
+)
 from cache_key_vdom import cache_key_vdom  # 引擎级垂直域维度（--domain/--sub_domain）
 from cli_io import dumps
 from except_sets import IO_BENIGN, SHAPE_BENIGN
@@ -984,6 +989,14 @@ class SearchCache:
                         s_hit = self._l2.get(cand["key"])
                         if s_hit is None:
                             continue
+                        sres = s_hit.get("results")
+                        if isinstance(sres, list) and not sres:
+                            # 负缓存（空结果条目）不进软命中：那是**别的查询**
+                            # 的瞬时失败，交出去后上层拿到 cached=true、count=0，
+                            # 无法区分「本查询没结果」与「别的查询失败了」
+                            # （2026-10-17 实测：sim=0.75 时「苹果 2025 营收」
+                            # 会软命中「苹果 2025 年营收」的负缓存）。
+                            continue
                         sliced = self._soft_slice(s_hit, max_results)
                         if sliced is not None:
                             out = dict(sliced)
@@ -1005,12 +1018,15 @@ class SearchCache:
 
     def set(self, query: str, engine: str, max_results: int, results: dict,
             domain: str = "general", ttl: int | None = None, mode: str = "auto",
-            depth: str = "fast"):
+            depth: str = "fast", recovered: bool = False):
         """写入双层缓存。空结果强制短 TTL；时效 query 强制 cap。
 
         自适应 TTL：内容稳定的查询自动延长 TTL（上限为域 TTL），
         内容频繁变化则保持短 TTL，兼顾命中率与新鲜度。
         登录态 / cache_eligible=false 载荷硬拒绝（LoginCacheRejected）。
+
+        recovered=True（恢复链成功产出的批次）：整批退化时不硬拒，降级为
+        短 TTL 写入（RECOVERED_DEGRADED_TTL）——理由见下方守卫块注释。
         """
         assert_cacheable(results, context="SearchCache.set")
         # engine 名本身也可能标记登录态源
@@ -1018,8 +1034,18 @@ class SearchCache:
         result_list = results.get("results") if isinstance(results, dict) else None
         # 逐条查：登录态标记的生产者在**逐条**结果上（见 assert_results_cacheable）
         assert_results_cacheable(result_list, context="SearchCache.set")
-        # 退化守卫：上游抖动返回的残次品不得固化（见 is_degraded_results）
-        assert_not_degraded(result_list, context="SearchCache.set")
+        # 退化守卫：上游抖动返回的残次品不得固化（见 is_degraded_results）。
+        # 例外（2026-10-17）：recovered 批次不整批拒写——硬拒把「难查询的恢复
+        # 成果」与「上游抖动残次品」一同挡在缓存外，重复查询 miss 后每次重付
+        # dispatch+恢复链全程（实测同查询 21s 内 3 次恢复链，越难查越进不去
+        # 缓存的结构性循环）。降级为短 TTL：重复查询有命中，低相关不长期固化。
+        recovered_degraded = False
+        try:
+            assert_not_degraded(result_list, context="SearchCache.set")
+        except DegradedCacheRejected:
+            if not recovered:
+                raise
+            recovered_degraded = True
         # 失败态守卫（2026-09-29）：缺密钥/熔断/鉴权/配额且无有效结果不写负缓存
         assert_not_failed_state(results, context="SearchCache.set")
         is_empty = isinstance(result_list, list) and len(result_list) == 0
@@ -1041,6 +1067,8 @@ class SearchCache:
                 query, engine, domain, effective_ttl, result_list,
                 mode=mode, depth=depth,
             )
+            if recovered_degraded:
+                effective_ttl = min(effective_ttl, RECOVERED_DEGRADED_TTL)
         self._write(key, query, engine, max_results, results, domain, effective_ttl,
                     mode=mode, depth=depth)
 

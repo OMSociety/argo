@@ -632,8 +632,15 @@ def http_open(req: Any, timeout: float = 10.0, engine: str = ""):
         try:
             # 限长：错误页可能几十 MB，而调用方只用前 400 字符归因。
             # 无上限会把整页读进内存，并经归因持久化进磁盘状态文件。
+            #
+            # KeyError 也要接（2026-10-17）：Python 3.9 的 HTTPError 在
+            # fp=None 时（部分上游/mock 形态）不初始化文件基类，首次访问
+            # `read` 经 __getattr__ 抛 KeyError('file')。它既不是 OSError
+            # 也不是 HTTPException，漏接会把「诚实上报 403」退化成「未预期
+            # 异常静默空结果」（tests/test_bocha.py 的 403 可见性用例抓的
+            # 正是它——本该是 error 项，实际返回 0 条）。
             body_bytes = e.read(_HTTP_ERROR_BODY_CAP) or b""
-        except (OSError, http.client.HTTPException):
+        except (OSError, http.client.HTTPException, KeyError):
             pass
         _get_logger().warning(f"HTTP 引擎失败: HTTP {e.code} {engine}")
         _note_http_failure(engine, e.code,
