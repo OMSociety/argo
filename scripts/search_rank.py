@@ -250,71 +250,29 @@ def rrf_merge(ranked_lists: list[list[dict[str, Any]]], k: int = 60,
               lang: str | None = None) -> list[dict[str, Any]]:
     """Reciprocal Rank Fusion 合并多引擎结果，保留 consensus_engines。
 
-    键用归一化 URL（http/https、www、utm 变体合并）；RRF 分单独存 _rrf_score，
-    首次遇到的结果保留完整字段，后续同 URL 只累加共识、择优补充 snippet，
-    避免「score 字段赢家通吃」覆盖共识内容。
+    键用归一化 URL；RRF 分单独存 _rrf_score，首次遇到的结果保留完整字段，
+    后续同 URL 只累加共识、择优补充 snippet。
 
-    weighted（WG-RRF）：按引擎来源加权（权威源提权、社交源降权）。
-    **默认值改为 None 表示「按 _rrf_weighted_default() 决定」**（即默认仍为
-    加权，与旧行为逐位一致），传 True/False 可显式覆盖——此前签名写死
-    `weighted: bool = True`，调用方想走经典 RRF 只能显式传 False，而
-    ARGO_RRF_WEIGHTED 这类环境开关无处生效。测试与消融脚本传显式值时
-    行为完全不变。
+    口径隔离：不同口径的引擎结果不直接 merge，而是作为独立证据通道并列
+    呈现。同口径内做 RRF 融合，不同口径按优先级排序后并列输出。
+    口径分类表与分组逻辑在 caliber_isolation.py。
     """
     if weighted is None:
         weighted = _rrf_weighted_default()
-    scores: dict[str, float] = {}
-    items: dict[str, dict[str, Any]] = {}
 
-    for _li, results in enumerate(ranked_lists):
-        for i, r in enumerate(results):
-            # 无 URL 时用 title 保底；模态卡再退到 card_type（避免空 title 互撞）。
-            # 最后保底必须带**列表身份**：此前用裸 `i`（单列表内的局部索引），
-            # 跨引擎必然同值 —— 两条都没有 url/title/card_type 的不同结果会在
-            # `__idx__:0` 处相撞，表现为 ①丢结果 ②伪造 consensus_engines
-            # （两个引擎"都投了"同一条，其实各是各的）③字段错配（_engine 留 A、
-            # snippet 被 B 覆盖）。同文件 deduplicate_by_url 用全局递增计数器
-            # `anon:{len(out)}` 就没有这个问题，此处保持一致该写法。
-            key = (
-                _canonical_url(r.get("url", ""))
-                or (f"__title__:{r.get('title', '')}" if r.get("title") else "")
-                or (f"__card__:{r.get('card_type', '')}" if r.get("card_type") else "")
-                or f"__idx__:{_li}:{i}"
-            )
-            w = _engine_weight(r.get("_engine") or r.get("source") or "",
-                               lang=lang) if weighted else 1.0
-            scores[key] = scores.get(key, 0.0) + w / (k + i + 1)
-            eng = r.get("_engine") or r.get("source", "") or ""
-            if key not in items:
-                item = dict(r)
-                item["_rrf_score"] = 0.0  # 排序后统一写回
-                cons: list[str] = []
-                if eng:
-                    cons.append(eng)
-                item["consensus_engines"] = cons
-                items[key] = item
-            else:
-                cur = items[key]
-                # 择优保留内容更完整的版本（title+snippet 更长者胜），不覆盖其余字段
-                new_txt = f"{r.get('title', '')} {r.get('snippet', '')}"
-                cur_txt = f"{cur.get('title', '')} {cur.get('snippet', '')}"
-                if len(new_txt) > len(cur_txt):
-                    cur["title"] = r.get("title", cur.get("title"))
-                    cur["snippet"] = r.get("snippet", cur.get("snippet"))
-                sources = {cur.get("source", ""), r.get("source", "")}
-                cur["source"] = "/".join(s for s in sources if s)
-                cons = list(cur.get("consensus_engines") or [])
-                if eng and eng not in cons:
-                    cons.append(eng)
-                cur["consensus_engines"] = cons
+    # 经典 RRF（weighted=False）：保留旧的全局列表级 RRF 语义，每个引擎列表
+    # 独立贡献排名。口径隔离只用于加权分支（weighted=True）。
+    if not weighted:
+        from rrf_classic import rrf_classic
+        return rrf_classic(ranked_lists, k=k, lang=lang,
+                           _canonical_url=_canonical_url_impl)
 
-    ranked = sorted(scores.items(), key=lambda x: -x[1])
-    out = []
-    for key, _ in ranked:
-        item = items[key]
-        item["_rrf_score"] = round(scores[key], 6)
-        out.append(item)
-    return out
+    from caliber_isolation import merge_by_caliber
+    return merge_by_caliber(
+        ranked_lists, k=k, weighted=weighted, lang=lang,
+        _canonical_url=_canonical_url_impl,
+        _engine_weight=_engine_weight,
+    )
 
 
 def _content_similarity(a: str, b: str) -> float:

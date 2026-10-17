@@ -20,6 +20,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 import urllib.parse
 from typing import Any
 
@@ -200,16 +201,41 @@ def search_fxtwitter(query: str, n: int = 5, timeout: int = 10) -> list[dict[str
     return results
 
 
-def search_nitter(query: str, n: int = 5) -> list[dict]:
-    """通过 nitter 公开实例搜索推文（零认证，保底）。"""
-    nitter_instances = [
+# Nitter 实例健康状态（进程内记忆）：记录每个实例的连续失败次数和
+# 最后健康时间，优先尝试最近健康的实例。实例不可达时不永久封禁，
+# 而是逐步降权——Nitter 实例可用性波动大，单次失败不等于永久不可用。
+_nitter_health: dict[str, dict] = {}
+_NITTER_MAX_FAILURES = 3
+
+
+def _nitter_healthy_instances() -> list[str]:
+    """按健康状态排序的 Nitter 实例列表，最近健康的优先。"""
+    instances = [
         "https://nitter.net",
         "https://nitter.privacydev.net",
         "https://nitter.poast.org",
+        "https://nitter.privacyredirect.com",
+        "https://nitter.tiekoetter.com",
     ]
+    def _sort_key(base: str) -> tuple:
+        h = _nitter_health.get(base)
+        if h is None:
+            return (0, 0.0)  # 未记录过，优先尝试
+        fails = h.get("fails", 0)
+        last_ok = h.get("last_ok", 0.0)
+        return (fails, -last_ok)  # 失败少的优先，最近健康的优先
+    return sorted(instances, key=_sort_key)
+
+
+def search_nitter(query: str, n: int = 5) -> list[dict]:
+    """通过 nitter 公开实例搜索推文（零认证，保底）。
+
+    多实例故障转移：按健康状态排序，优先尝试最近健康的实例。
+    实例失败时降权（不永久封禁），成功时恢复权重。
+    """
     encoded_query = urllib.parse.quote(query)
 
-    for base in nitter_instances:
+    for base in _nitter_healthy_instances():
         try:
             url = f"{base}/search?f=tweets&q={encoded_query}&since=2025-01-01"
             headers = {
@@ -217,8 +243,16 @@ def search_nitter(query: str, n: int = 5) -> list[dict]:
             }
             body, _ = _http_get_with_retry(url, headers=headers, timeout=8, max_retries=1)
             html = body.decode("utf-8", errors="replace")
-            return _parse_nitter_html(html, n)
+            # 更新健康状态
+            _nitter_health[base] = {"fails": 0, "last_ok": time.time()}
+            results = _parse_nitter_html(html, n)
+            # 空结果也算实例健康（只是没有匹配内容），不降权
+            return results
         except Exception:
+            # 失败时增加失败计数
+            h = _nitter_health.get(base) or {}
+            h["fails"] = h.get("fails", 0) + 1
+            _nitter_health[base] = h
             continue
     return []
 

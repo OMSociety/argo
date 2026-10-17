@@ -60,6 +60,18 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
         1239, "国际（日韩/欧洲）源声明构建器，逐源一段；含各源 XML/RSS 解析差异；"
               "2026-09-29 +19：open_meteo 多 place forecast 并行化（串行 9.28s → "
               "3.9-5.1s，bounded_run 有界并发 + 保序）"),
+    "scripts/caliber_isolation.py": (
+        186, "口径隔离：RRF 融合前按口径分组，不同口径不直接 merge；"
+              "纯函数，可独立测试"),
+    "scripts/rrf_classic.py": (
+        66, "经典 RRF 融合（weighted=False 路径）；"
+              "所有引擎列表在同一个池中竞争，每个列表独立贡献排名"),
+    "scripts/x_article_fetch.py": (
+        141, "X Article 正文提取（Draft.js 重建）；"
+              "通过 FxTwitter API 获取 blocks 并重建为 Markdown"),
+    "scripts/url_optimize.py": (
+        54, "URL 优化：Reddit 重写、追踪参数清理；"
+              "纯函数，可独立测试"),
     "scripts/engines_builders_tech.py": (
         1354, "技术社区源声明构建器（V2EX/StackExchange 等），逐源一段；"
               "2026-09-26 批次十增强净增 +402：sov2ex 一级全文来源（v2ex 就地升级）、"
@@ -72,7 +84,7 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "_LazyLogger 代理类，省 ~10ms/次冷启动；"
               "2026-10-14 7ca2f22 移除 OSV/CISA KEV 代码段（−261）"),
     "scripts/fetch_v3.py": (
-        1791, "抓取降级链（HTTP→md 变体→TLS 指纹→jina→Parallel→浏览器），"
+        1779, "抓取降级链（HTTP→md 变体→TLS 指纹→jina→Parallel→浏览器），"
               "每级都要保留顺序与超时语义，尚未找到能一次搬走且可验证的切面；"
               "2026-09-27 +10：identity memory 内存缓存（dirty flag + 30s 写盘节流）；"
               "2026-09-28 +2：_identity_mem 内存表 512 有界淘汰；"
@@ -150,7 +162,8 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "同日 +12：POST curl fallback 补 resolve_proxy（POST 代理缝隙）+ "
               "Set-Cookie 解析失败 debug 留痕（最高频静默点）"),
     "scripts/search_rank.py": (
-        1033, "RRF 融合 + minhash 去重 + 五维重排；"
+        991, "RRF 融合 + minhash 去重 + 五维重排；"
+              "2026-10-17 口径隔离逻辑拆出 caliber_isolation.py（−79 行）；"
               "2026-10-17 +4：_attach_selection_signals 接 authority_level 离散"
               "等级（DeepSeek 语义 0-4，映射与上游采信逻辑在 rank_signals）+"
               "2026-09-27 +18：_weight_cache/_rel_factor_cache 加 TTL+大小限制（_evict_cache）；"
@@ -162,13 +175,12 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "且 MCP/库调用绕开 argparse，兜底必须落在切片点）；"
               "2026-10-08 +2：traceability 评分接入快速路径"
               "（score_traceability 调用 + 权重调整 0.40→0.35/0.35→0.30）; "
-              "1 行 import；" 
+              "1 行 import；"
               "2026-10-16 +2：minhash_dedupe 近似命中带内接 rapidfuzz 模糊近重复"
               "（可选依赖、判定逻辑全部在 rank_signals.fuzzy_near_dup，本文件只留"
               "调用点与数据行豁免排序注释）；"
               "2026-10-16 +1：_content_sig 末尾接 normalize_title_suffix 剥站后缀"
-              "（跨站同文对差异几乎全在结尾后缀，零依赖；归一化逻辑在 rank_signals）；"
-              "同日 −2 空行补偿后净 +5，上限 1024→1029"),
+              "（跨站同文对差异几乎全在结尾后缀，零依赖；归一化逻辑在 rank_signals）"),
     "scripts/search_pipeline.py": (
         1073, "搜索编排主管线（路由→分派→融合→恢复→漏斗输出）；"
               "2026-10-17 +20：查询词回声守卫接线（恢复链触发 + 档位提升到 L3 "

@@ -1147,36 +1147,12 @@ def normalize_url(url: str) -> str:
 
 
 def _optimize_url(url: str) -> str:
-    """URL 优化：Reddit 重写、追踪参数清理等。
-
-    - reddit.com → old.reddit.com（7× 更小、无 JS 渲染要求）
-    - 清理常见追踪参数（utm_source, fbclid, gclid 等）
-    """
-    url = normalize_url(url)
-    parsed = urlparse(url)
-    host = parsed.netloc.lower()
-
-    # Reddit 优化
-    if host in ("reddit.com", "www.reddit.com", "new.reddit.com"):
-        # 重写为 old.reddit（纯 HTML，无需 JS，体积更小）
-        url = url.replace("://www.reddit.com", "://old.reddit.com")
-        url = url.replace("://reddit.com", "://old.reddit.com")
-        url = url.replace("://new.reddit.com", "://old.reddit.com")
-
-    # 清理追踪参数。**必须在主机重写之后重新解析**：此前用的是重写之前
-    # 捕获的 parsed，一旦两者同时命中就会把重写悄悄撤销——实测
-    # `https://www.reddit.com/r/x?utm_source=z` 最终仍是 www.reddit.com，
-    # 而分享链接几乎都带 utm，等于这条优化在真实场景里大面积失效。
-    tracking_params = {"utm_source", "utm_medium", "utm_campaign", "utm_term",
-                       "utm_content", "fbclid", "gclid", "ref", "ref_src"}
-    parsed = urlparse(url)
-    qs = urllib.parse.parse_qs(parsed.query)
-    filtered = {k: v for k, v in qs.items() if k.lower() not in tracking_params}
-    if len(filtered) < len(qs):
-        new_qs = urllib.parse.urlencode(filtered, doseq=True)
-        url = urllib.parse.urlunparse(parsed._replace(query=new_qs))
-
-    return url
+    """URL 优化：Reddit 重写、追踪参数清理等。"""
+    try:
+        from url_optimize import optimize_url
+        return optimize_url(url)
+    except ImportError:
+        return url
 
 
 def _cache_content_too_short(hit: dict, max_chars: int) -> bool:
@@ -1343,6 +1319,18 @@ def fetch_v3(url: str, max_chars: int = 8000, timeout: float = 8.0,
                 out["url"] = url
                 return _strip_html_unless_needed(out, need_html)
         except Exception:
+            pass
+
+    # X Article 正文提取：通过 FxTwitter API 获取 Draft.js blocks 并重建为 Markdown
+    if not force_browser:
+        try:
+            from x_article_fetch import is_x_article_url, fetch_x_article
+            if is_x_article_url(url):
+                result = fetch_x_article(url, max_chars=max_chars, timeout=timeout)
+                if result and result.get("success"):
+                    result["cached"] = False
+                    return _strip_html_unless_needed(result, need_html)
+        except ImportError:
             pass
 
     if force_browser:

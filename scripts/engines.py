@@ -774,6 +774,14 @@ def search(query: str, engine: str, n: int = 5, timeout: float = 8, depth: str =
     if not fn:
         _warn_unknown_engine(engine)
         return []
+    # 负缓存检查：引擎已知不可用（近期异常）时直接返回空，避免重复尝试
+    try:
+        from cache import SearchCache
+        neg = SearchCache().get(f"neg:{engine}")
+        if neg and neg.get("error", "").startswith("engine_down:"):
+            return []
+    except Exception:
+        pass
     # 语义型引擎不识别平台结构化语法，剥掉字段只留核心词；透传型保持原 query。
     if engine in _SEMANTIC_ENGINES:
         query = strip_structured(query)
@@ -827,6 +835,20 @@ def search(query: str, engine: str, n: int = 5, timeout: float = 8, depth: str =
             else:
                 logger.error(f"引擎 {engine} 异常: {type(e).__name__}: {e}")
                 results = []
+            # 失败负缓存：引擎异常时写入短 TTL 负缓存，避免对已知不可用引擎
+            # 重复尝试。TTL 300s（5 分钟），足够覆盖一次搜索 combo 的执行窗口，
+            # 又不至于让引擎恢复后长时间被误判为不可用。
+            if not results:
+                try:
+                    from cache import SearchCache
+                    neg_key = f"neg:{engine}"
+                    SearchCache().set(
+                        neg_key, query, engine, eff_n,
+                        value={"error": f"engine_down: {type(e).__name__}", "results": []},
+                        domain="negative", ttl=300, mode=mode, depth=depth,
+                    )
+                except Exception:
+                    pass
         elapsed = time.time() - t0
         if results and isinstance(results, list):
             for r in results:
