@@ -27,7 +27,7 @@ triggers:
 # Argo — 统一搜索与证据核验
 
 > 不止「帮你搜到」，还要「帮你核到」：高后果问题标 `fetch_required`、结果标
-> `fetch_suggested`，`--verify` 核验正文并回填证据分。收录 266 个源、229 个免密钥开箱可用；另有默认关的 digup 引擎（搜本机文件/音视频，见 engines/specs/digup.yaml）与 deepseek_search 引擎（按次计费的官方网页搜索，需 DEEPSEEK_API_KEY，见 engines/specs/deepseek_search.yaml）。
+> `fetch_suggested`，`--verify` 核验正文并回填证据分。收录 266 个源、229 个免密钥开箱可用；另有默认关的 digup（本机文件搜索）与 deepseek_search（按次计费）两个引擎。
 
 ## 快速上手
 

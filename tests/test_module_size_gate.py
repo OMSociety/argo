@@ -206,7 +206,10 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "2026-10-10 +2：入口状态隔离（真实搜索路径会写生产状态，实测夹具"
               "引擎已混入 circuit_breaker/usage_log），接 argo_paths.isolate_state_dir"),
     "scripts/route.py": (
-        998, "路由决策主干（route_query + 三个 _route_by_* 判定器）；"
+        1008, "路由决策主干（route_query + 三个 _route_by_* 判定器）；"
+              "2026-10-17 +10：lang_override 参数（查询操作符 lang: 的入口，"
+              "覆盖逻辑本体在 route_lang.apply_lang_override，此处只留传参+"
+              "调用+绕磁盘缓存三处——覆盖改变决策，不能与无覆盖查询共享键）；"
               "2026-09-28 拆出 Bangs 解析（route_bangs.py，−26 行）后登记；"
               "同日 +2：breaker.status 读失败 debug 留痕（fail-open 语义不变）；"
               "2026-09-30 +1：routable memo 接线（get_engines 不传 cfg，"
