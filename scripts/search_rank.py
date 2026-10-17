@@ -62,6 +62,7 @@ from rank_signals import (  # noqa: E402,F401
     cross_domain_homogeneity_penalty as _cross_domain_homogeneity_penalty,
     domain_concentration_penalty as _domain_concentration_penalty,
     domain_penalty_enabled as _domain_penalty_enabled,
+    authority_level,
     domain_score_floors as _domain_score_floors,
     fuzzy_near_dup,
     normalize_title_suffix,
@@ -912,6 +913,9 @@ def _attach_selection_signals(merged: list[dict[str, Any]], mode: str,
             orig = float(next((v for v in (r.get("score"),) if v not in (None, "")), 0.5))  # 哨兵判空：显式 0 分不得膨胀成 0.5
             r["authority"] = auth["score"]
             r["authority_tier"] = auth["tier"]
+            # 离散权威等级 0-4（≥3 极权威）：上游原生 authority 优先，否则连续分映射
+            r["authority_level"] = authority_level(
+                auth["score"], r.get("upstream_authority"))
             r["freshness"] = fresh["score"]
             r["selection"] = round(selection, 3)
             r["absorption"] = round(absorption, 3)

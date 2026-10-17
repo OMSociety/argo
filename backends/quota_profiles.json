@@ -400,6 +400,16 @@
     "cost_tier": "free",
     "priority": 34
   },
+  "deepseek_search": {
+    "label": "DeepSeek Search",
+    "qps": 5,
+    "limit": null,
+    "period": "second",
+    "cost_per_call": 0.005,
+    "cost_unit": "cny",
+    "cost_tier": "paid",
+    "priority": 60
+  },
   "deezer": {
     "label": "deezer",
     "qps": 2,

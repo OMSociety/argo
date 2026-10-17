@@ -47,6 +47,10 @@ def _warn(message: str) -> None:
 _AGENT_RESULT_FIELDS = (
     "title", "url", "snippet", "source", "score", "ref",
     "published_at", "fetch_suggested", "full_text_url",
+    # 离散权威等级（0-4，≥3 极权威）：Agent 的廉价可信闸门——连续 authority
+    # 分不知道该在哪切，等级才能直接当门用（DeepSeek Search 同款语义）。
+    # 整数字段约 6 字节，剥掉它等于把「先信谁」重新推回给调用方猜。
+    "authority_level",
     "image_url", "image_license",
     "episode_count", "duration_minutes",
     # 本地已有正文：是可操作提示而非观测数据——告诉 Agent 这条不必重新联网，

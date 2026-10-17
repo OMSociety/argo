@@ -649,6 +649,44 @@ def domain_score_floors() -> dict[str, dict[str, dict[str, float]]]:
     return _SCORE_FLOORS_CACHE
 
 
+# ── 离散权威等级（0-4） ──────────────────────────────────────────────────────
+#
+# 对齐 DeepSeek Search 的 authority 语义（0-4，≥3 极权威，-1 未知）。为什么
+# 需要这一层：连续 authority 分对 Agent 是弱信号——不知道该在哪切；离散等级
+# 才能直接当闸门用（≥3 才进事实链）。与既有 authority_tier
+# （high/medium/low/very_low）同源不同形：tier 是内部排序语义，level 是对外
+# 可解释语义，两者共用同一条 authority 连续分，不产生第二套评分。
+
+def authority_level(authority_score: Any, upstream_authority: Any = None) -> int:
+    """0-4 离散权威等级；上游原生 0-4 优先，-1/不可解析回退自有映射。
+
+    自有映射阈值按 2026-10-17 实测分布校准（score_authority 在真实 URL 上
+    的输出）：官方/一手（gov/arxiv/mdn/github/eastmoney）0.85-1.0 → 4；
+    知名第三方（百科/优质站）0.7-0.85 → 3；一般可信 0.5-0.7 → 2；UGC/低可信
+    0.3-0.5 → 1；SERP/跳转链/未知 <0.3 → 0。
+    """
+    if upstream_authority not in (None, ""):
+        try:
+            v = int(float(str(upstream_authority).strip()))
+            if 0 <= v <= 4:
+                return v
+        except (TypeError, ValueError):
+            pass  # 上游值不可解析（含 -1 未知）→ 走自有映射
+    try:
+        s = float(authority_score)
+    except (TypeError, ValueError):
+        return 0
+    if s >= 0.85:
+        return 4
+    if s >= 0.7:
+        return 3
+    if s >= 0.5:
+        return 2
+    if s >= 0.3:
+        return 1
+    return 0
+
+
 # ── 模糊近重复判定（rapidfuzz，可选依赖）─────────────────────────────────────
 #
 # 背景（2026-10-16 实测）：minhash_dedupe 的字符集 Jaccard 对「同文换站后缀/

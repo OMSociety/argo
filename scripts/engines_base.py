@@ -779,6 +779,10 @@ def _parse_http_payload(raw: str, fmt: str, eng: str, n: int,
             # 或安装引用（ClawHub 的 install.reference）才是能核对、能安装的
             # 那个地址，与市场页分开存。
             "upstream": output_map.get("item_upstream", ""),
+            # 上游原生信号透传（DeepSeek search 接入）：不覆盖 Argo 自己的
+            # authority/score（排序用），upstream_* 原名落盘，spec 不声明则不出现
+            "upstream_authority": output_map.get("item_upstream_authority", ""),
+            "upstream_score": output_map.get("item_upstream_score", ""),
             # 可选图片字段：图源（nasa_images 等）声明 item_image 后，结果里多出
             # image_url / image_license，供「搜到图 → 直接看图」用。路径须指向
             # **字符串**（如 links.0.href）——指向 dict 会被 _coerce_field 丢成空串

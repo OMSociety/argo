@@ -1,0 +1,72 @@
+# DeepSeek Search 引擎（官方 API）——默认关闭，按需启用
+#
+# 它是什么：DeepSeek 官方网页搜索（POST api.deepseek.com/v1/tools/search），
+# 按次计费 5 元/千次**成功**请求，账号级 QPS 5。返回结果自带四样 Argo 既有
+# 中文 API 引擎（bocha/byted/metaso/octen）都没有的结构化字段：
+#   - authority：0-4 权威分级（-1 未知，≥3 极权威）
+#   - rerank_score：0-3 排序分（≥1.5 优质，综合相关性/权威性/时效）
+#   - date：发布时间，RFC 3339 UTC
+#   - site_name / site_icon：站点名与图标
+# 前两样经 output_map 的 item_upstream_* 透传进结果（upstream_authority/
+# upstream_score），输出层的 authority_level（0-4 离散等级，DeepSeek 语义）
+# 优先采信上游原生 authority，没有再回退 Argo 自己的连续 authority 映射。
+#
+# 计费口径与 Argo 自适应学习天然对齐：DeepSeek 只对 HTTP 200 且 results
+# 非空的请求收费；Argo 的 classify_engine_outcome 对 no-results/timeout/
+# error 一律不计成功——两边同口径，不存在「失败也扣分」的错位。
+#
+# 搜索语法（DeepSeek 原样透传给上游，本引擎可吃用户查询里的 site:/-词/
+# -"短语"/"短语"/lang:zh,en/after:/before: 操作符）——查询级操作符契约层
+# 见 scripts/query_operators.py（2026-10-17 同期落地）。
+#
+# 开启步骤：
+#   1. export DEEPSEEK_API_KEY=<key>（DeepSeek 开放平台申请；只进 env，
+#      与 {ENV} 占位纪律一致，不写进任何仓库文件）
+#   2. 本文件 enabled 改 true
+#   3. 健康门：python3 scripts/engine_validate.py --engine deepseek_search --stage all --admit
+#   4. 显式调用：argo search "查询" --engine deepseek_search
+# 不进任何域 combo：默认关 + 按次计费的引擎由用户显式指定（或自行加槽），
+# 不参与自动路由，避免日常查询误烧额度。
+#
+# 配套 Fetch 接口（api.deepseek.com/v1/tools/fetch，返回 Markdown 正文）
+# 留作抓取链备选，本 spec 只接 search。
+engine_id: deepseek_search
+type: http
+enabled: false         # ← 默认关；开启步骤见文件头
+disabled_reason: 按需启用的付费 API 引擎——需 DEEPSEEK_API_KEY 且按次计费（5 元/千次成功请求）；开启后以 --engine deepseek_search 显式调用，不参与自动路由
+cost_tier: paid
+method: POST
+url: https://api.deepseek.com/v1/tools/search
+timeout: 12
+canary_query: "DeepSeek"
+label: DeepSeek Search
+family: web_general
+priority: 60
+qps: 5
+period: second
+cost_per_call: 0.005
+cost_unit: cny
+required_env:
+  - DEEPSEEK_API_KEY
+
+headers:
+  Authorization: Bearer {DEEPSEEK_API_KEY}
+  Content-Type: application/json
+
+# POST body：{query} 查询词，{n} 结果数（DeepSeek count 1-50，渲染时自动 int 化）
+body:
+  query: "{query}"
+  count: "{n}"
+
+# DeepSeek 返回 {results:[{rerank_score,title,url,snippet,summary,content,
+# site_name,site_icon,date,authority}]}。snippet 100-200 字走 snippet 档；
+# summary/content 不接（正文按需走 fetch/verify 链，不在 search 层拉全量）。
+output_map:
+  items: results
+  item_title: title
+  item_url: url
+  item_summary: snippet
+  item_source: deepseek_search
+  item_published_at: date
+  item_upstream_authority: authority
+  item_upstream_score: rerank_score

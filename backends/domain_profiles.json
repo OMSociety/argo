@@ -2578,5 +2578,11 @@
     "documents": [],
     "boost_keywords": {},
     "boost_combos": {}
+  },
+  "deepseek_search": {
+    "label": "DeepSeek Search",
+    "documents": [],
+    "boost_keywords": {},
+    "boost_combos": {}
   }
 }

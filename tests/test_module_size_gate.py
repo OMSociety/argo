@@ -94,7 +94,7 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "助手 + timeout×5 与 max_chars×6 共 11 处裸 int() 转换，"
               "非法类型显式 -32602，测试 test_mcp_param_guard.py 锁行为）"),
     "scripts/engines_base.py": (
-        1497, "引擎基类 + HTTP 出口 + 输出映射，与 100+ 源声明的字段契约绑在一起；"
+        1501, "引擎基类 + HTTP 出口 + 输出映射，与 100+ 源声明的字段契约绑在一起；"
               "2026-10-10 −12：serp 守卫接线+误杀账本拆到 serp_kill_log.py（尺寸门"
               "哲学：加东西先拆模块），本处留薄委托；"
               "2026-09-26 +42：SERP 垃圾守卫接线（守卫本体独立在 serp_guard.py，此处只留"
@@ -150,7 +150,9 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "同日 +12：POST curl fallback 补 resolve_proxy（POST 代理缝隙）+ "
               "Set-Cookie 解析失败 debug 留痕（最高频静默点）"),
     "scripts/search_rank.py": (
-        1029, "RRF 融合 + minhash 去重 + 五维重排；"
+        1033, "RRF 融合 + minhash 去重 + 五维重排；"
+              "2026-10-17 +4：_attach_selection_signals 接 authority_level 离散"
+              "等级（DeepSeek 语义 0-4，映射与上游采信逻辑在 rank_signals）+"
               "2026-09-27 +18：_weight_cache/_rel_factor_cache 加 TTL+大小限制（_evict_cache）；"
               "2026-09-28 +4：语言调整失败不写 _weight_cache（防 30s 固化降级权重）；"
               "2026-09-29 −3：RRF 加权开关收编到 env_flag（第五套真值表消亡，"
@@ -160,6 +162,7 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "且 MCP/库调用绕开 argparse，兜底必须落在切片点）；"
               "2026-10-08 +2：traceability 评分接入快速路径"
               "（score_traceability 调用 + 权重调整 0.40→0.35/0.35→0.30）; "
+              "1 行 import；" 
               "2026-10-16 +2：minhash_dedupe 近似命中带内接 rapidfuzz 模糊近重复"
               "（可选依赖、判定逻辑全部在 rank_signals.fuzzy_near_dup，本文件只留"
               "调用点与数据行豁免排序注释）；"
