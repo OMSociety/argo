@@ -278,6 +278,8 @@ python3 scripts/search.py --list-engines
 | Page fetch | HTTP first, browser fallback when needed | `argo_fetch` (`mode=extract` for structure) |
 | Screenshot / PDF | page shots, structured PDF extract | `argo_screenshot` / `argo_pdf` |
 | Site crawl | list-page batch crawl | `argo_crawl` |
+| Query operators | `site:` / `-site:` / `-term` / `-"phrase"` / `"phrase"` / `lang:` / `after:` / `before:` stripped from routing and retrieval (details in references/usage.md) | write directly in the query |
+| Trust signals | `authority_level` discrete grade (0-4, >=3 highly authoritative) + `summary` agent-grade digest (backfilled after verification) | result fields, visible via `--fields agent` |
 | Social / sentiment | Weibo / Xiaohongshu / Bilibili / Reddit / X … | `argo_social_search` |
 
 ### Budget modes

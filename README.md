@@ -343,6 +343,8 @@ python3 -m pytest tests/test_unit.py -q             # 单测（可选）
 | 页面抓取 | HTTP 优先，必要时浏览器降级 | `argo_fetch`（`mode=extract` 可结构化） |
 | 截图 / PDF | 页面截图、PDF 结构化提取 | `argo_screenshot` / `argo_pdf` |
 | 站点爬取 | 列表页批量抓取 | `argo_crawl` |
+| 查询操作符 | `site:`/`-site:`/`-词`/`-"短语"`/`"短语"`/`lang:`/`after:`/`before:` 从路由与检索两侧剥离（用法见 references/usage.md） | 查询词内直接写 |
+| 结果可信信号 | `authority_level` 离散等级（0-4，≥3 极权威）+ `summary` 摘要档（核验后回填） | 结果字段，`--fields agent` 可见 |
 | 社交与舆情 | 微博 / 小红书 / B 站 / Reddit / X 等 | `argo_social_search` |
 | 实时索引搜索 | 免 Key 实时索引源，结果带发布时间，适合「最近几天有什么新东西」。**需自装 `realtime-index` CLI**（未安装时该源停用，见 ENGINE_CATALOG 已停用清单；多数查询走其他源不受影响） | `--engine realtime_index` |
 | 时间窗过滤 | `--since` / `--until`（`7d` 或 `2026-08-01`）限定发布时间范围；支持引擎下推 + 融合后过滤（`time_filtered`），CLI 与 MCP 均支持 | `--since 7d` |

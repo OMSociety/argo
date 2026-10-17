@@ -320,6 +320,8 @@ python3 scripts/search.py --list-engines
 | ページ取得 | HTTP 優先、必要ならブラウザ | `argo_fetch`（`mode=extract` で構造化） |
 | スクショ / PDF | 画面キャプチャ、PDF 構造抽出 | `argo_screenshot` / `argo_pdf` |
 | サイトクロール | 一覧ページの一括取得 | `argo_crawl` |
+| クエリ演算子 | `site:` / `-site:` / `-語` / `-"句"` / `"句"` / `lang:` / `after:` / `before:` をルーティングと検索の両側から剥離（詳細は references/usage.md） | クエリに直接記述 |
+| 信頼シグナル | `authority_level` 離散等級（0-4、≥3 で極めて権威）+ `summary` Agent 档要約（検証後に逆填み） | 結果フィールド、`--fields agent` で表示 |
 | SNS / 世論 | 微博 / 小红书 / B 站 / Reddit / X など | `argo_social_search` |
 
 ### 予算モード

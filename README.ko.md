@@ -320,6 +320,8 @@ python3 scripts/search.py --list-engines
 | 페이지 가져오기 | HTTP 우선, 필요 시 브라우저 폴백 | `argo_fetch` (`mode=extract` 구조 추출) |
 | 스크린샷 / PDF | 페이지 캡처, 구조화 PDF 추출 | `argo_screenshot` / `argo_pdf` |
 | 사이트 크롤 | 목록 페이지 배치 크롤 | `argo_crawl` |
+| 쿼리 연산자 | `site:` / `-site:` / `-단어` / `-"구문"` / `"구문"` / `lang:` / `after:` / `before:` 를 라우팅과 검색 양쪽에서 분리(상세는 references/usage.md) | 쿼리에 직접 기재 |
+| 신뢰 신호 | `authority_level` 이산 등급(0-4, ≥3이면极高权威) + `summary` 에이전트용 요약(검증 후 역채움) | 결과 필드, `--fields agent` 로 표시 |
 | 소셜 / 감성 | Weibo / Xiaohongshu / Bilibili / Reddit / X … | `argo_social_search` |
 
 ### 예산 모드

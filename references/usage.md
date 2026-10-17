@@ -477,6 +477,26 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 - 专业模式默认关：`enable`/`disable`/`status`
 
 
+## 查询操作符（Google 风格语法，2026-10-17 起）
+
+查询词里可带下列指令，解析层（`scripts/query_operators.py`）把它们从路由与检索两侧剥掉、结构化消费——指令不再污染路由（`site:` 今天以前会把路由锁死进错误域）：
+
+| 操作符 | 示例 | 效果 |
+|---|---|---|
+| `site:` / `-site:` | `DeepSeek site:github.com OR site:huggingface.co` | 站点限定/排除（v1 记入可观测，按引擎下推开发中） |
+| `-词` / `-"短语"` | `GPT-4o -gpt-3` | 排除关键词/短语（汇合否定理解，融合后过滤） |
+| `"短语"` | `"精确短语"` | 精确匹配（保留在检索串，phrase_filter 照常提取） |
+| `lang:` | `模型 lang:zh,en` | 语言覆盖（替代自动检测，走路由语言偏好） |
+| `after:` / `before:` | `模型 after:2026-01-01` | 发布时间窗兜底（CLI `--since/--until` 显式值优先） |
+
+## 新增结果字段（2026-10-17）
+
+| 字段 | 含义 |
+|---|---|
+| `authority_level` | 离散权威等级 0-4（≥3 极权威，对齐 DeepSeek Search 语义；上游原生值优先，否则由连续 authority 分映射） |
+| `summary` | Agent 档摘要（≤800 字，核验过的结果才有：`--verify` 当轮产出、之后经证据缓存回填，不重新抓取也有） |
+| `upstream_authority` / `upstream_score` | 上游源原生信号透传（deepseek_search 等，不覆盖 Argo 自己的 authority/score） |
+
 ## 功能开关总表（`ARGO_*`，唯一事实=源码扫描）
 
 > 93 个开关按六类 MECE。原则：调试/运行配置不进模型上下文（MCP schema 不暴露）；
