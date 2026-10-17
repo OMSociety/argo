@@ -108,7 +108,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 | `felo` | 已停用 | 付费 | 不限 | ARGO_FELO_API_KEY | 域 semantic_discovery、语义画像命中 | Felo AI 搜索 API |
 | `keenable` | 需自备密钥 | 免费 | 不限 | ARGO_KEENABLE_API_KEY | 域 english_tech | Keenable 通用网页搜索（ranked results，含 published_at，按 credits 计费） |
 | `metaso` | 已停用 | 低价计费 | 不限 | ARGO_METASO_API_KEY | 域 chinese_general | 秘塔搜索 API（中文 AI 搜索） |
-| `octen` | 需自备密钥 | 按调用计费 | 不限 | ARGO_OCTEN_API_KEY | 域 chinese_general、域 chinese_tech_deep、域 english_tech、域 news_realtime、深度研究 boost | Octen AI 高速搜索（需 OCTEN_API_KEY；支持 broad-search） |
+| `octen` | 需自备密钥 | 按调用计费 | 不限 | ARGO_OCTEN_API_KEY | 域 chinese_general、域 chinese_tech_deep、域 english_tech、域 news_realtime、深度研究 boost、通用兜底链 | Octen AI 高速搜索（需 OCTEN_API_KEY；支持 broad-search） |
 | `parallel` | 需自备密钥 | 按调用计费 | 不限 | PARALLEL_API_KEY | 域 chinese_tech_deep | Parallel AI 批量搜索（excerpts 长文摘录，结果自带正文省 fetch） |
 | `qwant` | 显式专用 | 免费 | 不限 | — | 显式调用（--engine） | Qwant（qwant.com HTML 解析），欧盟 GDPR 合规通用网页 |
 | `searxng` | 已停用 | 免费 | 不限 | ARGO_SEARXNG_URL | 域 semantic_discovery | SearXNG 直连（已废弃，由 T3 替代） |

@@ -99,8 +99,18 @@ def _general_fallback(enabled: set[str]) -> list[str]:
     try:
         from engine_policy import GENERAL_FREE_FALLBACK
     except ImportError:
-        GENERAL_FREE_FALLBACK = ("anysearch", "local_bing")
-    lead = [e for e in GENERAL_FREE_FALLBACK if e in enabled]
+        GENERAL_FREE_FALLBACK = ("anysearch", "octen", "local_bing")
+    order = list(GENERAL_FREE_FALLBACK)
+    # 逃生开关：A/B 与线上回退都走这条，避免为了复测改常量。
+    # 2026-10-17 对拍（交错、随机序）：octen 入第二顺位后，anysearch 抖动
+    # 窗口 p90 3273→1614ms、max 6266→1928ms、错误 9→0；健康窗口中位无差。
+    try:
+        from engine_env import env_flag
+        if env_flag("ARGO_GENERAL_FALLBACK_LEGACY", default=False):
+            order = [e for e in order if e != "octen"]
+    except ImportError:
+        pass
+    lead = [e for e in order if e in enabled]
     # 保底项同样受 enabled 约束：不在 enabled 说明本机压根没注册/被禁用，
     # 选它只会在执行层撞 "未知引擎" 空跑。
     return lead + (["local_search"] if "local_search" in enabled else [])
@@ -228,14 +238,27 @@ def tfidf_lead_combo(tfidf_best: str | None, tfidf_best_score: float,
     作辅源——仍在 combo 里并行竞速，能力不减，只是不再占 primary 位
     （含 primary 宽限/充分性判定对它的偏袒）。
     """
-    lead = [tfidf_best] if tfidf_best and tfidf_best_score > TFIDF_STRONG_SCORE else []
-    if "anysearch" in enabled:
-        lead.append("anysearch")
-    if tfidf_best and tfidf_best not in lead:
-        lead.append(tfidf_best)
-    # 去重保序：tfidf_best 就是 anysearch 时上面会拼出 [anysearch, anysearch]，
-    # 执行层会把它当成两个独立引擎并发跑两遍（实测 k8s 查询两个同名引擎
-    # 3724/2923 ms，双倍配额，而 wasted_ms 还记 0）。
+    strong = bool(tfidf_best and tfidf_best_score > TFIDF_STRONG_SCORE)
+    lead: list[str] = []
+    if strong:
+        lead = [tfidf_best]
+        # 垂直领队用 octen 对冲、anysearch 第三；anysearch 领队则反过来。
+        hedges = ("octen", "anysearch") if tfidf_best != "anysearch" \
+            else ("anysearch", "octen")
+        for e in hedges:
+            if e in enabled and e not in lead:
+                lead.append(e)
+    else:
+        # 弱证据/无推荐：通用保底领队，弱推荐作为辅源跟在后面（既有契约，
+        # tests/test_route_tfidf_weak_score.py 锁死），octen 排第三。日常
+        # budget=2 会截掉第三位，所以弱证据不额外占 octen 的位；低分回退
+        # 分支（score < TFIDF_MIN_SCORE）走通用兜底链，那里 octen 已在第二。
+        if "anysearch" in enabled:
+            lead.append("anysearch")
+        if tfidf_best and tfidf_best not in lead:
+            lead.append(tfidf_best)
+        if "octen" in enabled and "octen" not in lead:
+            lead.append("octen")
     out: list[str] = []
     for e in lead:
         if e in enabled and e not in out:

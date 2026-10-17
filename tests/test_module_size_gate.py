@@ -61,11 +61,12 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "2026-09-29 +19：open_meteo 多 place forecast 并行化（串行 9.28s → "
               "3.9-5.1s，bounded_run 有界并发 + 保序）"),
     "scripts/caliber_isolation.py": (
-        197, "口径隔离：RRF 融合前按口径分组，不同口径不直接 merge；"
+        195, "口径隔离：RRF 融合前按口径分组，不同口径不直接 merge；"
               "纯函数，可独立测试；"
-              "2026-10-17 +11：分组单位从「单条结果」改回「整条引擎列表」——"
+              "2026-10-17 +9：分组单位从「单条结果」改回「整条引擎列表」——"
               "旧写法让 merge_within_caliber 的 i 恒为 0，同引擎全部同分、"
-              "名次衰减归零（tests/test_caliber_isolation.py 锁三条不变式）"),
+              "名次衰减归零（tests/test_caliber_isolation.py 锁三条不变式）；"
+              "同日清理 15 个已下线/改名的口径条目（-2，新增 registry 同步门禁）"),
     "scripts/rrf_classic.py": (
         66, "经典 RRF 融合（weighted=False 路径）；"
               "所有引擎列表在同一个池中竞争，每个列表独立贡献排名"),

@@ -568,11 +568,12 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 | `ARGO_YDC_API_KEY` | 对应引擎/服务的凭据（you.com） | 缺密钥=该源跳过或降级 |
 | `ARGO_ZHIHU_ACCESS_SECRET` | 对应引擎/服务的凭据 | 缺密钥=该源跳过或降级 |
 
-### 行为调参（20）
+### 行为调参（21）
 
 | 变量 | 作用 | 默认/备注 |
 |------|------|----------|
 | `ARGO_ADAPTIVE_GRACE` | 对冲宽限窗按主引擎历史 P75 自适应收窄（只缩不放） | 默认关；=1 开启（v2 冻结 A/B 未证实收益，保留作实验臂） |
+| `ARGO_GENERAL_FALLBACK_LEGACY` | 通用兜底链退回旧顺序（anysearch → local_bing，不含 octen） | 默认关；=1 开启。2026-10-17 交错 A/B：octen 第二顺位在 anysearch 抖动窗口把 p90 3273→1614ms、max 6266→1928ms、错误 9→0，健康窗口中位无差 |
 | `ARGO_ADAPTIVE_TAIL` | 尾宽按 backup 引擎历史 P75 分层（快源等满/慢源早收工） | 默认关；=1 开启（2026-10-16 三轮交错 A/B 未证实收益，对拍记录在本机 docs-local/调度对拍_尾宽分层与并发_2026-10-16.md，属本地归档不随发布件分发） |
 | `ARGO_ADMISSION_TTL_S` | 行为阈值/预算调参 | 默认经实测校准，勿轻动 |
 | `ARGO_DAEMON_TIMEOUT` | daemon 快路径客户端等待上限（秒） | 默认 120；deep 长查询可调大 |

@@ -13,12 +13,12 @@ _CALIBER_GROUPS = {
     "financial_data": frozenset({
         "fred", "worldbank", "eurostat", "frankfurter", "fx_rate",
         "eastmoney", "sina_quote", "tencent_quote", "yahoo_finance",
-        "sec_companyfacts", "finviz", "nbs_stats", "un_comtrade",
+        "sec_companyfacts", "finviz", "un_comtrade",
         "em_flow", "em_miaoxiang", "tencent_kline", "jin10",
     }),
     "encyclopedia": frozenset({
-        "wikipedia", "baidu_baike", "cn_encyclopedia", "wikidata",
-        "wikisource", "wikimedia_commons", "dnb", "getty_heritage",
+        "wikipedia", "baidu_baike", "wikidata",
+        "wikisource", "wikimedia_commons", "dnb",
     }),
     "social": frozenset({
         "twitter", "weibo", "zhihu", "zhihu_global", "zhihu_user",
@@ -26,26 +26,24 @@ _CALIBER_GROUPS = {
         "weibo_hot", "toutiao_hot", "hackernews", "reddit",
     }),
     "code": frozenset({
-        "github", "stackoverflow", "so", "gitlab", "deps_dev",
-        "endoflife", "pypi", "npm", "crates_io",
+        "github", "stackoverflow", "so", "local_gitlab", "deps_dev",
+        "endoflife", "pypi", "npm", "crates",
     }),
     "news": frozenset({
-        "google_news", "bing_rss", "cls_telegraph", "em_news_search",
-        "em_global_news", "people_daily", "upi", "globo",
+        "google_news", "bing_rss", "cls_telegraph", "em_global_news",
+        "people_daily",
     }),
     "academic": frozenset({
-        "arxiv", "pubmed", "google_scholar", "semantic_scholar",
+        "arxiv", "local_pubmed", "google_scholar", "semantic_scholar",
         "crossref", "openalex", "doaj", "core", "gdacs",
         "clinicaltrials", "openfda", "uniprot", "rcsb_pdb",
     }),
     "media": frozenset({
-        "imdb", "themoviedb", "tvmaze", "jikan", "deezer",
+        "imdb", "tvmaze", "bangumi", "deezer",
         "itunes", "listenbrainz", "figshare", "met_museum",
     }),
     "reference": frozenset({
-        "open_library", "weread", "douban_book", "gutenberg",
-        "stanford_encyclopedia", "rfc_editor", "us_legal", "legal",
-        "courtlistener", "europeana", "hal", "eu_opendata",
+        "open_library", "weread", "douban_book", "gutenberg", "rfc_editor", "courtlistener", "hal", "eu_opendata",
     }),
 }
 
