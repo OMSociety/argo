@@ -119,6 +119,7 @@ from route_lang import (  # noqa: E402
     _lang_must_keep,
     _family_lang,
     _filter_lang_bound_family,
+    apply_lang_override,
     _move_to_tail,
     _LANG_EXCLUSIVE_ENGINES,
     _LANG_PREFERRED_ENGINES,
@@ -779,7 +780,8 @@ def route_query(query: str, engine_override: str = "auto",
                 mode: str = "auto",
                 depth: str = "fast",
                 context: str = "search",
-                engines_boost: list[str] | None = None) -> dict[str, Any]:
+                engines_boost: list[str] | None = None,
+                lang_override: list[str] | None = None) -> dict[str, Any]:
     """路由决策主函数。
 
     Args:
@@ -843,6 +845,8 @@ def route_query(query: str, engine_override: str = "auto",
         )
 
     features = extract_features(query)
+    if lang_override:
+        features = apply_lang_override(features, lang_override)
     # P2-1：语言引擎选择单一入口——route_query 内只计算一次，
     # 主路径与两条回退路径共用同一结果，杜绝各路径逻辑漂移
     lang_engines = _select_language_engines(features)
@@ -919,7 +923,8 @@ def route_query(query: str, engine_override: str = "auto",
 def route_query_cached(query: str, engine_override: str = "auto",
                        mode: str = "auto", depth: str = "fast",
                        context: str = "search",
-                       engines_boost: list[str] | None = None) -> dict[str, Any]:
+                       engines_boost: list[str] | None = None,
+                       lang_override: list[str] | None = None) -> dict[str, Any]:
     """route_query 的跨进程缓存包装：命中即跳过整笔启动税。
 
     调用方会就地改 decision（如 research 置 no_early_stop），而命中返回的是
@@ -936,6 +941,11 @@ def route_query_cached(query: str, engine_override: str = "auto",
     """
     import json
 
+    # lang_override 改变决策本身，绕过磁盘缓存（不与无覆盖查询共享缓存键）
+    if lang_override:
+        return route_query(query, engine_override=engine_override, mode=mode,
+                           depth=depth, context=context, engines_boost=engines_boost,
+                           lang_override=lang_override)
     if not _route_cache_enabled():
         return route_query(query, engine_override=engine_override, mode=mode,
                            depth=depth, context=context, engines_boost=engines_boost)

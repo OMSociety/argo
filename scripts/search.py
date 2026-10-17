@@ -617,6 +617,17 @@ def super_search(query: str, engine: str = "auto", n: int = 5, explain: bool = F
         cache = SearchCache()
     original_query = query
 
+    # 查询操作符契约层（2026-10-17 query_operators）：指令从路由与检索两侧
+    # 剥掉（今天以前 site: 会把路由锁死进错误域且引擎拿到脏查询）。
+    try:
+        from query_operators import parse_query_operators
+        _op_clean, _operators = parse_query_operators(original_query)
+        if _op_clean and _op_clean != original_query:
+            original_query = _op_clean
+        decision_operators = _operators
+    except ImportError:
+        decision_operators = None
+
     # 查询改写：仅影响检索串，不影响路由（在执行引擎前应用）
     rewrite_result = None
     search_query = original_query
@@ -712,23 +723,36 @@ def super_search(query: str, engine: str = "auto", n: int = 5, explain: bool = F
     # local_first 路径跳过改写：改写词面向 web 引擎召回设计，套到本地
     # 聚合（search_v3 智能路由）上会稀释查询、收窄引擎选择、扩大失败面
     #（实测改写词把「Python 异步编程」扩为 5 词长句后本地聚合返回空）。
+    # original_query 此时可能是操作符清洗后的 clean_query（见上方
+    # query_operators 解析）——不重新赋值回原值，否则 site: 等指令会重新
+    # 污染路由（2026-10-17 实测踩中：此处覆盖后 `DeepSeek site:github.com`
+    # 又锁回 code_search）。
     rewrite_result = None
-    original_query = query
+    original_query = search_query if decision_operators else query
     if rewrite and not local_first:
         rewritten, rewrite_result = _apply_query_rewrite(original_query)
         if rewrite_result and rewrite_result.get("rewritten"):
             search_query = rewritten
+
+    # 时间窗：查询里的 after:/before: 兜底（CLI --since/--until 显式值优先）
+    if decision_operators:
+        since = since or (str(decision_operators["after"])
+                          if decision_operators.get("after") else since)
+        until = until or (str(decision_operators["before"])
+                          if decision_operators.get("before") else until)
 
     # route 延迟导入：route.py 的 import 链（config → logging/shutil/dataclasses）
     # 实测 31ms，而 --list-engines / --help / plan_only 路径对它零依赖。
     # 搜索路径在首次调用时付一次（sys.modules 缓存后免费），非搜索路径省整条链。
     from route import route_query_cached
 
+    _op_langs = (decision_operators or {}).get("langs") or None
     if local_first:
         _tk_route = _tick(timing)
         decision = route_query_cached(
             original_query, engine_override="local_search", mode=mode,
             depth=depth, context=context, engines_boost=engines_boost,
+            lang_override=_op_langs,
         )
         _tock(timing, "route", _tk_route)
     else:
@@ -736,8 +760,11 @@ def super_search(query: str, engine: str = "auto", n: int = 5, explain: bool = F
         decision = route_query_cached(
             original_query, engine_override=engine, mode=mode,
             depth=depth, context=context, engines_boost=engines_boost,
+            lang_override=_op_langs,
         )
         _tock(timing, "route", _tk_route)
+    if decision_operators:
+        decision["operators"] = decision_operators
     if context == "research":
         # 研究子查询禁早停：第一个「有结果」的垂直目录（如 models_dev 的
         # 模型规格页）不等于研究证据齐了，跑满 combo 再 RRF 融合。
@@ -751,6 +778,11 @@ def super_search(query: str, engine: str = "auto", n: int = 5, explain: bool = F
             f"tfidf={decision.get('tfidf_scores', [])} mode={mode} kind={kind} tier={tier}",
             file=sys.stderr,
         )
+        if decision_operators and decision_operators.get("dropped"):
+            _o = decision_operators
+            print(f"[操作符] 剥离 {_o['dropped']} 排除词 {_o['exclude_terms']} "
+                  f"语言 {_o['langs']} 时间窗 {_o['after']}~{_o['before']}",
+                  file=sys.stderr)
         if search_query != original_query:
             print(f"[改写] {original_query} → {search_query}", file=sys.stderr)
     # L1 并行化：include_local 时把 _run_local_seek 提前提交到线程池，

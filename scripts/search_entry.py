@@ -128,6 +128,12 @@ def prepare(query: str, decision: dict[str, Any], max_results: int,
         from query_understanding import _understand_cached as understand
         qu = understand(query)
         exclude_terms = qu.exclude_terms
+        # 查询操作符 -词/-"短语" 的排除项汇合（2026-10-17 query_operators）：
+        # 与否定理解共用同一「融合后过滤」通道，去重保序。
+        _op_excl = ((decision or {}).get("operators") or {}).get("exclude_terms") or []
+        for t in _op_excl:
+            if t and t not in exclude_terms:
+                exclude_terms.append(t)
         # 仅当去否定片段后仍有实义内容时才替换检索词，避免空检索
         if qu.clean_query and qu.clean_query.strip():
             retrieval_query = qu.clean_query

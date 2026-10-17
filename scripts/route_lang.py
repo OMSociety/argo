@@ -92,6 +92,23 @@ def _detect_lang_override(query: str) -> str | None:
     return None
 
 
+def apply_lang_override(features: dict[str, Any],
+                         langs: list[str]) -> dict[str, Any]:
+    """查询操作符 lang: 覆盖自动检测（2026-10-17 query_operators 契约层）。
+
+    用户显式声明语言时以声明为准——自动检测对中英混排常失手。只改
+    primary_lang/operator_langs 两个键，不重算其余特征；无有效语言码时
+    原样返回（调用方少一次判断）。
+    """
+    valid = [x.strip().lower() for x in (langs or []) if x and x.strip()]
+    if not valid:
+        return features
+    out = dict(features)
+    out["primary_lang"] = valid[0]
+    out["operator_langs"] = valid
+    return out
+
+
 def extract_features(query: str) -> dict[str, Any]:
     """提取查询特征向量。
 
