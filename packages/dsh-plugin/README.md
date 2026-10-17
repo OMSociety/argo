@@ -24,8 +24,8 @@ dsh plugin --profile web add "github:taxueseek/argo#main&path:packages/dsh-plugi
 
 - Node.js ≥ 18（npx 拉取 argo 包）
 - Python 3.9+，`pip install pyyaml`
-- DSH 子代理 provider 需支持 `outputSchema`、`toolFilter`、`depthLimit`（标准 `spawn` 即可）
-- 已在最新版 DSH 0.2.1-alpha.1 实测：原生一等工具 / web_search seam / wide_research 三形态均可正常启用
+- DSH 子代理 provider 需支持 `outputSchema`、`depthLimit`（标准 `spawn` 即可）；`toolFilter` 在 alpha.x 上可选，rc.2 已移除该启动期字段，改由插件内的 tool guard 阻止 worker 嵌套调用 `wide_research`
+- DSH 0.2.1-alpha.1 已实测三形态（原生一等工具 / web_search seam / wide_research）；0.2.1-rc.2 已按其公开类型与运行时接口完成双栈适配（`startActivation` 信封 + 旧 `start` 回落），单测覆盖两种宿主形态。rc.2 的端到端复验需重启 `dsh web` 后执行一次真实研究任务
 
 ## 自定义（可选）
 

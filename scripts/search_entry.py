@@ -191,6 +191,15 @@ def prepare(query: str, decision: dict[str, Any], max_results: int,
         cache_engine_key += f"|ed={engine_domain}"
     if engine_sub_domain:
         cache_engine_key += f"|esd={engine_sub_domain}"
+    # 查询操作符并入缓存键：clean_query 是键的主体，若不把指令本身入键，
+    # 受限查询与无约束查询会互串缓存（site: 最危险——用户写了约束却可能
+    # 命中未过滤的旧条目）。after/before 已由下方 since/until 隔离。
+    try:
+        from query_operators import operator_cache_suffix
+        cache_engine_key += operator_cache_suffix(
+            (decision or {}).get("operators"))
+    except ImportError:
+        pass
     # 时间窗并入缓存键：同一 query 不同 since/until 不串缓存；
     # 用归一化 ISO（7d 与等价绝对日期共享缓存；相对窗跨天自然过期不串旧数据）。
     # 仅当组合内含带时间能力引擎时隔离：无时间字段引擎忽略时间窗、结果相同，

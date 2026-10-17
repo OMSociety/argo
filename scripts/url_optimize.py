@@ -29,9 +29,11 @@ def normalize_url(url: str) -> str:
     # 保留尾部斜杠：原始路径以 / 结尾时，规范化后也要保留
     if raw_path.endswith("/") and not path.endswith("/"):
         path += "/"
-    # 去掉 fragment
+    # 去掉 fragment：fragment 不参与服务端资源定位，且同一页面的锚点变体会
+    # 在缓存/去重里裂成多条（docstring 一直这么写，旧实现却把 fragment 原样
+    # 带了回来）。
     return urllib.parse.urlunsplit(
-        (scheme, netloc, path, parsed.query, parsed.fragment))
+        (scheme, netloc, path, parsed.query, ""))
 
 
 def optimize_url(url: str) -> str:

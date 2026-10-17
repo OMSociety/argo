@@ -211,14 +211,20 @@ def _build_exa_engine(spec: dict[str, Any]) -> Any:
                         idx = snippet.find("---", 3)
                         if idx != -1:
                             snippet = snippet[idx + 3:].strip()
+                    # type:auto 模式不返回 score 字段（恒 0 会被 RRF 埋没），
+                    # 无 score 时给固定基线分；并叠加位次衰减。
+                    # 用 None/空串哨兵而不是 `or`：显式 0 分（上游判定不相关）
+                    # 会经 or 被抬成 0.75，与 2026-09-30 修过的同类
+                    # 「0 分垫底变中游」逐字同构。
+                    _raw_score = r.get("score")
+                    _base_score = 0.75 if _raw_score is None or _raw_score == "" \
+                        else _raw_score
                     results.append({
                         "title": r.get("title", ""),
                         "url": r.get("url", ""),
                         "snippet": snippet,
                         "source": "exa",
-                        # type:auto 模式不返回 score 字段（恒 0 会被 RRF 埋没），
-                        # 无 score 时给固定基线分；并叠加位次衰减
-                        "score": rank_score(r.get("score") or 0.75, len(results)),
+                        "score": rank_score(_base_score, len(results)),
                     })
                 return results
         except Exception as e:

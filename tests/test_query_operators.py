@@ -25,7 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from query_operators import parse_query_operators  # noqa: E402
+from query_operators import parse_query_operators, filter_results_by_sites, operator_cache_suffix  # noqa: E402
 
 
 class TestParser(unittest.TestCase):
@@ -169,6 +169,65 @@ class TestPrepareMergesExcludeTerms(unittest.TestCase):
         excl = list(getattr(req, "exclude_terms", None) or [])
         for t in ("广告", "推广"):
             self.assertIn(t, excl, f"操作符排除词 {t} 应并入 exclude_terms")
+
+
+class TestSiteFilter(unittest.TestCase):
+    """site:/-site: 后置过滤（2026-10-17 落地执行，不再只记录）。"""
+
+    _RESULTS = [
+        {"title": "gh", "url": "https://github.com/a"},
+        {"title": "gist", "url": "https://gist.github.com/b"},
+        {"title": "other", "url": "https://models.dev/c"},
+        {"title": "card", "url": ""},
+    ]
+
+    def test_include_matches_domain_and_subdomain(self):
+        kept, dropped = filter_results_by_sites(
+            self._RESULTS, ["github.com"], [])
+        self.assertEqual([r["title"] for r in kept], ["gh", "gist", "card"])
+        self.assertEqual(dropped, 1)
+
+    def test_exclude_removes_matching_host(self):
+        kept, dropped = filter_results_by_sites(
+            self._RESULTS, [], ["github.com"])
+        self.assertEqual([r["title"] for r in kept], ["other", "card"])
+        self.assertEqual(dropped, 2)
+
+    def test_include_and_exclude_combined(self):
+        kept, dropped = filter_results_by_sites(
+            self._RESULTS, ["github.com"], ["gist.github.com"])
+        self.assertEqual([r["title"] for r in kept], ["gh", "card"])
+        self.assertEqual(dropped, 2)
+
+    def test_no_operators_is_noop(self):
+        kept, dropped = filter_results_by_sites(self._RESULTS, None, None)
+        self.assertIs(kept, self._RESULTS)
+        self.assertEqual(dropped, 0)
+
+
+class TestOperatorCacheSuffix(unittest.TestCase):
+    """操作符必须进缓存键，否则受限查询与无约束查询互串。"""
+
+    def test_no_operators_is_empty(self):
+        self.assertEqual(operator_cache_suffix(None), "")
+        self.assertEqual(operator_cache_suffix({}), "")
+
+    def test_site_and_exclusion_are_partitioned(self):
+        _, ops = parse_query_operators("python -site:realpython.com")
+        suffix = operator_cache_suffix(ops)
+        self.assertIn("xsite=realpython.com", suffix)
+        self.assertNotEqual(suffix, operator_cache_suffix({}))
+
+    def test_exclude_terms_and_langs(self):
+        _, ops = parse_query_operators("AI -广告 lang:zh,en")
+        suffix = operator_cache_suffix(ops)
+        self.assertIn("not=广告", suffix)
+        self.assertIn("lang=zh,en", suffix)
+
+    def test_after_before_not_duplicated(self):
+        _, ops = parse_query_operators("AI after:2026")
+        self.assertEqual(operator_cache_suffix(ops), "",
+                         "时间窗由 since/until 维度负责，不重复进后缀")
 
 
 if __name__ == "__main__":

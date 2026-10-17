@@ -1078,6 +1078,19 @@ def _build_html_engine(spec: dict[str, Any]) -> Any:
                     r["url"] = real
                 kept.append(r)
             results = kept
+        else:
+            # 离线可还原的壳（Bing ck/a 的 u=a1<base64url>）不依赖
+            # resolve_redirects 声明：解析阶段顺手换真链，零网络成本。声明
+            # 开关管的是「要发请求才能解」的 token 型壳（baidu/sogou）。
+            try:
+                from jump_resolver import unwrap_offline_url
+                for r in results:
+                    u = str(r.get("url") or "")
+                    real = unwrap_offline_url(u)
+                    if real:
+                        r["url"] = real
+            except ImportError:
+                pass
         return _serp_guard_apply(engine_name, query, results[:n])
     return _engine
 

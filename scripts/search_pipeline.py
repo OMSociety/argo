@@ -741,6 +741,22 @@ def postprocess(req: _SearchRequest, run: _SearchRun, hooks: Any) -> _SearchRun:
     _tock(timing, "rerank", _tk_rerank)
     _tk_signals = _tick(timing)
 
+    # ── site:/-site: 后置过滤（query_operators 契约）──
+    # 放在恢复链与精排之后、截断之前：既不会把「站点化结果为空」误当
+    # 0 结果触发一轮白跑的恢复链，也保证截断后仍有 max_results 条。
+    site_filtered = 0
+    _site_ops = (decision or {}).get("operators") or {}
+    _site_include = list(_site_ops.get("sites") or [])
+    _site_exclude = list(_site_ops.get("exclude_sites") or [])
+    if merged and (_site_include or _site_exclude):
+        try:
+            from query_operators import filter_results_by_sites
+            merged, site_filtered = filter_results_by_sites(
+                merged, _site_include, _site_exclude)
+        except OPT_IMPORT + SHAPE_BENIGN:
+            # 过滤器不可用不拦：保持原始结果，比静默清空安全。
+            site_filtered = 0
+
     if merged:
         merged = _apply_consensus_and_sort(merged, max_results)
 
@@ -802,6 +818,11 @@ def postprocess(req: _SearchRequest, run: _SearchRun, hooks: Any) -> _SearchRun:
         "noise_dropped": _noise_dropped,
         "funnel": funnel,
     }
+    if _site_include or _site_exclude:
+        result_payload["site_filter"] = {
+            "sites": _site_include, "exclude_sites": _site_exclude,
+        }
+        result_payload["site_filtered"] = site_filtered
     result_payload.update(variant_recalled=_variant_recalled, phrase_dropped=_phrase_dropped)  # 观测补账：均不在漏斗 returned 口径内
 
     return replace(
@@ -1043,6 +1064,10 @@ def finalize(req: _SearchRequest, run: _SearchRun, hooks: Any) -> dict[str, Any]
         "mode": mode, "depth": depth,
         "login_hint": decision.get("login_hint"),
     }
+    # site:/-site: 过滤账（随缓存一起回放，命中时也能说明「为什么少了 N 条」）。
+    if result_payload.get("site_filter") is not None:
+        out["site_filter"] = result_payload["site_filter"]
+        out["site_filtered"] = result_payload.get("site_filtered", 0)
     if lang_pref_info is not None:
         out["lang_pref"] = lang_pref_info
     if timing is not None:

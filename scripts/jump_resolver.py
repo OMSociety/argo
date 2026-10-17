@@ -10,10 +10,15 @@ P0（evidence.is_serp_or_jump_url）把这类 URL 整批滤掉——引擎不解
   - 200 + 短页 → 页面里 window.location.replace("真实URL") 一类 JS 跳转。
     搜狗对浏览器指纹客户端走这条（~234 字节小页）；对裸指纹/无会话客户端
     302 弹回首页 Location: /，同源弹回一律不救回。
+
+第三类（2026-10-17 补）：Bing `ck/a?...&u=a1<base64url>` 把落点编码在参数里，
+**不需要任何网络请求**即可还原。此前 local_bing 的英文结果全被聚合层当
+搜索页滤掉（近 7 天 271 次调用、40.2% 空结果），而它本可零成本变成真链。
 """
 
 from __future__ import annotations
 
+import base64
 import html as _html
 import re
 import urllib.parse
@@ -21,7 +26,8 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 JUMP_MARKERS = ("baidu.com/link", "baidu.com/baidu.php",
-                "sogou.com/link", "so.com/link")
+                "sogou.com/link", "so.com/link",
+                "bing.com/ck/a")
 
 # 跳转页里的 JS/meta 落点（按优先级排列，先命中先赢）
 _JS_TARGET_RES = (
@@ -43,6 +49,55 @@ _BATCH_WORKERS = 8
 
 def is_jump_url(u: str) -> bool:
     return any(m in (u or "") for m in JUMP_MARKERS)
+
+
+# 可离线还原的落点参数：Bing 把目标 URL 放在 `u=a1<base64url>` 里。
+_BING_CK_HOSTS = ("bing.com", "www.bing.com", "cn.bing.com")
+
+
+def _unwrap_bing(url: str) -> str:
+    """Bing `ck/a` 跳转壳 → 真实 URL；不适用或解码失败返回空串。
+
+    `u` 的值是 `a1` + URL-safe base64（无 padding）。解码后必须是 http(s)
+    绝对地址，否则视为不可用（与 _is_usable_target 同哲学）。
+    """
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        if parsed.netloc.lower() not in _BING_CK_HOSTS:
+            return ""
+        if not parsed.path.startswith("/ck/"):
+            return ""
+        raw = (urllib.parse.parse_qs(parsed.query).get("u") or [""])[0]
+        if not isinstance(raw, str) or not raw:
+            return ""
+        if raw.startswith("a1"):
+            raw = raw[2:]
+        padded = raw + "=" * (-len(raw) % 4)
+        target = base64.urlsafe_b64decode(padded.encode("ascii")).decode(
+            "utf-8", "replace").strip()
+        if not target.lower().startswith(("http://", "https://")):
+            return ""
+        # 同源弹回（目标又落回 bing 搜索页）不救回，避免把壳当答案。
+        if _is_usable_target(target, url):
+            return target
+        return ""
+    except Exception:
+        return ""
+
+
+def unwrap_offline_url(url: str) -> str:
+    """不需要网络的跳转壳还原；不适用/失败返回空串。
+
+    调用方可以在解析阶段无条件调用：非跳转 URL 直接返回空串，成本只有
+    `in` 判断。优先于任何 30x/Location 网络解析——Bing 的落点本来就写在
+    参数里，发请求纯属浪费。
+    """
+    u = url or ""
+    if not u:
+        return ""
+    if "bing.com/ck/" in u:
+        return _unwrap_bing(u)
+    return ""
 
 
 def _extract_js_target(body: str) -> str:
@@ -140,7 +195,13 @@ def _resolve_core(url: str, timeout: float, profiles: list[str]) -> str:
 
 def resolve_jump_url(url: str, profiles: list[str] | None = None,
                      timeout: float = 8.0) -> str:
-    """跳转壳 → 真实 URL（单跳 Location / JS 落点）。失败返回空串。"""
+    """跳转壳 → 真实 URL（离线参数优先，其次单跳 Location / JS 落点）。
+
+    失败返回空串。离线可还原的壳不发网络请求。
+    """
+    offline = unwrap_offline_url(url)
+    if offline:
+        return offline
     return _resolve_core(url, timeout, profiles or ["chrome131"])
 
 

@@ -281,6 +281,14 @@ def build_limitations(
         limitations.append(SKILL_REGISTRY_LIMITATION)
     if _route_login_used(search_result, candidates):
         limitations.append("login_state_used: do not write to public SearchCache")
+    site_filter = search_result.get("site_filter")
+    if isinstance(site_filter, dict):
+        include = "/".join(site_filter.get("sites") or []) or "-"
+        exclude = "/".join(site_filter.get("exclude_sites") or [])
+        detail = f"site={include}" + (f" exclude_site={exclude}" if exclude else "")
+        limitations.append(
+            f"site filter applied ({detail}): "
+            f"{int(search_result.get('site_filtered') or 0)} out-of-scope results dropped.")
     return limitations
 
 

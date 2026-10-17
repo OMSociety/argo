@@ -72,15 +72,27 @@ def caliber_of(engine: str) -> str:
 
 
 def group_by_caliber(ranked_lists: list[list[dict[str, Any]]]) -> dict[str, list[list[dict[str, Any]]]]:
-    """按口径分组：同口径的引擎结果才能 merge。"""
+    """按口径分组：同口径的引擎结果才能 merge。
+
+    分组单位是**整条引擎列表**，不是单条结果。此前实现把每条结果包成
+    单元素列表，`merge_within_caliber` 里的 `enumerate(group)` 于是恒为
+    `i=0`，同一引擎的所有结果拿到相同 RRF 分——名次衰减被抹平，输出退化成
+    「按引擎权重整段拼接」（2026-10-17 实测：anysearch 5 条同分 0.017213）。
+    一个列表通常来自一个引擎；若上游混入多引擎，按口径拆开但保持原序。
+    """
     caliber_groups: dict[str, list[list[dict[str, Any]]]] = {}
     for results in ranked_lists:
+        if not results:
+            continue
+        by_caliber: dict[str, list[dict[str, Any]]] = {}
         for r in results:
+            if not isinstance(r, dict):
+                continue
             eng = r.get("_engine") or r.get("source", "") or ""
-            cal = caliber_of(eng)
-            if cal not in caliber_groups:
-                caliber_groups[cal] = []
-            caliber_groups[cal].append([r])
+            by_caliber.setdefault(caliber_of(eng), []).append(r)
+        for cal, group in by_caliber.items():
+            if group:
+                caliber_groups.setdefault(cal, []).append(group)
     return caliber_groups
 
 
@@ -160,11 +172,10 @@ def merge_by_caliber(
     当 weighted=False 时，不分组，走全局 RRF（经典 RRF 行为）。
     """
     if not weighted:
-        # 经典 RRF：所有结果在同一个池中竞争，不分组
-        # merge_within_caliber 期望 list[list[dict]]，把所有结果放在一个 group 中
-        all_results = [r for results in ranked_lists for r in results]
+        # 经典 RRF：不分组，但**保留每个引擎列表的独立名次**——把所有结果
+        # 拍平成一个列表会让后一个引擎的 rank 接着前一个数，名次衰减错位。
         return merge_within_caliber(
-            [all_results],
+            ranked_lists,
             k=k, weighted=False, lang=lang,
             _canonical_url=_canonical_url, _engine_weight=_engine_weight,
         )

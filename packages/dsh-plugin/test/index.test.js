@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { normalizeTracks, stageTracks, evaluateGates, normalizeSource, mapArgoToWebResult, buildLocalSources, parseJsonArray, parseJsonObject, extractValues, resolveNativeSpawn, makeNativeTool, buildChildToolFilters, apply, nativeViaMcpPool, disposeSharedMcp } from '../dsh/index.js'
+import { normalizeTracks, stageTracks, evaluateGates, normalizeSource, mapArgoToWebResult, buildLocalSources, parseJsonArray, parseJsonObject, extractValues, resolveNativeSpawn, makeNativeTool, buildChildToolFilters, apply, nativeViaMcpPool, disposeSharedMcp, startStructured, providerSupportsStructured } from '../dsh/index.js'
 import { NATIVE_TOOLS } from '../dsh/native-tools.mjs'
 
 test('mapArgoToWebResult maps compact argo payload to web sources', () => {
@@ -372,14 +372,101 @@ test('makeNativeTool: unknown tool name fails loudly', () => {
 function makeCtx() {
   const registered = []
   const providers = []
+  const guards = []
   const ctx = {
-    tools: { register: (t) => registered.push(t) },
+    tools: { register: (t) => registered.push(t), guard: (g) => guards.push(g) },
     subagents: { getProvider: () => null, list: () => [] },
     effect() {},
     get: (svc) => svc === 'web' ? { registerSearchProvider: (p) => providers.push(p) } : null,
   }
-  return { ctx, registered, providers }
+  return { ctx, registered, providers, guards }
 }
+
+test('providerSupportsStructured: rc.2 capabilities no longer include toolFilter', () => {
+  assert.equal(providerSupportsStructured({
+    capabilities: { agentOptions: true, agentPreset: true, outputSchema: true, depthLimit: true }
+  }), true, '缺 toolFilter 能力不应再判失败')
+  assert.equal(providerSupportsStructured({
+    capabilities: { outputSchema: false, depthLimit: true }
+  }), false)
+  assert.equal(providerSupportsStructured({}), false)
+})
+
+function structuredCtx(overrides = {}) {
+  const seen = { activation: [], legacy: [] }
+  const ctx = {
+    subagents: {
+      ...(overrides.legacyOnly ? {} : {
+        startActivation: async (spec) => {
+          seen.activation.push(spec)
+          return {
+            childId: 'child-1',
+            result: Promise.resolve({ stopReason: 'completed', structured: { ok: true } }),
+            dispose: async () => { seen.disposed = true }
+          }
+        }
+      }),
+      ...(overrides.legacyOnly ? {
+        start: async (provider, request) => {
+          seen.legacy.push({ provider, request })
+          return {
+            result: Promise.resolve({ stopReason: 'completed', structured: { ok: true } }),
+            dispose: async () => { seen.disposed = true }
+          }
+        }
+      } : {})
+    }
+  }
+  return { ctx, seen }
+}
+
+test('startStructured: rc.2 uses startActivation envelope and tracks the child', async () => {
+  const { ctx, seen } = structuredCtx()
+  const tracked = []
+  const untracked = []
+  const value = await startStructured(
+    ctx, 'spawn', { id: 'parent' }, new AbortController().signal, 'lbl',
+    'prompt', { type: 'object' }, 1234, { allow: ['argo_search'] },
+    (id) => { tracked.push(id); return () => untracked.push(id) })
+  assert.deepEqual(value, { ok: true })
+  assert.equal(seen.activation.length, 1)
+  const spec = seen.activation[0]
+  assert.equal(spec.provider, 'spawn')
+  assert.equal(spec.label, 'lbl')
+  assert.equal(spec.delivery, 'caller', '结果只返回给调用方，不重复推给模型')
+  assert.equal(spec.request.label, undefined, 'rc.2 的 request 不含 label')
+  assert.equal(spec.request.signal, undefined, 'rc.2 的 request 不含 signal')
+  assert.equal(spec.request.toolFilter, undefined,
+    'rc.2 的 request 不再接受 toolFilter（工具范围由 preset/guard 承担）')
+  assert.equal(spec.request.agentOptions.maxTokens, 1234)
+  assert.deepEqual(tracked, ['child-1'])
+  assert.deepEqual(untracked, ['child-1'], 'dispose 后应解除追踪')
+})
+
+test('startStructured: falls back to legacy start(provider, request)', async () => {
+  const { ctx, seen } = structuredCtx({ legacyOnly: true })
+  const value = await startStructured(
+    ctx, 'spawn', { id: 'parent' }, new AbortController().signal, 'lbl',
+    'prompt', { type: 'object' }, 999, { allow: ['argo_search'] }, () => () => {})
+  assert.deepEqual(value, { ok: true })
+  assert.equal(seen.legacy.length, 1)
+  assert.equal(seen.legacy[0].provider, 'spawn')
+  assert.equal(seen.legacy[0].request.label, 'lbl')
+  assert.equal(seen.legacy[0].request.signal instanceof AbortSignal, true)
+  assert.deepEqual(seen.legacy[0].request.toolFilter, { allow: ['argo_search'] },
+    '旧宿主仍按 alpha.x 契约收 toolFilter')
+})
+
+test('apply: registers a guard that blocks wide_research inside a tracked worker', () => {
+  const { ctx, guards } = makeCtx()
+  const handle = apply(ctx, {})
+  assert.equal(guards.length, 1)
+  assert.equal(guards[0]({ name: 'wide_research', agent: { id: 'outside' } }), undefined)
+  handle.childIds.add('worker-1')
+  assert.match(guards[0]({ name: 'wide_research', agent: { id: 'worker-1' } }),
+    /not available inside a research worker/)
+  assert.equal(guards[0]({ name: 'argo_search', agent: { id: 'worker-1' } }), undefined)
+})
 
 test('apply: default config registers native tools and an available web provider', () => {
   const { ctx, registered, providers } = makeCtx()

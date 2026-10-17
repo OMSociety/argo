@@ -846,19 +846,55 @@ function resultFailure(result) {
   return `subagent ended with ${String(result.stopReason)}`
 }
 
-async function startStructured(ctx, providerName, parent, signal, label, prompt, schema, maxTokens, toolFilter) {
+/**
+ * Provider capability gate for the structured, depth-bounded one-shot path.
+ *
+ * `toolFilter` is deliberately NOT required: DSH 0.2.1-rc.2 removed it from
+ * `SubagentCapabilities` and from the start request (official guidance: scope
+ * tools in an Agent Preset). Older hosts still advertise and honor it, so we
+ * keep passing it when present and enforce the one rule that matters here
+ * (no nested research) with a tool guard instead.
+ */
+export function providerSupportsStructured(provider) {
+  const caps = provider?.capabilities ?? {}
+  return caps.outputSchema === true && caps.depthLimit === true
+}
+
+export async function startStructured(ctx, providerName, parent, signal, label,
+                                      prompt, schema, maxTokens, toolFilter,
+                                      onChild) {
+  const base = {
+    prompt: text(prompt),
+    parent,
+    outputSchema: schema,
+    maxDepth: 1,
+    agentOptions: { maxTokens },
+  }
   let run
+  let untrackChild = null
   try {
-    run = await ctx.subagents.start(providerName, {
-      label,
-      prompt: text(prompt),
-      parent,
-      signal,
-      outputSchema: schema,
-      maxDepth: 1,
-      toolFilter,
-      agentOptions: { maxTokens },
-    })
+    // rc.2 renamed the runtime entry to startActivation({provider, label,
+    // request, signal, delivery}) where `request` omits label/signal (they
+    // moved to the activation envelope); alpha.x exposed start(provider,
+    // request) with everything in the request. Feature-detect so one plugin
+    // build serves both.
+    if (typeof ctx.subagents.startActivation === 'function') {
+      run = await ctx.subagents.startActivation({
+        provider: providerName,
+        label,
+        request: base,
+        signal,
+        delivery: 'caller',
+      })
+    } else {
+      // alpha.x keeps toolFilter inside the start request. rc.2 removed the
+      // field from SubagentStartRequest, so the activation path above sends
+      // no unknown key; the tool guard covers the nesting rule there.
+      const legacy = { label, ...base, signal }
+      if (toolFilter !== undefined) legacy.toolFilter = toolFilter
+      run = await ctx.subagents.start(providerName, legacy)
+    }
+    untrackChild = onChild?.(run?.childId ?? run?.id) ?? null
     const result = await run.result
     const failure = resultFailure(result)
     if (failure) throw new Error(`${label}: ${failure}`)
@@ -866,6 +902,7 @@ async function startStructured(ctx, providerName, parent, signal, label, prompt,
     return result.structured
   } finally {
     if (run) await run.dispose()
+    if (typeof untrackChild === 'function') untrackChild()
   }
 }
 
@@ -1258,6 +1295,28 @@ export function apply(ctx, providedConfig = {}) {
   // 不写则 HMR/卸载时子进程泄漏）。
   ctx.effect(() => () => disposeSharedMcp())
 
+  // 「研究不套研究」的执行侧护栏。
+  //
+  // alpha.x 靠 childToolAllow 里的 toolFilter 在子代理启动时裁剪工具；
+  // rc.2 移除了启动期 toolFilter（官方改为 Agent Preset），子代理会看见
+  // 全量工具面。用一个 tool guard 精确拦住「本实例启动的 worker 再调
+  // wide_research」：子 id 来自 startActivation 的返回值，dispose 时移除。
+  // 旧宿主上 guard 与 toolFilter 同时生效，重复保护无害。
+  const childIds = new Set()
+  const trackChild = (id) => {
+    if (typeof id !== 'string' || id === '') return () => {}
+    childIds.add(id)
+    return () => { childIds.delete(id) }
+  }
+  if (typeof ctx.tools?.guard === 'function') {
+    ctx.tools.guard((exec) => {
+      if (exec?.name === toolName && exec?.agent && childIds.has(exec.agent.id)) {
+        return `${toolName} is not available inside a research worker`
+      }
+      return undefined
+    })
+  }
+
   // 原生 web_search seam：'web' 是可选服务，不入 inject；headless 无 web
   // 服务时此处跳过注册，wide_research 核心功能不受影响。
   const web = ctx.get?.('web') ?? ctx.web
@@ -1337,8 +1396,8 @@ export function apply(ctx, providedConfig = {}) {
         const available = ctx.subagents.list()
         throw new Error(`wide_research provider "${providerName}" is unavailable. Registered providers: ${available.join(', ') || 'none'}`)
       }
-      if (!provider.capabilities.outputSchema || !provider.capabilities.toolFilter || !provider.capabilities.depthLimit) {
-        throw new Error(`wide_research requires provider "${providerName}" to support outputSchema, toolFilter, and depthLimit`)
+      if (!providerSupportsStructured(provider)) {
+        throw new Error(`wide_research requires provider "${providerName}" to support outputSchema and depthLimit`)
       }
 
       const question = clip(asString(args.question), 4_000)
@@ -1381,7 +1440,7 @@ export function apply(ctx, providedConfig = {}) {
         'Return only JSON conforming to the output schema.',
       ].join('\n')
       const planned = normalizeTracks(
-        await startStructured(ctx, providerName, parent, exec.signal, 'wide-research-plan', planPrompt, trackSchema, Math.min(workerMaxTokens, 3_000), toolFilter),
+        await startStructured(ctx, providerName, parent, exec.signal, 'wide-research-plan', planPrompt, trackSchema, Math.min(workerMaxTokens, 3_000), toolFilter, trackChild),
         maxTracks,
       )
       if (planned.length < 2) throw new Error('wide_research planner returned fewer than two valid research tracks')
@@ -1410,7 +1469,7 @@ export function apply(ctx, providedConfig = {}) {
             'Return only JSON conforming to the output schema.',
           ].join('\n')
           try {
-            const raw = await startStructured(ctx, providerName, parent, exec.signal, `research:${track.id}`, workerPrompt, researcherSchema, workerMaxTokens, toolFilter)
+            const raw = await startStructured(ctx, providerName, parent, exec.signal, `research:${track.id}`, workerPrompt, researcherSchema, workerMaxTokens, toolFilter, trackChild)
             return { track, result: normalizeResearch(raw, track, maxSourcesPerTrack) }
           } catch (error) {
             return { track, error: clip(String(error), 800) }
@@ -1467,7 +1526,7 @@ export function apply(ctx, providedConfig = {}) {
         JSON.stringify(synthesisInput),
       ].join('\n\n')
       const synthesis = normalizeSynthesis(
-        await startStructured(ctx, providerName, parent, exec.signal, 'wide-research-synthesis', synthesisPrompt, synthesisSchema, synthesisMaxTokens, toolFilter),
+        await startStructured(ctx, providerName, parent, exec.signal, 'wide-research-synthesis', synthesisPrompt, synthesisSchema, synthesisMaxTokens, toolFilter, trackChild),
       )
 
       const output = {
@@ -1537,6 +1596,8 @@ export function apply(ctx, providedConfig = {}) {
       text: () => `Use ${toolName} for broad factual research that needs independent source checks, contrasting viewpoints, or a citation-ready evidence ledger. State a bounded question and scope. Do not use it for simple answers, personal-data collection, speculative brainstorming, or irreversible actions. Treat the report as evidence synthesis, inspect key sources for high-stakes decisions, and disclose uncertainty.`,
     })
   }
+  // 测试用可见句柄：DSH 忽略 apply 返回值。
+  return { childIds }
 }
 
 // Exported for unit tests; DSH loads the bundle through apply() only.

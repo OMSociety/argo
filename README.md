@@ -226,7 +226,7 @@ dsh plugin --profile web add "github:taxueseek/argo"
 dsh plugin --profile web add "github:taxueseek/argo#main&path:packages/dsh-plugin"
 ```
 
-重启 `dsh web` 后生效。包结构见 `packages/dsh-plugin/`；同 id `mcp-argo` / `wide-research` 可在用户层 `cordis.patch.yml` 覆盖。装法 B 的 `wide_research` 模块只存在于子包依赖树，主包 patch 不引用它，避免只装主包时 Cordis 解析失败。已在最新版 DSH 0.2.1-alpha.1 实测：三形态接入（原生一等工具 / web_search seam / wide_research）均可正常启用。
+重启 `dsh web` 后生效。包结构见 `packages/dsh-plugin/`；同 id `mcp-argo` / `wide-research` 可在用户层 `cordis.patch.yml` 覆盖。装法 B 的 `wide_research` 模块只存在于子包依赖树，主包 patch 不引用它，避免只装主包时 Cordis 解析失败。DSH 0.2.1-alpha.1 已实测三形态接入（原生一等工具 / web_search seam / wide_research）；0.2.1-rc.2 已按其公开 API 完成双栈适配（`startActivation` 与旧 `start`），单测覆盖两种宿主形态，端到端需重启 `dsh web` 复验。
 
 ### 依赖清单（通俗版）
 

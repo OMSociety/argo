@@ -233,7 +233,14 @@ def tfidf_lead_combo(tfidf_best: str | None, tfidf_best_score: float,
         lead.append("anysearch")
     if tfidf_best and tfidf_best not in lead:
         lead.append(tfidf_best)
-    return [e for e in lead if e in enabled]
+    # 去重保序：tfidf_best 就是 anysearch 时上面会拼出 [anysearch, anysearch]，
+    # 执行层会把它当成两个独立引擎并发跑两遍（实测 k8s 查询两个同名引擎
+    # 3724/2923 ms，双倍配额，而 wasted_ms 还记 0）。
+    out: list[str] = []
+    for e in lead:
+        if e in enabled and e not in out:
+            out.append(e)
+    return out
 
 
 def select_tfidf_best(query: str,

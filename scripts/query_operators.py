@@ -42,6 +42,7 @@ clean_query（剥掉指令后的意图核心），operators 走三个既有消�
 from __future__ import annotations
 
 import re
+import urllib.parse
 from typing import Any
 
 # site: 的值：域名形态（字母数字点连字符），到空白/引号/结尾收边
@@ -114,6 +115,78 @@ def parse_query_operators(query: str) -> tuple[str, dict[str, Any]]:
 
     clean = re.sub(r"\s+", " ", text).strip()
     return clean, ops
+
+
+def _host_matches(host: str, site: str) -> bool:
+    """host 是否属于 site（含子域）。site 为空或非法时返回 False。"""
+    host = (host or "").lower().strip(".")
+    site = (site or "").lower().strip().strip(".")
+    if not host or not site:
+        return False
+    return host == site or host.endswith("." + site)
+
+
+def operator_cache_suffix(operators: dict[str, Any] | None) -> str:
+    """把影响结果集的操作符拼成缓存键后缀；无操作符返回空串。
+
+    缓存键的主体是剥掉指令后的 clean_query，若不把指令本身并入键，
+    `python asyncio` 与 `python asyncio -site:realpython.com` 会命中同一条
+    缓存：要么把受限结果回给无约束查询，要么相反——后者更隐蔽，
+    用户写了约束却拿到未过滤的结果。langs 同理（它改变路由与引擎选择）。
+    after/before 已归一化为 since/until，由调用方单独并入，不在这重复。
+    """
+    ops = operators or {}
+    parts: list[str] = []
+    for key, tag in (("sites", "site"), ("exclude_sites", "xsite"),
+                     ("exclude_terms", "not"), ("langs", "lang")):
+        vals = [str(v).strip() for v in (ops.get(key) or [])
+                if isinstance(v, (str, int, float)) and str(v).strip()]
+        if vals:
+            parts.append(f"{tag}={','.join(vals)}")
+    return "".join(f"|{p}" for p in parts)
+
+
+def filter_results_by_sites(
+    results: list[dict[str, Any]],
+    sites: list[str] | None,
+    exclude_sites: list[str] | None = None,
+) -> tuple[list[dict[str, Any]], int]:
+    """按 site:/-site: 后置过滤结果，返回 (保留项, 剔除数)。
+
+    为什么是后置过滤而不是下推检索词：argo 的上游是 260 个异构引擎，多数
+    不认识 site: 语法；把它留在检索串里只会降低召回。解析层已经把它从
+    clean_query 剥掉，若不再执行就等于「宣称支持但静默忽略」——实测
+    `DeepSeek site:github.com` 会返回 models.dev 的模型页（2026-10-17）。
+
+    子域算匹配：site:github.com 命中 gist.github.com。多个 site 之间是 OR。
+    无 url 的模态卡不参与站点判定（不因无法判定而被误删）。
+    """
+    include = [s for s in (sites or []) if isinstance(s, str) and s.strip()]
+    exclude = [s for s in (exclude_sites or []) if isinstance(s, str) and s.strip()]
+    if not include and not exclude:
+        return results, 0
+    kept: list[dict[str, Any]] = []
+    dropped = 0
+    for r in results:
+        if not isinstance(r, dict):
+            kept.append(r)
+            continue
+        url = str(r.get("url") or "")
+        if not url:
+            kept.append(r)
+            continue
+        try:
+            host = urllib.parse.urlsplit(url).hostname or ""
+        except ValueError:
+            host = ""
+        if include and not any(_host_matches(host, s) for s in include):
+            dropped += 1
+            continue
+        if exclude and any(_host_matches(host, s) for s in exclude):
+            dropped += 1
+            continue
+        kept.append(r)
+    return kept, dropped
 
 
 def _empty_ops() -> dict[str, Any]:

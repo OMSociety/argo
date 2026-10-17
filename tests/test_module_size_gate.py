@@ -61,8 +61,11 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "2026-09-29 +19：open_meteo 多 place forecast 并行化（串行 9.28s → "
               "3.9-5.1s，bounded_run 有界并发 + 保序）"),
     "scripts/caliber_isolation.py": (
-        186, "口径隔离：RRF 融合前按口径分组，不同口径不直接 merge；"
-              "纯函数，可独立测试"),
+        197, "口径隔离：RRF 融合前按口径分组，不同口径不直接 merge；"
+              "纯函数，可独立测试；"
+              "2026-10-17 +11：分组单位从「单条结果」改回「整条引擎列表」——"
+              "旧写法让 merge_within_caliber 的 i 恒为 0，同引擎全部同分、"
+              "名次衰减归零（tests/test_caliber_isolation.py 锁三条不变式）"),
     "scripts/rrf_classic.py": (
         66, "经典 RRF 融合（weighted=False 路径）；"
               "所有引擎列表在同一个池中竞争，每个列表独立贡献排名"),
@@ -70,13 +73,17 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
         141, "X Article 正文提取（Draft.js 重建）；"
               "通过 FxTwitter API 获取 blocks 并重建为 Markdown"),
     "scripts/url_optimize.py": (
-        54, "URL 优化：Reddit 重写、追踪参数清理；"
-              "纯函数，可独立测试"),
+        56, "URL 优化：Reddit 重写、追踪参数清理；"
+              "纯函数，可独立测试；"
+              "2026-10-17 +2：normalize_url 真正去掉 fragment（docstring 一直"
+              "这么写，旧实现把它原样带回）"),
     "scripts/engines_builders_tech.py": (
-        1354, "技术社区源声明构建器（V2EX/StackExchange 等），逐源一段；"
+        1360, "技术社区源声明构建器（V2EX/StackExchange 等），逐源一段；"
               "2026-09-26 批次十增强净增 +402：sov2ex 一级全文来源（v2ex 就地升级）、"
               "tineye/bing_rss 新引擎、exa 免 key 匿名通道——与原逐源一段同性质，"
               "拆出只会把同一张表切碎（新引擎的下一站是 batch 模块）；"
+              "2026-10-17 +6：Exa 分数改 None 哨兵（显式 0 分不再被 or 抬成 "
+              "0.75，与 2026-09-30 修过的同类同构）；"
               "2026-09-28 并行会话进行中的搜狗微信中间链解析 WIP（+96 行起，"
               "工作区未提交、当日仍在增长 1600→1604）——上限随工作区现值登记，"
               "随该工作正式提交后由其转正或回调；"
@@ -106,7 +113,9 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "助手 + timeout×5 与 max_chars×6 共 11 处裸 int() 转换，"
               "非法类型显式 -32602，测试 test_mcp_param_guard.py 锁行为）"),
     "scripts/engines_base.py": (
-        1508, "引擎基类 + HTTP 出口 + 输出映射，与 100+ 源声明的字段契约绑在一起；"
+        1521, "引擎基类 + HTTP 出口 + 输出映射，与 100+ 源声明的字段契约绑在一起；"
+              "2026-10-17 +13：通用 HTML 解析器接入 jump_resolver 的离线跳转"
+              "还原（Bing ck/a 的 u=a1<base64url>），不发网络请求；"
               "2026-10-17 +7：http_open 错误体归因读加 KeyError 兜底——3.9 的 "
               "HTTPError(fp=None) 首次 .read() 抛 KeyError('file')，漏接把「诚实"
               "上报 403」退化成静默空结果（tests/test_bocha.py 403 可见性用例）；"
@@ -193,10 +202,12 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "2026-10-16 +1：_content_sig 末尾接 normalize_title_suffix 剥站后缀"
               "（跨站同文对差异几乎全在结尾后缀，零依赖；归一化逻辑在 rank_signals）"),
     "scripts/search_pipeline.py": (
-        1076, "搜索编排主管线（路由→分派→融合→恢复→漏斗输出）；"
+        1101, "搜索编排主管线（路由→分派→融合→恢复→漏斗输出）；"
               "2026-10-17 +3：finalize 的 cache.set 透传 recovered 标记（恢复成功"
               "批次整批退化时降级短 TTL 写入，判据与常量在 cache_guard，存储侧"
               "改动在 cache.SearchCache.set）；"
+              "2026-10-17 +25：site:/-site: 后置过滤接线（恢复链与精排之后、"
+              "截断之前；判据与过滤本体在 query_operators，此处只留调用点）；"
               "2026-10-17 +20：查询词回声守卫接线（恢复链触发 + 档位提升到 L3 "
               "+ L1 假恢复过滤）——修「anysearch 超时后 local_bing 把整句当单词"
               "查、回声被原样交付」；判据与两个信号本体（echo_recovery_needed / "

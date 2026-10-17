@@ -57,6 +57,26 @@ class TestExaEnvAlias(unittest.TestCase):
         results = _run_with_env({"EXA_API_KEY": "k-old"})
         self.assertTrue(results)
 
+    def test_explicit_zero_score_not_promoted(self):
+        """上游明确给 0 分（判定不相关）不得经 `or` 被抬成 0.75。
+
+        与 2026-09-30 修过的同类「0 分垫底变中游」同构；Exa 的
+        `r.get("score") or 0.75` 是当时的漏网第 4 处。
+        """
+        payload = {"results": [
+            {"title": "T0", "url": "https://a.com", "text": "x", "score": 0},
+            {"title": "T1", "url": "https://b.com", "text": "y"},
+        ]}
+        with patch.dict(os.environ, {"EXA_API_KEY": "k"}, clear=False), \
+             patch("engine_env._envfile_load", return_value={}), \
+             patch("engines_builders_tech.http_open") as mock_open:
+            mock_open.return_value.__enter__.return_value = _FakeResp(payload)
+            eng = _build_exa_engine({"timeout": 5})
+            rows = eng("query", n=5)
+        self.assertEqual(rows[0]["score"], 0.0)
+        self.assertGreater(rows[1]["score"], 0.0,
+                           "缺 score 时仍应给基线分，不能与显式 0 混淆")
+
     def test_no_key_reports_error_not_silent(self):
         results = _run_with_env({"ARGO_EXA_API_KEY": "", "EXA_API_KEY": ""})
         self.assertEqual(len(results), 1)
