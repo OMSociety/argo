@@ -478,6 +478,16 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 - 与常规检索隔离：`search_partition=login`、`cache_eligible=false`；`--site host` 粘性空间
 - 专业模式默认关：`enable`/`disable`/`status`
 
+### js-run（V8 算车道）
+
+不开浏览器跑网页 JS：V8（mini-racer）+ 自研环境垫片执行「环境探测 + 纯计算」型脚本，单次上下文 P50 ≈ 1ms，逻辑时间让 `setTimeout(5000)` 瞬间完成。已接入 fetch 降级链第一级 E（`scripts/fetch_jsrun.py`）：抓页遇到 JS 挑战时自动跑挑战脚本算通行证再重试。
+
+- 入口：无独立命令——fetch 链第一级 E 自动触发；开关 `ARGO_FETCH_JSRUN`（默认开，`=0` 关闭）
+- 三类活：反爬挑战通行证、混淆数据解算、JS 内嵌状态提取
+- v0 边界：不解析 DOM/布局、一个字节的网络都不取（取数归 HTTP 车道）、无登录态可继承（归 ego-search）、不截图（归 ego-browser）
+- 纪律：产物只当线索不当正文——垫片里的「网络响应」没有真源，数据必须 HTTP 侧真取；对第三方站点的挑战绕过默认关闭，启用须单独拍板
+- 金标：`python3 sub-skills/js-run/tests/test_jsrun.py`（7 项，含速度门 <100ms）
+
 
 ## 查询操作符（Google 风格语法，2026-10-17 起）
 

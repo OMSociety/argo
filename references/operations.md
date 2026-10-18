@@ -93,6 +93,7 @@ export TINYFISH_API_KEY="sk-tinyfish-..."   # 去 agent.tinyfish.ai/api-keys 申
 | local-search（本地零成本聚合） | `sub-skills/local-search/` | `python3 scripts/search.py "查询" --local-first` |
 | local-seek（本机文件搜索） | `sub-skills/local-seek/` | `python3 sub-skills/local-seek/scripts/seek.py "查询" --path ~/notes --count`（MCP: `argo_local_search`） |
 | ego-search（登录态专业搜索） | `sub-skills/ego-search/` | `python3 sub-skills/ego-search/scripts/ego_search.py search "AI 搜索" --runtime auto` |
+| js-run（V8 算车道） | `sub-skills/js-run/` | 无独立入口：fetch 降级链第一级 E 自动触发（`fetch_jsrun.py`），开关 `ARGO_FETCH_JSRUN`（默认开，=0 关闭） |
 
 细节见 `references/usage.md`（子技能章节）。
 

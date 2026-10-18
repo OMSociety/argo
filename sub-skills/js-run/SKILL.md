@@ -5,7 +5,9 @@ description: >-
   + 自研浏览器环境垫片，让「环境探测 + 纯计算」型网页脚本（反爬挑战通行证、混淆数据
   解算、JS 内嵌状态提取）在毫秒级、可复现、无真实网络的沙箱里执行。定位是取数链
   curl_cffi 与渲染级之间的「算」车道，不替代浏览器（登录态/视觉/真实网络数据不在此车道）。
-  v0 为独立骨架，未接入主链。Triggers include 跑网页JS、挑战脚本、通行证、JS解密、
+  已接入 fetch 降级链第一级 E（scripts/fetch_jsrun.py，ARGO_FETCH_JSRUN 默认开启，=0
+  关闭）；能力面仍为 v0：只保「探测+计算」型脚本，不碰 DOM/真实网络/登录态/视觉。
+  Triggers include 跑网页JS、挑战脚本、通行证、JS解密、
   逻辑时间、无浏览器执行。
 metadata:
   version: "0.1.0"
