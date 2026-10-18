@@ -39,6 +39,11 @@ TIME_CAPABLE_ENGINES: frozenset[str] = frozenset({
     "local_ddgs_news",
     # parallel（after_date 下推）/ you（freshness 动态化 + page_age）
     "parallel", "you",
+    # deepseek_search：上游逐条返回 RFC 3339 date（output_map 映射
+    # published_at），日期覆盖率实测 3-5/5；缺了这一条时 --since/--until
+    # 对它静默无效（time_aware=False，后过滤整段跳过），日期最全的引擎
+    # 反而用不上时间窗。
+    "deepseek_search",
 })
 
 
