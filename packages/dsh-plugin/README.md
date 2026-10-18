@@ -45,6 +45,16 @@ argo 的 `deepseek_search` 引擎（官方 `api.deepseek.com/v1/tools/search`，
 - DSH 子代理 provider 需支持 `outputSchema`、`depthLimit`（标准 `spawn` 即可）；`toolFilter` 在 alpha.x 上可选，rc.2 已移除该启动期字段，改由插件内的 tool guard 阻止 worker 嵌套调用 `wide_research`
 - 已在 DSH 0.2.1-alpha.1 与 0.2.1-rc.2 实测：rc.2 上 `wide_research`（planner → 2 worker → synthesis，passed=true / 14 sources）与原生 `argo_search`（count=3）均真跑通；`dsh web` 启动无 argo 报错。web seam 的 provider 注册随启动通过，headless 无 web 服务，未做实际调用。旧宿主 alpha.x 的 `start` 分支由单测覆盖
 
+## Compatibility（DSH Harness 版本对照）
+
+| argo-dsh | DSH Harness | 说明 |
+|----------|-------------|------|
+| 2.9.6（当前） | 0.2.1-rc.2（当前，运行中） | 双栈入口 `startActivation({provider, label, request, signal, delivery})`；rc.2 移除 `toolFilter` 启动期字段后由插件内 tool guard 阻止 worker 嵌套调用 `wide_research`；`wide_research` 端到端实测通过（planner → 2 worker → synthesis，passed=true / 14 sources） |
+| 2.9.6（当前） | 0.2.1-alpha.1（实测，兼容） | 旧宿主走 `start(provider, request)` 分支，`toolFilter` 启动期字段仍认；该分支由插件单测覆盖，未在 alpha.x 上重跑端到端 |
+| 2.9.2 | 0.2.1-alpha.1（实测） | 上一轮适配验证基线；rc.2 的新入口与 tool guard 自 2.9.4 起进入 |
+
+低于 0.2.1 的 Harness 未做验证，不保证可用。
+
 ## 自定义（可选）
 
 两行配置 id 分别为 `mcp-argo` 和 `wide-research`。用户层 `cordis.patch.yml` 同 id + name 才是替换：

@@ -24,7 +24,7 @@
 <p align="center">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-blue">
   <img alt="python" src="https://img.shields.io/badge/python-3.9+-green">
-  <img alt="version" src="https://img.shields.io/badge/version-2.9.5-informational">
+  <img alt="version" src="https://img.shields.io/badge/version-2.9.6-informational">
   <img alt="engines" src="https://img.shields.io/badge/engines-266-orange">
   <img alt="mcp" src="https://img.shields.io/badge/MCP-19%20tools-purple">
 </p>
@@ -155,7 +155,7 @@ freshness  ≈ 发布时间（会忽略「2015 年以来」这类历史对比年
 
 ## 快速开始
 
-任选一种即可。**以 GitHub 为唯一安装来源**（`npx github:taxueseek/argo` 或 `install.sh` / `install.ps1`），当前推荐 **v2.9.5**。**请勿用 `npm install argo-search`**——npm registry 上那份是**非官方陈旧版 v1.0.1**（非本仓库维护，功能残缺、不随本项目更新）。本包 `package.json` 已设 `private: true` 防止误发布到 npm registry。
+任选一种即可。**以 GitHub 为唯一安装来源**（`npx github:taxueseek/argo` 或 `install.sh` / `install.ps1`），当前推荐 **v2.9.6**。**请勿用 `npm install argo-search`**——npm registry 上那份是**非官方陈旧版 v1.0.1**（非本仓库维护，功能残缺、不随本项目更新）。本包 `package.json` 已设 `private: true` 防止误发布到 npm registry。
 
 **零配置就能跑**：不配 API Key 时走免费引擎 + 本地 `local_*` 引擎；配了 Key 的源质量通常更好，没配则自动跳过。
 
@@ -362,6 +362,7 @@ python3 -m pytest tests/test_unit.py -q             # 单测（可选）
 
 ### 当前大致能力（v2.9.3）
 
+- **DeepSeek Search 接入 + 查询操作符契约 + 传输层去重付费 + 路由快照门（v2.9.6 新增）**：官方 `deepseek_search` 引擎默认启用（无 `DEEPSEEK_API_KEY` 时路由自动跳过，其余 265 源不受影响；延迟 445-510ms，authority 权威分级 / rerank_score / 发布时间三引擎中唯一全覆盖，ja/ko/es 多语言与 anysearch 持平，`--since/--until` 时间窗唯一真生效；按次计费，不进域 combo，显式 `--engine deepseek_search` 为主路径；DSH 宿主经原生凭证 seam 共用同一把 key）；`site:` / `-site:` / `-词` / `lang:` / `after:` / `before:` 收敛为查询操作符契约层（`query_operators.py`，路由与缓存只认剥掉指令的 clean_query，`site:` 从「只解析不执行」到真正后置过滤并并入缓存键）；POST 走连接池复用（anysearch 省 320ms / octen 省 561ms 每次）+ MCP 预连接；octen 进通用兜底与对冲位（p90 3273→1614ms、max 6266→1928ms、错误 9→0，`ARGO_GENERAL_FALLBACK_LEGACY=1` 可退回旧序）；修复 RRF 口径隔离名次衰减（同引擎结果同分退化）与 Bing ck/a 跳转壳（此前 40.2% 空结果）；新增 pre-commit 快门禁（~12s 六道）与路由决策快照门（治 90 天 13 次 fix(route) 慢性病）；DSH 插件适配 0.2.1-rc.2 双栈（`startActivation` 新入口 + tool guard 承接已移除的 `toolFilter`），0.2.1-alpha.1 兼容分支单测覆盖
 - **汇率查询专域 + 去重双轨判定 + 排序误杀修复（v2.9.5 新增）**：`fx_query` 域让汇率/中间价类查询 675ms 出「即期汇率 + 每日快讯」（改前 1411ms 百科词条）；去重补站后缀归一（零依赖）+ rapidfuzz 模糊复核（可选依赖、`ARGO_DEDUP_FUZZY` 可控、缺失自动回退）；修复精排降级时标题分隔符 ×0.6 误杀（官方文档回到前排）；否定理解补「不是X」；daemon 落盘名字按检出目录隔离，多 worktree 互抢/误杀/静默旧代码三类故障根除
 - **显式引擎域归因 + 恢复链止损 + 门禁同步（v2.9.4 新增）**：`--engine X` 显式指定引擎时补 `match_domains` 域判定，修复缓存 TTL 一刀切 general；单引擎无备选时跳过 L1 同引擎空跑；`config.yaml` 域规则增强（`org_entity` 加 unless 股东尽调词、`fund_query` 加 unless 政策法规词）；`mcp_launch.sh` 环境变量导出收窄；local-search 引擎注册表层收口与质量提升；门禁同步（module_size_gate / ENGINE_CATALOG）
 - **X 帖子完整打包 `argo tweet`（v2.9.3 新增）**：一条命令打包指定 X 帖子的正文、串/引用/转发与互动数据；默认纯文本，`--out` 落四件套（post.md/raw.json/manifest.json/CHECKLIST.md），`--media` 才下载图片/视频；主帖失败原因随产物可见
@@ -632,6 +633,22 @@ argo/
 
 ## 最近更新
 
+### v2.9.6：DeepSeek Search 接入 + 查询操作符契约 + 传输层去重付费 + 路由快照门
+
+- 新引擎 `deepseek_search`（官方 `api.deepseek.com/v1/tools/search`）默认启用：无 `DEEPSEEK_API_KEY` 时路由自动跳过、其余 265 源不受影响；实测延迟 445-510ms（anysearch 1.7-4.5s / exa 3.7s），authority 权威分级 / rerank_score / 发布时间为三引擎中唯一全覆盖，ja/ko/es 多语言与 anysearch 持平；按次计费，不进域 combo，显式 `--engine deepseek_search` 为主路径；DSH 宿主经原生凭证 seam 与官方后端共用同一把 key（web Models 页轮换后下一跳生效，不落盘不打日志）
+- 修复 `--since/--until` 对 deepseek_search 静默无效（入 TIME_CAPABLE_ENGINES）
+- 新增 `query_operators.py` 查询操作符契约层：`site:` / `-site:` / `-词` / `-"短语"` / `lang:` / `after:` / `before:` 从五种散落形态收敛为结构化 operators；路由、缓存、查询理解只认剥掉指令后的 clean_query；`site:` / `-site:` 真正后置过滤执行（子域匹配、多站点 OR，过滤数进 `site_filtered`），操作符并入结果缓存键避免互串
+- `evidence.py`：新增 Agent 档双层摘要 `summary` 字段（借鉴 DeepSeek Search 摘要语义）
+- 传输层去重付费：POST 走连接池复用（实测同连接第二次请求省 320ms（anysearch）/ 561ms（octen）），含失效重借与响应体读干才还池；MCP 预连接；配额耗尽与死负缓存收口
+- 路由：octen 进通用兜底链第二位与 TF-IDF 对冲位（anysearch 抖动窗口 p90 3273→1614ms、max 6266→1928ms、错误 9→0；健康窗口中位无差，定位为尾部保险），`ARGO_GENERAL_FALLBACK_LEGACY=1` 逃生开关退回旧序
+- 修复 RRF 口径隔离名次衰减：同引擎所有结果同分（实测 anysearch 5 条均 0.017213），输出退化为按引擎权重整段拼接；新增测试锁「同引擎内分数严格递减」
+- 修复 Bing ck/a 跳转壳不还原导致聚合层整批滤掉结果（近 7 天 40.2% 空结果）：离线 base64url 解码还原真链，零网络
+- 修复 TF-IDF 领队组合拼出 `['anysearch','anysearch']` 并发跑两遍（双倍配额且 wasted_ms 记 0）：200 条真实查询重放，重复 combo 1→0
+- 搜索改进：失败负缓存、Nitter 故障转移、口径隔离、X Article 提取、查询词回声守卫（早停拒收 + 恢复链换引擎）
+- 工程化：新增 `scripts/pre-commit` 快门禁（static_lint / module_size_gate / usage_doc / consistency / routing_snapshot / context_budget + engine_catalog，实测 ~12s）；路由决策快照门把路由翻转变成可 diff 的 golden（三处标注集并集 115 条，只比对 domain 与 kind 不被环境噪声假红）；口径注册表同步测试锁「表里的引擎名必须真实注册」
+- DSH 插件适配 DSH 0.2.1-rc.2：运行时入口双栈（`startActivation({provider, label, request, signal, delivery})` 新 / `start(provider, request)` 旧），rc.2 移除 `toolFilter` 后由插件内 tool guard 阻止 worker 嵌套调用 `wide_research`；rc.2 上 `wide_research`（planner → 2 worker → synthesis，passed=true / 14 sources）与原生 `argo_search`（count=3）端到端实测通过；0.2.1-alpha.1 兼容分支由单测覆盖；插件单测 46→50
+- DSH 环境版本：**DSH 0.2.1-rc.2（当前运行中，端到端实测）+ DSH 0.2.1-alpha.1（兼容，start 旧分支单测覆盖）**；对照表见 `packages/dsh-plugin/README.md` 的 Compatibility 小节
+
 ### v2.9.5：汇率查询专域 + 去重双轨 + 排序误杀修复 + daemon 多检出隔离
 
 - `config.yaml`：新增 `fx_query` 域——「人民币/美元 汇率、中间价、离岸」类查询不再落进宏观域空转后兜底百科词条，改为即期汇率 + 每日中间价快讯（实测 675ms，改前 1411ms 且答非所问）
@@ -728,6 +745,7 @@ argo/
 
 | 版本 | 说明 |
 |------|------|
+| **v2.9.6** | **DeepSeek Search 接入 + 查询操作符契约 + 传输层去重付费 + 路由快照门**：新引擎 `deepseek_search` 默认启用（无 key 自动跳过；445-510ms，authority/rerank_score/发布时间唯一全覆盖，时间窗真生效；DSH 经原生凭证 seam 共用 key）；`site:`/`-site:`/`-词`/`lang:`/`after:`/`before:` 收敛为操作符契约层并真正后置过滤 + 入缓存键；POST 连接池复用（省 320-561ms/次）+ MCP 预连接；octen 进兜底与对冲位（p90 3273→1614ms，`ARGO_GENERAL_FALLBACK_LEGACY=1` 逃生）；修复 RRF 名次衰减与 Bing 跳转壳（40.2% 空结果）；新增 pre-commit 快门禁与路由决策快照门；DSH 插件适配 0.2.1-rc.2 双栈 + alpha.1 兼容单测。 |
 | **v2.9.5** | **汇率查询专域 + 去重双轨 + 排序误杀修复 + daemon 多检出隔离**：新增 `fx_query` 域（汇率/中间价 675ms 出即期+快讯，改前百科词条）；去重补站后缀归一（零依赖）+ rapidfuzz 模糊复核（可选、`ARGO_DEDUP_FUZZY` 可控、缺失回退）；修复标题分隔符 ×0.6 误杀（官方文档回前排）；否定补「不是X」；daemon 落盘名字按检出目录隔离。 |
 | **v2.9.4** | **显式引擎域归因 + 恢复链止损 + 门禁同步**：`--engine X` 补 `match_domains` 域判定修复缓存 TTL 一刀切；单引擎无备选跳过 L1 空跑；`config.yaml` 域规则增强（org_entity/fund_query unless 词）；`mcp_launch.sh` 环境变量导出收窄；local-search 引擎注册表层收口与质量提升；门禁同步。 |
 | **v2.9.3** | **X 帖子完整打包 + 浏览器登录态车道 + 本地链质速双修**：新增 `argo tweet`（正文/串/引用/转发/媒体按需打包，`--out` 四件套）；新增 `argo auth` 浏览器登录态车道（站点持久 profile，cookie 只存 Chrome 加密存储，登录态结果不入公共缓存）；本地中文链搜狗/百度跳转壳无会话解析（保留 1→5 条）+ 共识宽限自适应（英文分发 ~3.0s→2.2-2.5s）；js-run 接入 fetch 链第一级（Chrome 指纹重试）；火车票中转+经停（漏斗 10→1 修为如实 10→10）；`--academic-deep` 一键学术深挖；43 引擎领域接线 + 3 零 key 金融源 + 意图门误锁修复；本地图片指纹 158ms→3.9ms；agent 消费瘦身（MCP 固定开销 −32%）。 |

@@ -24,7 +24,7 @@
 <p align="center">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-blue">
   <img alt="python" src="https://img.shields.io/badge/python-3.9+-green">
-  <img alt="version" src="https://img.shields.io/badge/version-2.9.5-informational">
+  <img alt="version" src="https://img.shields.io/badge/version-2.9.6-informational">
   <img alt="engines" src="https://img.shields.io/badge/engines-266-orange">
   <img alt="mcp" src="https://img.shields.io/badge/MCP-19%20tools-purple">
 </p>
@@ -153,7 +153,7 @@ freshness  ≈ 公開時刻（「2015 年以来」のような歴史比較年は
 
 ## クイックスタート
 
-どれか 1 つで十分です。**インストールの来源は GitHub のみ**（`npx github:taxueseek/argo` または `install.sh`）、現在推奨 **v2.9.5**。**`npm install argo-search` は使わないでください**——npm registry 上のそれは**非公式の古い v1.0.1**（本リポジトリ外、機能不足、更新されない）。本パッケージは `private: true` で npm 誤公開を防ぎます。
+どれか 1 つで十分です。**インストールの来源は GitHub のみ**（`npx github:taxueseek/argo` または `install.sh`）、現在推奨 **v2.9.6**。**`npm install argo-search` は使わないでください**——npm registry 上のそれは**非公式の古い v1.0.1**（本リポジトリ外、機能不足、更新されない）。本パッケージは `private: true` で npm 誤公開を防ぎます。
 
 **ゼロ設定で動く**：API Key なしなら無料エンジン + ローカル `local_*`。Key があるソースは品質が上がりやすく、無いものは自動スキップ。
 
@@ -335,6 +335,7 @@ python3 scripts/search.py --list-engines
 
 ### 現時点の能力概要（v2.9.3）
 
+- **DeepSeek Search エンジン + クエリ演算子契約層 + 传输層の接続プール + ルーティングスナップショット門（v2.9.6 新規）**: 公式 `deepseek_search` エンジンがデフォルト有効（`DEEPSEEK_API_KEY` がない場合のみ路由が自動スキップ、他の 265 ソースには影響なし；遅延 445-510ms、authority 権威階層 / rerank_score / 公開時刻の三エンジン中唯一の全項目カバー、ja/ko/es 多言語は anysearch と同等、`--since/--until` 時間窓が唯一真に効く；従量課金、ドメイン combo には入らず、明示 `--engine deepseek_search` が主経路；DSH ホストはネイティブ認証情報 seam で同じ key を共用）；`site:` / `-site:` / `-語` / `lang:` / `after:` / `before:` がクエリ演算子契約層に収束（`query_operators.py`、路由とキャッシュは命令を剥いだ clean_query のみを認識、`site:` は「解析するだけ」から真の後置フィルタへ移動しキャッシュキーにも投入）；POST がプール接続を再利用（anysearch 320ms / octen 561ms を毎回節約）+ MCP 事前接続；octen が一般フォールバックとヘッジ枠に入る（p90 3273→1614ms、max 6266→1928ms、エラー 9→0、`ARGO_GENERAL_FALLBACK_LEGACY=1` で旧順に戻せる）；RRF 口径隔離の名次減衰（同一エンジンの結果が同点）と Bing ck/a リダイレクト殻（従来 40.2% 空結果）を修正；pre-commit 快门禁（~12s、六門）とルーティング決定スナップショット門（90 日 13 回の fix(route) を治す）を新設；DSH プラグインは 0.2.1-rc.2 デュアルスタック対応（`startActivation` 新入口 + tool guard が削除済み `toolFilter` を承継）、0.2.1-alpha.1 互換分枝は単測カバー
 - **為替専用ドメイン + 二層重複排除 + 順位誤殺修正（v2.9.5 新規）**: `fx_query` がレート/中心相場クエリに生レート + 毎日ニュースを 675ms で返す（修正前は 1411ms で百科事典）；重複排除にサイト suffix 正規化（ゼロ依存）+ rapidfuzz ファジーチェック（オプション、`ARGO_DEDUP_FUZZY`、自動フォールバック付き）を追加；劣化リランク時の区切り ×0.6 誤殺を修正（公式ドキュメントが前列に復帰）；否定に「不是X」を追加；daemon 名をチェックアウト別に隔離
 - **明示的エンジンドメイン帰属 + 回復チェーン遮断 + ゲート同期（v2.9.4 新規）**: `--engine X` で `match_domains` を補完しキャッシュ TTL 一般化を修正；単一エンジンでフォールバックなしの場合 L1 空実行をスキップ；`config.yaml` ドメインルール強化；`mcp_launch.sh` 環境変数エクスポートを收窄；ローカル検索エンジンレジストリ層の閉鎖と品質向上；ゲート同期（module_size_gate / ENGINE_CATALOG）
 - **X 投稿の完全パッケージ `argo tweet`（v2.9.3 新規）**：1 コマンドで指定投稿の全文・スレッド/引用/リポスト・インタラクションデータをパッケージ；デフォルトはテキストのみ、`--out` で 4 ファイル一式（post.md/raw.json/manifest.json/CHECKLIST.md）、`--media` で画像/動画を必要時にダウンロード；失敗理由は成果物に可視
@@ -556,6 +557,22 @@ argo/
 
 ## 最近の更新
 
+### v2.9.6: DeepSeek Search エンジン + クエリ演算子契約 + 传输層の接続プール + ルーティングスナップショット門
+
+- 新エンジン `deepseek_search`（公式 `api.deepseek.com/v1/tools/search`）がデフォルト有効：`DEEPSEEK_API_KEY` がない場合のみ自動スキップ、他の 265 ソースには影響なし；実測 445-510ms（anysearch 1.7-4.5s / exa 3.7s）、authority 権威階層 / rerank_score / 公開時刻の三者中唯一の全項目カバー、ja/ko/es 多言語は anysearch と同等；従量課金、ドメイン combo には入らず、明示 `--engine deepseek_search` が主経路；DSH ホストはネイティブ認証情報 seam で公式バックエンドと同じ key を共用（web Models ページでのキー交替は次のホップから効く、保存もログもされない）
+- 修正：`--since/--until` が deepseek_search に効いていなかった（TIME_CAPABLE_ENGINES に追加）
+- 新規 `query_operators.py` クエリ演算子契約層：`site:` / `-site:` / `-語` / `-"句"` / `lang:` / `after:` / `before:` が五つの散在形態から構造化演算子に収束；路由・キャッシュ・クエリ理解は命令を剥いだ clean_query のみを認識；`site:` / `-site:` が真の後置フィルタを実行（サブドメイン一致、複数サイト OR、フィルタ数は `site_filtered` に）、演算子は結果キャッシュキーに投入され串線を防止
+- `evidence.py`：Agent 档二層概要 `summary` フィールドを新設（DeepSeek Search の概要 semantics を参考）
+- 传输層の二重払い排除：POST がプール接続を再利用（実測 同一接続の 2 回目で anysearch 320ms / octen 561ms 節約）、貸出失敗時の再試行と読み切り后才還却つき；MCP 事前接続；クォータ耗尽と死んだ負キャッシュの收口
+- 路由：octen が一般フォールバック鎖の 2 番目と TF-IDF ヘッジ枠に入る（anysearch じらし窓 p90 3273→1614ms、max 6266→1928ms、エラー 9→0；健全窓では中央値差なし、尾部保険と定位）、逃げスイッチ `ARGO_GENERAL_FALLBACK_LEGACY=1`
+- RRF 口径隔離の名次減衰を修正：同一エンジンの全結果が同点（実測 anysearch 5 件とも 0.017213）、出力が「エンジン权重でのブロック連結」に退化；「同一エンジン内で厳密単調減少」を鎖る新テスト
+- Bing ck/a リダイレクト殻が還元されず聚合層が結果を丸ごと濾過していた問題を修正（直近 7 日 40.2% 空結果）：オフライン base64url 復号で真リンクを還元、ゼロネットワーク
+- TF-IDF リーダー combo が `['anysearch','anysearch']` を二重実行していた問題を修正（クォータ二倍で wasted_ms は 0 記録）：200 件の実クエリ再演、重複 combo 1→0
+- 検索改善：失敗負キャッシュ、Nitter フェイルオーバ、口径隔離、X Article 抽出、クエリエコー防衛（早停拒収 + 回復鎖のエンジン切替）
+- 工学化：`scripts/pre-commit` 快门禁を新設（static_lint / module_size_gate / usage_doc / consistency / routing_snapshot / context_budget + engine_catalog、実測 ~12s）；ルーティング決定スナップショット門が路由の反転を diff 可能な golden に変える（三つの注釈集合の和、115 クエリ、domain と kind のみ比較で環境ノイズによる誤赤なし）；口径レジストリ同期テストが「表のエンジン名は実登録必須」をロック
+- DSH プラグインは DSH 0.2.1-rc.2 対応：実行時入口のデュアルスタック（`startActivation({provider, label, request, signal, delivery})` 新 / `start(provider, request)` 旧）、rc.2 で `toolFilter` 削除後はプラグイン内 tool guard が worker の `wide_research` 入れ子呼び出しを阻止；rc.2 上で `wide_research`（planner → 2 worker → synthesis、passed=true / 14 sources）とネイティブ `argo_search`（count=3）の端到端実測通過；0.2.1-alpha.1 互換分枝は単測カバー；プラグイン単測 46→50
+- DSH 環境バージョン：**DSH 0.2.1-rc.2（現行・稼働中、端到端実測済み）+ DSH 0.2.1-alpha.1（互換、旧 start 分枝は単測カバー）**；対応表は `packages/dsh-plugin/README.md` の Compatibility 節
+
 ### v2.9.5: 為替専用ドメイン + 二層重複排除 + 順位誤殺修正 + チェックアウト別 daemon 隔離
 
 - `config.yaml`: 新ドメイン `fx_query` —「人民元/米ドル レート、中心相場、オフショア」系のクエリはマクロ域の空回りを経て百科事典項目に落ちることはなく、生レート + 毎日の中心相場ニュースを返す（実測 675ms、修正前は 1411ms かつ的外れ）
@@ -650,6 +667,7 @@ argo/
 
 | 版 | 内容 |
 |----|------|
+| **v2.9.6** | **DeepSeek Search エンジン + クエリ演算子契約 + 传输層の接続プール + ルーティングスナップショット門**: 新エンジン `deepseek_search` デフォルト有効（key なしで自動スキップ；445-510ms、authority/rerank_score/公開時刻の唯一の全カバー、時間窓が真に効く；DSH はネイティブ認証 seam で key 共用）；`site:`/`-site:`/`-語`/`lang:`/`after:`/`before:` が演算子契約層に収束し真の後置フィルタ + キャッシュキー投入；POST 接続プール（1 回あたり 320-561ms 節約）+ MCP 事前接続；octen がフォールバックとヘッジ枠に（p90 3273→1614ms、逃げスイッチ `ARGO_GENERAL_FALLBACK_LEGACY=1`）；RRF 名次減衰と Bing リダイレクト殻（40.2% 空結果）を修正；pre-commit 快门禁とルーティングスナップショット門を新設；DSH プラグインは 0.2.1-rc.2 デュアルスタック + alpha.1 単測カバー。 |
 | **v2.9.5** | **為替専用ドメイン + 二層重複排除 + 順位誤殺修正 + チェックアウト別 daemon 隔離**: 新ドメイン `fx_query`（レート/中心相場を 675ms で生レート+日次ニュース、修正前は百科事典）；重複排除にサイト suffix 正規化（ゼロ依存）+ rapidfuzz ファジーチェック（オプション、`ARGO_DEDUP_FUZZY`、フォールバック付き）を追加；区切り ×0.6 誤殺を修正（公式ドキュメントが前列に）；否定に「不是X」を追加；daemon 名をチェックアウト別に隔離。 |
 | **v2.9.4** | **明示的エンジンドメイン帰属 + 回復チェーン遮断 + ゲート同期**: `--engine X` で `match_domains` を補完しキャッシュ TTL 一般化を修正；単一エンジンでフォールバックなしの場合 L1 空実行をスキップ；`config.yaml` ドメインルール強化；`mcp_launch.sh` 環境変数エクスポートを收窄；ローカル検索エンジンレジストリ層の閉鎖と品質向上；ゲート同期。 |
 | **v2.9.3** | **X 投稿の完全パッケージ + ブラウザログイン状態車道 + ローカルチェーンの質・速度修正**：新規 `argo tweet`（全文/スレッド/引用/リポスト/メディアを必要時にパッケージ、`--out` で 4 ファイル一式）；新規 `argo auth` ブラウザログイン状態車道（サイト別永続プロファイル、Cookie は Chrome の暗号化ストレージのみ、ログイン状態の結果は共有キャッシュ除外）；中国語ローカルチェーンが Sogou/Baidu リダイレクト殻をセッションなしで解決（保持 1→5）+ コンセンサス猶予適応化（英語ディスパッチ ~3.0s→2.2-2.5s）；js-run を fetch チェーン第一車道に接線（Chrome フィンガープリント再試行）；鉄道乗り継ぎ・経停クエリ（ファンネル 10→1 を実態どおり 10→10 に修復）；`--academic-deep` ワンフラグ学術深掘り；43 エンジンのドメイン配線 + キー不要金融ソース 3 件 + インテントゲート誤ロック修正；ローカル画像フィンガープリント 158ms→3.9ms；エージェント消費スリム化（MCP 固定オーバーヘッド −32%）。 |

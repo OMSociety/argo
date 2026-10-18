@@ -24,7 +24,7 @@
 <p align="center">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-blue">
   <img alt="python" src="https://img.shields.io/badge/python-3.9+-green">
-  <img alt="version" src="https://img.shields.io/badge/version-2.9.5-informational">
+  <img alt="version" src="https://img.shields.io/badge/version-2.9.6-informational">
   <img alt="engines" src="https://img.shields.io/badge/engines-266-orange">
   <img alt="mcp" src="https://img.shields.io/badge/MCP-19%20tools-purple">
 </p>
@@ -153,7 +153,7 @@ composite  ≈ 0.40·selection + 0.35·absorption + 0.15·freshness + 0.10·engi
 
 ## 빠른 시작
 
-경로를 고르면 됩니다. **설치 진원은 GitHub뿐입니다**(`npx github:taxueseek/argo` 또는 `install.sh`); 현재 권장 **v2.9.5**. **`npm install argo-search`는 쓰지 마세요** — npm 레지스트리 사본은 **비공식 낡은 v1.0.1**(이 저장소가 아님, 기능 부족, 갱신 안 됨). 이 패키지는 `private: true`로 npm 오배포를 막습니다.
+경로를 고르면 됩니다. **설치 진원은 GitHub뿐입니다**(`npx github:taxueseek/argo` 또는 `install.sh`); 현재 권장 **v2.9.6**. **`npm install argo-search`는 쓰지 마세요** — npm 레지스트리 사본은 **비공식 낡은 v1.0.1**(이 저장소가 아님, 기능 부족, 갱신 안 됨). 이 패키지는 `private: true`로 npm 오배포를 막습니다.
 
 **제로 설정으로 동작**: API 키 없이도 무료 엔진 + 로컬 `local_*` 엔진이 돌고, 키 없는 엔진은 스킵됩니다(키가 있으면 보통 더 좋습니다).
 
@@ -335,6 +335,7 @@ python3 scripts/search.py --list-engines
 
 ### 대략적인 능력 세트 (v2.9.3)
 
+- **DeepSeek Search 엔진 + 쿼리 연산자 계약층 + 传输층 연결 풀 + 라우팅 스냅샷 문(v2.9.6 신규)**: 공식 `deepseek_search` 엔진 기본 활성(`DEEPSEEK_API_KEY` 없을 때만 라우트가 자동 스킵, 나머지 265 소스 무영향; 지연 445-510ms, authority 권위 등급 / rerank_score / 발행 시각의 세 엔진 중 유일 전항목 커버, ja/ko/es 다언어는 anysearch와 대등, `--since/--until` 시간창이 유일하게 진짜로 효력; 종량 과금, 도메인 combo에 안 들고, 명시 `--engine deepseek_search`가 주 경로; DSH 호스트는 네이티브 자격증명 seam으로 같은 key 공유); `site:` / `-site:` / `-어` / `lang:` / `after:` / `before:` 가 쿼리 연산자 계약층으로 수렴(`query_operators.py`, 라우트와 캐시는 지령을 벗긴 clean_query만 인식, `site:` 는 「파싱만」에서 진짜 후치 필터로 이동하고 캐시 키에도 편입); POST가 풀 연결을 재사용(anysearch 320ms / octen 561ms 매번 절약) + MCP 사전 연결; octen이 일반 폴백과 헤지 슬롯에 진입(p90 3273→1614ms, max 6266→1928ms, 오류 9→0, `ARGO_GENERAL_FALLBACK_LEGACY=1` 로 구순 복귀); RRF 궤도 격리의 명차 감쇠(같은 엔진 결과 동점)와 Bing ck/a 리다이렉트 껍질(종전 40.2% 빈 결과) 수정; pre-commit 속문(≈12s, 여섯 문)과 라우팅 결정 스냅샷 문(90일 13회 fix(route) 치유) 신설; DSH 플러그인은 0.2.1-rc.2 듀얼 스택 대응(`startActivation` 새 입구 + tool guard가 제거된 `toolFilter` 승계), 0.2.1-alpha.1 호환 분지는 단위 테스트 커버
 - **환율 전용 도메인 + 2층 중복 제거 + 순위 오진단 수정(v2.9.5 신규)**: `fx_query`가 환율/중심환율 질문에 생환율 + 매일 뉴스를 675ms로 돌려준다(수정 전은 1411ms 백과사전); 중복 제거에 사이트 suffix 정규화(제로 의존) + rapidfuzz 퍼지 검사(선택, `ARGO_DEDUP_FUZZY`, 자동 폴백)를 추가; 열화 리랭크의 구분자 ×0.6 오진단을 수정(공식 문서가 앞열로); 부정에 「不是X」 추가; daemon 이름을 체크아웃별로 격리
 - **명시적 엔진 도메인 속성 + 복구 체인 차단기 + 게이트 동기화 (v2.9.4 신규)**: `--engine X` 시 `match_domains` 보충으로 캐시 TTL 일괄 일반화 수정; 단일 엔진에 대체 없으면 L1 빈 실행 건너뜀; `config.yaml` 도메인 규칙 강화; `mcp_launch.sh` 환경 변수 내보내기 축소; 로컬 검색 엔진 레지스트리 계층 폐쇄 및 품질 향상; 게이트 동기화(module_size_gate / ENGINE_CATALOG)
 - **X 게시물 완전 패키징 `argo tweet`(v2.9.3 신규)**: 한 번의 명령으로 지정 게시물의 전문·스레드/인용/리포스트·인터랙션 데이터를 패키징; 기본은 텍스트만, `--out`으로 4파일 세트(post.md/raw.json/manifest.json/CHECKLIST.md), `--media`로 이미지/동영상 필요 시 다운로드; 실패 원인은 산출물에 가시화
@@ -556,6 +557,22 @@ argo/
 
 ## 최근 업데이트
 
+### v2.9.6: DeepSeek Search 엔진 + 쿼리 연산자 계약 + 传输층 연결 풀 + 라우팅 스냅샷 문
+
+- 새 엔진 `deepseek_search`(공식 `api.deepseek.com/v1/tools/search`) 기본 활성: `DEEPSEEK_API_KEY` 없을 때만 자동 스킵, 나머지 265 소스 무영향; 실측 445-510ms(anysearch 1.7-4.5s / exa 3.7s), authority 권위 등급 / rerank_score / 발행 시각의 셋 중 유일 전항목 커버, ja/ko/es 다언어는 anysearch와 대등; 종량 과금, 도메인 combo에 안 들고, 명시 `--engine deepseek_search`가 주 경로; DSH 호스트는 네이티브 자격증명 seam으로 공식 백엔드와 같은 key 공유(web Models 페이지에서 key 교체 시 다음 홉부터 효력, 저장도 로그도 안 됨)
+- 수정: `--since/--until` 가 deepseek_search에 조용히 무효(TIME_CAPABLE_ENGINES에 추가)
+- 새 `query_operators.py` 쿼리 연산자 계약층: `site:` / `-site:` / `-어` / `-"구"` / `lang:` / `after:` / `before:` 가 다섯 갈래 흩어진 형태에서 구조화 연산자로 수렴; 라우트·캐시·쿼리 이해는 지령을 벗긴 clean_query만 인식; `site:` / `-site:` 가 진짜 후치 필터 실행(서브도메인 매칭, 다중 사이트 OR, 필터 수는 `site_filtered`에), 연산자는 결과 캐시 키에 편입되어 혼선 방지
+- `evidence.py`: Agent 급 이층 요약 `summary` 필드 신설(DeepSeek Search 요약 semantics 참고)
+- 传输층 이중 지불 제거: POST가 풀 연결 재사용(실측 같은 연결 두 번째 요청에서 anysearch 320ms / octen 561ms 절약), 대출 실패 시 재시도와 몸통 읽은 뒤 반납 포함; MCP 사전 연결; 할당량 고갈과 죽은 부정 캐시 수구
+- 라우트: octen이 일반 폴백 사슬 2번째와 TF-IDF 헤지 슬롯에 진입(anysearch 떨림 창 p90 3273→1614ms, max 6266→1928ms, 오류 9→0; 건전 창에서는 중위값 차 없음, 꼬리 보험으로 위치), 도피 스위치 `ARGO_GENERAL_FALLBACK_LEGACY=1`
+- RRF 궤도 격리 명차 감쇠 수정: 한 엔진의 모든 결과가 동점(실측 anysearch 5건 모두 0.017213), 출력이 「엔진 가중치 블록 이어붙이기」로 퇴화; 「같은 엔진 내 점수 엄격 단조 감소」를 잠그는 새 테스트
+- Bing ck/a 리다이렉트 껍질이 환원되지 않아 집합층이 결과를 통째로 걸러냈던 문제 수정(최근 7일 40.2% 빈 결과): 오프라인 base64url 복호로 진링크 환원, 제로 네트워크
+- TF-IDF 리더 combo가 `['anysearch','anysearch']` 를 병렬 두 번 실행하던 문제 수정(할당량 두 배에 wasted_ms는 0 기록): 200건 실제 쿼리 재생, 중복 combo 1→0
+- 검색 개선: 실패 부정 캐시, Nitter 페일오버, 궤도 격리, X Article 추출, 쿼리 에코 방어(조기 정지 거부 + 회복 사슬 엔진 전환)
+- 공학화: `scripts/pre-commit` 속문 신설(static_lint / module_size_gate / usage_doc / consistency / routing_snapshot / context_budget + engine_catalog, 실측 ≈12s); 라우팅 결정 스냅샷 문이 라우트 반전을 diff 가능한 golden으로 변환(세 주석 집합의 합, 115 쿼리, domain과 kind만 비교해 환경 잡음에 의한 오적 없음); 궤도 레지스트리 동기 테스트가 「표의 엔진명은 실등록 필수」를 잠금
+- DSH 플러그인은 DSH 0.2.1-rc.2 대응: 실행 시 입구 듀얼 스택(`startActivation({provider, label, request, signal, delivery})` 새 / `start(provider, request)` 구), rc.2에서 `toolFilter` 제거 후 플러그인 내 tool guard가 워커의 `wide_research` 중첩 호출 차단; rc.2에서 `wide_research`(planner → 2 worker → synthesis, passed=true / 14 sources)와 네이티브 `argo_search`(count=3) 종단간 실측 통과; 0.2.1-alpha.1 호환 분지는 단위 테스트 커버; 플러그인 단위 테스트 46→50
+- DSH 환경 버전: **DSH 0.2.1-rc.2(현행·가동 중, 종단간 실측) + DSH 0.2.1-alpha.1(호환, 구 start 분지는 단위 테스트 커버)**; 대응표는 `packages/dsh-plugin/README.md`의 Compatibility 절
+
 ### v2.9.5: 환율 전용 도메인 + 2층 중복 제거 + 순위 오진단 수정 + 체크아웃별 daemon 격리
 
 - `config.yaml`: 새 도메인 `fx_query` — "위안/달러 환율, 중심환율, 오프쇼어" 질문이 거시 도메인 빈 회전 끝에 백과사전 항목으로 떨어지지 않고 생환율 + 매일 중심환율 뉴스를 돌려준다(실측 675ms, 수정 전은 1411ms이면서 빗나감)
@@ -650,6 +667,7 @@ argo/
 
 | 버전 | 비고 |
 |---------|-------|
+| **v2.9.6** | **DeepSeek Search 엔진 + 쿼리 연산자 계약 + 传输층 연결 풀 + 라우팅 스냅샷 문**: 새 엔진 `deepseek_search` 기본 활성(key 없으면 자동 스킵; 445-510ms, authority/rerank_score/발행 시각 유일 전항목 커버, 시간창 진짜 효력; DSH는 네이티브 자격증명 seam으로 key 공유); `site:`/`-site:`/`-어`/`lang:`/`after:`/`before:` 가 연산자 계약층으로 수렴해 진짜 후치 필터 + 캐시 키 편입; POST 연결 풀(회당 320-561ms 절약) + MCP 사전 연결; octen이 폴백과 헤지 슬롯에(p90 3273→1614ms, 도피 스위치 `ARGO_GENERAL_FALLBACK_LEGACY=1`); RRF 명차 감쇠와 Bing 리다이렉트 껍질(40.2% 빈 결과) 수정; pre-commit 속문과 라우팅 스냅샷 문 신설; DSH 플러그인은 0.2.1-rc.2 듀얼 스택 + alpha.1 단위 커버. |
 | **v2.9.5** | **환율 전용 도메인 + 2층 중복 제거 + 순위 오진단 수정 + 체크아웃별 daemon 격리**: 새 도메인 `fx_query`(환율/중심환율을 675ms로 생환율+일일 뉴스, 수정 전은 백과사전); 중복 제거에 사이트 suffix 정규화(제로 의존) + rapidfuzz 퍼지 검사(선택, `ARGO_DEDUP_FUZZY`, 폴백)를 추가; 구분자 ×0.6 오진단을 수정(공식 문서가 앞열로); 부정에 「不是X」 추가; daemon 이름을 체크아웃별로 격리. |
 | **v2.9.4** | **명시적 엔진 도메인 속성 + 복구 체인 차단기 + 게이트 동기화**: `--engine X` 시 `match_domains` 보충으로 캐시 TTL 일괄 일반화 수정; 단일 엔진에 대체 없으면 L1 빈 실행 건너뜀; `config.yaml` 도메인 규칙 강화; `mcp_launch.sh` 환경 변수 내보내기 축소; 로컬 검색 엔진 레지스트리 계층 폐쇄 및 품질 향상; 게이트 동기화. |
 | **v2.9.3** | **X 게시물 완전 패키징 + 브라우저 로그인 상태 레인 + 로컬 체인 품질·속도 수정**: 신규 `argo tweet`(전문/스레드/인용/리포스트/미디어를 필요에 따라 패키징, `--out` 4파일 세트); 신규 `argo auth` 브라우저 로그인 상태 레인(사이트별 영구 프로필, 쿠키는 Chrome의 암호화 저장소에만, 로그인 상태 결과는 공유 캐시 제외); 중국어 로컬 체인이 Sogou/Baidu 리다이렉트 껍질을 세션 없이 해석(보존 1→5) + 컨센서스 유예 적응화(영어 디스패치 ~3.0s→2.2-2.5s); js-run을 fetch 체인 첫 레인으로 접선(Chrome 핑거프린트 재시도); 철도 환승·경유 조회(퍼널 10→1을 실제대로 10→10으로 수정); `--academic-deep` 원플래그 학술 심층; 43개 엔진 도메인 배선 + 키 불필요 금융 소스 3건 + 인텐트 게이트 오잠금 수정; 로컬 이미지 핑거프린트 158ms→3.9ms; 에이전트 소비 슬림화(MCP 고정 오버헤드 −32%). |
