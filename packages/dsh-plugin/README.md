@@ -20,6 +20,24 @@ dsh plugin --profile web add "github:taxueseek/argo#main&path:packages/dsh-plugi
 
 搜索引擎侧，Firecrawl 等匿名可用引擎 **keyless 免配置即用**（免费层额度），配置了密钥的引擎自动升级为认证请求；缺密钥不阻断路由。
 
+## DeepSeek 官方 key：DSH 凭证服务原生供给
+
+argo 的 `deepseek_search` 引擎（官方 `api.deepseek.com/v1/tools/search`，结果自带 authority 权威分级 / rerank_score 排序分 / 发布时间）与 DSH 官方搜索后端**共用同一把 key**。插件经 DSH 原生凭证 seam 取用，不需要任何手工配置：
+
+```yaml
+- id: wide-research
+  name: '@taxueseek/argo-dsh'
+  config:
+    # 默认即 ['DEEPSEEK_API_KEY']，一般无需写这一行
+    keyRefs: ['DEEPSEEK_API_KEY']
+```
+
+- 解析路径：`ctx.get('credentials').resolve('DEEPSEEK_API_KEY')`，逐次解析——在 web Models 页轮换 key 后，下一跳新连接即生效，无需重启插件（池内连接最长存活 `searchIdleMs`，默认 60s）
+- 层级语义与官方后端一致：启动环境变量 > 调用目录 `.env` > `$DSH_HOME/.env` > 凭证服务管理的 `.credentials.yaml`（web Models 页写入的那把）
+- 安全：插件不读 key 文件、不落盘、不打日志；key 值只经内存进入 argo 子进程 env，任何输出与错误信息都不含它
+- 旧宿主无 credentials 服务时静默跳过：argo 侧该引擎按缺 key 停用，其余 265 个源不受影响
+- `keyRefs: []` 可整体关闭转发；后续要转发别的宿主凭证（如 `ARGO_EXA_API_KEY`），把引用名加进数组即可，entry 必须是 POSIX 标识符（apply 期 loud fail）
+
 ## 依赖
 
 - Node.js ≥ 18（npx 拉取 argo 包）

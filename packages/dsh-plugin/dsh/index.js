@@ -139,10 +139,73 @@ const DEFAULTS = Object.freeze({
   searchConcurrency: 3,
   /** 研究报告落盘目录（render 只回摘要+路径，控制上下文占用）。 */
   reportDir: join(homedir(), '.dsh-research'),
+  /**
+   * 转发进 argo 子进程的宿主凭证引用（按名经 DSH credentials 服务解析）。
+   * 默认 DEEPSEEK_API_KEY：argo deepseek_search 引擎与 DSH 官方搜索后端
+   * 共用同一把官方 key（web Models 页写入的那把），插件经原生凭证 seam
+   * 取用——不读 key 文件、不落盘、不打日志。空数组关闭转发。
+   */
+  keyRefs: ['DEEPSEEK_API_KEY'],
 })
 
 const text = (value) => [{ type: 'text', text: value }]
 const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value)
+
+// --- DSH credentials seam：argo 子进程的宿主密钥（原生机制） ---
+//
+// 官方 DeepSeek key 由 DSH 凭证服务持有（web Models 页写入、启动环境变量、
+// $DSH_HOME/.env 逐层回退），argo 的 deepseek_search 引擎复用同一把。插件
+// 经 ctx.get('credentials') 按**引用名**解析（credentialRef 只是校验壳，
+// 普通标识符字符串即可，无需 import @deepseek-ai/*），逐次解析——轮换 key
+// 后下一跳新连接即生效，不依赖插件重启。全程不读 key 文件、不落盘、不打
+// 日志：值只经内存进子进程 env，任何输出与错误信息都不含它。
+//
+// 旧宿主没有 credentials 服务时静默跳过：argo 侧对应引擎按 missing_key
+// 停用，其余 265 个源不受影响。
+const CREDENTIAL_REF_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
+
+/** 从插件上下文取凭证服务；取不到（旧宿主/无权限）返回 undefined，不抛。 */
+function readHostCredentials(ctx) {
+  try {
+    const service = typeof ctx?.get === 'function' ? ctx.get('credentials') : ctx?.credentials
+    return service !== undefined && service !== null && typeof service.resolve === 'function'
+      ? service
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+// 模块级持有：MCP 连接池（acquireMcp）没有 config 形参，其三个调用方
+// （searchViaArgoMCP / recomputeViaArgoMCP / nativeViaMcpPool）统一经模块
+// 状态取用；显式传入的 options.credentials / config.credentials 优先
+// （单测与定制注入用）。随插件实例 ctx.effect 清理，不跨实例泄漏。
+let hostCredentials = undefined
+let activeConfig = DEFAULTS
+
+/**
+ * 解析要转发进 argo 子进程的宿主密钥，返回完整 env；无增量时返回 undefined，
+ * 让 spawn 走默认继承，不为「没有密钥可转」多包一层对象。
+ *
+ * 进程环境已显式导出的引用不覆盖（启动环境层优先级最高，与凭证服务的层级
+ * 语义一致）；单个引用解析失败只跳过它自己——搜索不阻断，argo 侧该引擎
+ * 按缺 key 停用，其余源不受影响。
+ */
+export async function resolveArgoEnv(config = activeConfig, options = {}) {
+  const refs = asStringArray(config?.keyRefs, 20)
+  if (refs.length === 0) return undefined
+  const provider = options.credentials ?? config?.credentials ?? hostCredentials
+  if (provider === undefined) return undefined
+  const overlay = {}
+  for (const ref of refs) {
+    if (typeof process.env[ref] === 'string' && process.env[ref] !== '') continue
+    try {
+      const resolved = await provider.resolve(ref)
+      if (typeof resolved?.value === 'string' && resolved.value !== '') overlay[ref] = resolved.value
+    } catch { /* 解析失败：跳过该引用，不阻断搜索 */ }
+  }
+  return Object.keys(overlay).length > 0 ? { ...process.env, ...overlay } : undefined
+}
 const asString = (value, fallback = '') => typeof value === 'string' ? value.trim() : fallback
 const clip = (value, maximum) => value.length <= maximum ? value : `${value.slice(0, maximum - 1)}…`
 const clamp = (value, fallback, minimum, maximum) => Number.isFinite(value)
@@ -223,7 +286,7 @@ function dropFromPool(conn) {
 }
 
 function createMcpConnection(options) {
-  const { command, args, idleMs } = options
+  const { command, args, idleMs, env } = options
   let proc = null
   let buffer = ''
   let nextId = 1
@@ -307,7 +370,7 @@ function createMcpConnection(options) {
   const conn = {
     initialize: async (timeoutMs = 0) => {
       if (proc !== null) return
-      proc = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] })
+      proc = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'], env: env ?? process.env })
       proc.on('error', () => close())
       proc.on('exit', () => close())
       proc.stderr.on('data', () => { /* 预热日志忽略 */ })
@@ -394,6 +457,11 @@ async function acquireMcp(options) {
   const max = Math.max(1, Number(options.max) || DEFAULTS.searchConcurrency)
   // 握手预算：调用方那次调用的超时。握手不做完，调用方的超时根本没机会生效。
   const initMs = Math.max(0, Number(options.initMs) || 0)
+  // 宿主密钥（credentials 服务逐次解析）在开新连接前随 options 带上，spawn
+  // 时进入 argo 子进程 env；复用池内连接用其创建时点的 env，空闲回收
+  // （searchIdleMs，默认 60s）后下一跳自然刷新到新 key。
+  const env = await resolveArgoEnv(activeConfig, options)
+  const connOptions = { ...options, env }
   const idle = mcpPool.find(entry => entry.load() === 0)
   if (idle !== undefined) {
     idle.claim()
@@ -408,7 +476,7 @@ async function acquireMcp(options) {
     }
   }
   if (mcpPool.length < max) {
-    const conn = createMcpConnection(options)
+    const conn = createMcpConnection(connOptions)
     mcpPool.push(conn)
     conn.claim()
     try {
@@ -1150,9 +1218,9 @@ function nativeErrorText(stdout, stderr) {
   return stderr.trim() !== '' ? stderr : stdout
 }
 
-function runNativeCall({ command, args }, timeoutMs) {
+function runNativeCall({ command, args, env }, timeoutMs) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], env: env ?? process.env })
     let stdout = ''
     let stderr = ''
     const timer = setTimeout(() => {
@@ -1263,7 +1331,10 @@ export function makeNativeTool(config, kind, deps = {}) {
         }
       }
       const spawnSpec = resolveNativeSpawn(config, kind, payload)
-      const stdout = await spawnRun(spawnSpec, nativeTimeoutMs)
+      // 宿主密钥随单发进程 env 进入 argo（与 MCP 池同一条解析路径）；无增量
+      // 时不改 spec 形状，单测与定制 runner 不受影响。
+      const env = await resolveArgoEnv(config)
+      const stdout = await spawnRun(env !== undefined ? { ...spawnSpec, env } : spawnSpec, nativeTimeoutMs)
       return { stdout }
     },
   }
@@ -1291,9 +1362,28 @@ export function apply(ctx, providedConfig = {}) {
     }
   }
 
+  // keyRefs 是凭证引用名（POSIX 标识符），坏名字在解析期才炸等于把配置
+  // 错误推迟到第一次搜索；与上面几个字段同一口径，apply 期 loud fail。
+  for (const ref of asStringArray(config.keyRefs, 20)) {
+    if (!CREDENTIAL_REF_PATTERN.test(ref)) {
+      throw new Error(`argo-dsh: keyRefs entry "${ref}" must be a POSIX-style identifier (e.g. DEEPSEEK_API_KEY)`)
+    }
+  }
+
+  // DSH credentials seam（原生）：官方 DeepSeek key 等宿主凭证按引用名经
+  // ctx.get('credentials') 解析，转发进 argo 子进程；取不到服务时后续解析
+  // 静默跳过（argo 侧对应引擎按缺 key 停用），不影响插件其余功能。
+  hostCredentials = readHostCredentials(ctx)
+  activeConfig = config
+
   // 共享 MCP 连接随本插件实例生命周期回收（官方 ctx.effect 清理约定；
-  // 不写则 HMR/卸载时子进程泄漏）。
-  ctx.effect(() => () => disposeSharedMcp())
+  // 不写则 HMR/卸载时子进程泄漏）。凭证服务引用与 config 快照同周期清理，
+  // 不留给下一个插件实例。
+  ctx.effect(() => () => {
+    disposeSharedMcp()
+    hostCredentials = undefined
+    activeConfig = DEFAULTS
+  })
 
   // 「研究不套研究」的执行侧护栏。
   //

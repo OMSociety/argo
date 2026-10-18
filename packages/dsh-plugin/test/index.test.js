@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { normalizeTracks, stageTracks, evaluateGates, normalizeSource, mapArgoToWebResult, buildLocalSources, parseJsonArray, parseJsonObject, extractValues, resolveNativeSpawn, makeNativeTool, buildChildToolFilters, apply, nativeViaMcpPool, disposeSharedMcp, startStructured, providerSupportsStructured } from '../dsh/index.js'
+import { normalizeTracks, stageTracks, evaluateGates, normalizeSource, mapArgoToWebResult, buildLocalSources, parseJsonArray, parseJsonObject, extractValues, resolveNativeSpawn, resolveArgoEnv, makeNativeTool, buildChildToolFilters, apply, nativeViaMcpPool, disposeSharedMcp, startStructured, providerSupportsStructured } from '../dsh/index.js'
 import { NATIVE_TOOLS } from '../dsh/native-tools.mjs'
 
 test('mapArgoToWebResult maps compact argo payload to web sources', () => {
@@ -494,6 +494,90 @@ test('apply: nativeTools=[] and searchProviderEnabled=false disables both seams'
 test('apply: unknown native tool name fails loudly', () => {
   const { ctx } = makeCtx()
   assert.throws(() => apply(ctx, { nativeTools: ['argo_nope'] }), /unknown native tool/)
+})
+
+test('resolveArgoEnv: resolves host credential refs into the child env', async () => {
+  const fake = {
+    resolve: async (ref) => (ref === 'DEEPSEEK_API_KEY' ? { value: 'sk-host', source: 'file' } : undefined),
+  }
+  const env = await resolveArgoEnv({ keyRefs: ['DEEPSEEK_API_KEY'] }, { credentials: fake })
+  assert.equal(env.DEEPSEEK_API_KEY, 'sk-host')
+  assert.equal(env.PATH, process.env.PATH, '整份 env 继承，不是只带密钥的裸对象')
+})
+
+test('resolveArgoEnv: an explicitly exported process env wins over the service', async () => {
+  const saved = process.env.DEEPSEEK_API_KEY
+  process.env.DEEPSEEK_API_KEY = 'sk-env'
+  try {
+    const fake = { resolve: async () => ({ value: 'sk-file', source: 'file' }) }
+    assert.equal(await resolveArgoEnv({ keyRefs: ['DEEPSEEK_API_KEY'] }, { credentials: fake }), undefined)
+  } finally {
+    if (saved === undefined) delete process.env.DEEPSEEK_API_KEY
+    else process.env.DEEPSEEK_API_KEY = saved
+  }
+})
+
+test('resolveArgoEnv: empty keyRefs, missing service and failed resolve all degrade to undefined', async () => {
+  assert.equal(await resolveArgoEnv({ keyRefs: [] }, { credentials: { resolve: async () => ({ value: 'x' }) } }), undefined)
+  assert.equal(await resolveArgoEnv({ keyRefs: ['DEEPSEEK_API_KEY'] }, {}), undefined)
+  const boom = { resolve: async () => { throw new Error('locked keychain') } }
+  assert.equal(await resolveArgoEnv({ keyRefs: ['DEEPSEEK_API_KEY'] }, { credentials: boom }), undefined)
+})
+
+test('apply: captures the host credentials service for child env resolution', async () => {
+  const fake = {
+    resolve: async (ref) => (ref === 'DEEPSEEK_API_KEY' ? { value: 'sk-host', source: 'file' } : undefined),
+  }
+  const { ctx } = makeCtx()
+  ctx.get = (svc) => (svc === 'credentials' ? fake : null)
+  apply(ctx, {})
+  const env = await resolveArgoEnv()
+  assert.equal(env.DEEPSEEK_API_KEY, 'sk-host')
+  // 收尾复位模块状态，不污染后续用例
+  apply(makeCtx().ctx, { nativeTools: [], searchProviderEnabled: false })
+})
+
+test('apply: a keyRefs entry that is not an identifier fails loudly', () => {
+  const { ctx } = makeCtx()
+  assert.throws(() => apply(ctx, { keyRefs: ['has space'] }), /POSIX-style identifier/)
+})
+
+test('makeNativeTool: single-spawn spec carries the host-resolved key env', async () => {
+  const saved = process.env.DEEPSEEK_API_KEY
+  delete process.env.DEEPSEEK_API_KEY
+  const captured = []
+  try {
+    const fake = {
+      resolve: async (ref) => (ref === 'DEEPSEEK_API_KEY' ? { value: 'sk-host', source: 'file' } : undefined),
+    }
+    const tool = makeNativeTool(
+      {
+        searchCommand: 'python3',
+        searchArgs: ['mcp_server.py'],
+        keyRefs: ['DEEPSEEK_API_KEY'],
+        credentials: fake,
+      },
+      'argo_search',
+      { run: async (spec) => { captured.push(spec); return '{"ok":true}' } },
+    )
+    await tool.execute({ query: 'q' })
+    assert.equal(captured.length, 1)
+    assert.equal(captured[0].env.DEEPSEEK_API_KEY, 'sk-host')
+  } finally {
+    if (saved !== undefined) process.env.DEEPSEEK_API_KEY = saved
+  }
+})
+
+test('makeNativeTool: spawn spec shape is unchanged when no key resolves', async () => {
+  const captured = []
+  const tool = makeNativeTool(
+    { searchCommand: 'python3', searchArgs: ['mcp_server.py'], keyRefs: [] },
+    'argo_search',
+    { run: async (spec) => { captured.push(spec); return '{"ok":true}' } },
+  )
+  await tool.execute({ query: 'q' })
+  assert.equal(captured.length, 1)
+  assert.equal(captured[0].env, undefined, '无增量时不改 spec 形状')
 })
 
 test('buildChildToolFilters: default allow list dual-writes MCP and native tools', () => {

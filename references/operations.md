@@ -59,6 +59,17 @@ dsh plugin --profile web add "github:taxueseek/argo#main&path:packages/dsh-plugi
 
 `wide_research` 与 `argo_research` 共用同一套证据语义：规划互补轨道（可带 `depends_on` 依赖分阶段，默认并行）→ 有界并发子代理取证 → 来源账本（仅 http(s) URL 入账）→ 综合报告，输出自带 `quality_gate_results`（`passed` / `conclusion_cap`：failures→low、warnings→medium、干净→high）。`passed=false` 或 `conclusion_cap=low` 时禁止把报告结论当事实表述，先 `argo_fetch` / `--verify` 核验账本来源再下判断。worker 只用 argo 取证工具，不允许调用 `argo_research`（防研究套研究，硬保护不可放行）。
 
+### DeepSeek 官方 key：DSH 凭证服务原生供给
+
+argo 的 `deepseek_search` 引擎（默认开启，按次计费 5 元/千次成功请求）与 DSH 官方搜索后端共用同一把官方 key。DSH 插件侧经原生凭证 seam 取用，无需手工配置：
+
+- 解析路径：`ctx.get('credentials').resolve('DEEPSEEK_API_KEY')`，逐次解析——web Models 页轮换 key 后下一跳新连接即生效（池内连接最长存活 `searchIdleMs`，默认 60s）
+- 层级：启动环境变量 > 调用目录 `.env` > `$DSH_HOME/.env` > 凭证服务管理的 `.credentials.yaml`
+- 插件配置 `keyRefs`（默认 `['DEEPSEEK_API_KEY']`）控制转发哪些宿主凭证引用；空数组关闭；entry 须为 POSIX 标识符，apply 期 loud fail
+- 安全：key 值只经内存进 argo 子进程 env，不读 key 文件、不落盘、不打日志
+- 无 credentials 服务的旧宿主静默跳过，argo 侧该引擎按缺 key 停用
+- 取用方式：`argo_search` 的 `engine` 参数显式指定 `deepseek_search`（新闻时事类查询优先，结果带 authority 权威分级 / rerank_score / 发布时间）；自动路由不含它，日常查询不烧额度
+
 ## 配额与引擎
 
 ```bash
