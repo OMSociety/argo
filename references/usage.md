@@ -88,6 +88,8 @@ python3 scripts/search.py "查询词" \
 
 **时间窗**：`--since`/`--until` 支持相对值（`7d`）或绝对日期（`2026-08-01`，含当天）；下推到支持时间窗的引擎，任意引擎组合融合后按 `published_at` 保底过滤（`time_filtered: N`）；`--sort newest` 找最新动态、`oldest` 找最早出处。`wayback_cdx` 输出标准 `published_at`（CDX 最早快照）。
 
+按场景选引擎的口径（时事/实体/时间窗 → `deepseek_search`，学术 → `--academic-deep` 或 exa，社交 → anysearch）以 SKILL.md 的「按场景选引擎」行为唯一真源，本页不复制第二份。
+
 **Python 解释器**：脚本最低支持 3.9（与 `bin/argo` 的 `MIN_PYTHON` 一致）。`bin/argo` 自动探测 `ARGO_PYTHON` → python3.14/3.13/3.12/3.11/3.10 → 保底。强制：`ARGO_PYTHON=/opt/homebrew/bin/python3.14 argo ...`。
 
 ## search 输出字段与体积纪律

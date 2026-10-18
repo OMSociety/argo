@@ -28,6 +28,8 @@
 }
 ```
 
+`priority_sources`：该子查询的引擎优先序列，显式指定优先于机器启发；新闻/实体/带时间窗的取证可写 `["deepseek_search", ...]`，语义与场景口径见 research-protocol.md 的 priority_sources 节。
+
 ## C. 判断稿骨架
 
 ```markdown

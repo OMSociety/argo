@@ -77,7 +77,11 @@ key 缺失/额度耗尽/REST 失败时由它接住，自带 excerpts 长摘录�
    互补回填要求主引擎带 coverage 才工作。
 4. **付费档不进自动路由**：`paid` 档只有显式 `--engine` 才会用到；
    `low` / `api` 档有若干在自动路径上（见 catalog 的表），想完全避开用 `--mode budget`
-   或显式指定免费源。
+   或显式指定免费源。`deepseek_search` 是默认开的 paid 引擎（需 `DEEPSEEK_API_KEY`，
+   无 key 时路由自动跳过）：按次计费且只对成功请求收费，显式 `--engine` 调用；
+   结果逐条带 authority 权威分级（0-4，≥3 极权威）与发布时间，是通用源里少见的
+   全字段日期户——配 `--since` / `--until` 时间窗真正可滤（另两家通用源无日期字段，
+   滤不了）。按场景选引擎的口径见 SKILL.md。
 5. **别用「关键词」调抽取型引擎**：`twitter_syndication` 没有搜索端点，
    关键词查询诚实返回空——这是设计，不是故障。
 
@@ -88,6 +92,7 @@ key 缺失/额度耗尽/REST 失败时由它接住，自带 excerpts 长摘录�
 python3 scripts/search.py "查询词" --json
 python3 scripts/search.py "查询词" --engine anysearch          # 指定引擎
 python3 scripts/search.py "查询词" --engine zhihu              # 知乎站内
+python3 scripts/search.py "美联储 降息" --engine deepseek_search  # 官方 DeepSeek 搜索（需 key；时事/实体优先）
 python3 scripts/search.py "阿里 财报 研报" --engine eastmoney
 python3 scripts/search.py "苹果 10-K" --json                   # 自动进 sec_filings 域
 python3 scripts/search.py "climate dataset" --json              # 自动进 dataset_search 域

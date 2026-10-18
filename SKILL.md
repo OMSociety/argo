@@ -49,7 +49,7 @@ python3 scripts/research.py "复杂问题" --json  # 取证包（扩词或多工
 
 | 参数 | 说明 |
 |------|------|
-| `--engine <name>` | 强制引擎（anysearch/byted/bocha/exa/tavily/eastmoney/zhihu/arxiv/pypi/mdn/hackernews/v2ex/redskill…，全量见 `--list-engines`） |
+| `--engine <name>` | 强制引擎（anysearch/byted/bocha/exa/deepseek_search/tavily/eastmoney/zhihu/arxiv/pypi/mdn/hackernews/v2ex/redskill…，全量见 `--list-engines`） |
 | `--local-first` | 本地零成本聚合优先（local_search 29 引擎） |
 | `--include-local` / `--no-local` | 本机文件命中（source=local_files，score 0.9/0.7）：fast/budget 默认开，auto/deep 显式 |
 | `--mode fast|auto|deep|budget` | fast 免费优先 / auto 成本感知（默认）/ deep 质量优先 / budget 配额控制 |
@@ -59,6 +59,8 @@ python3 scripts/research.py "复杂问题" --json  # 取证包（扩词或多工
 | `--since 7d|2026-08-01` `--until` `--sort relevance|newest|oldest` | 时间窗过滤 + 时间排序 |
 | `--verify [N]` | 对 top-N 未核验结果 fetch 正文，回填证据分（URL→证据分缓存，同 URL 二次搜索自动复用） |
 | `--domain` `--sub_domain` | 垂直域 / 子域限定 |
+
+**按场景选引擎**：时事新闻/实体人物/带时间窗的查询 → `--engine deepseek_search`（默认开、按次计费；结果带 authority 权威分级与发布时间，`--since/--until` 只对它真过滤——另两家无日期字段；多语言与 anysearch 持平，exa 韩语查询会空手）；学术 → `--academic-deep` 或 exa；社交 UGC → anysearch。
 
 ### 图片检索
 

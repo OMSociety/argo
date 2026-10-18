@@ -89,6 +89,27 @@
 - 数值契约：`extract_values` 从 stdout 提取数值；与检索来源数字无交集时检查 `recompute_conflict`（以重算为准，人工核对）
 - 脚本里读输入用 `open(_ALLOWED[0], ...)`（白名单在 `_ALLOWED` 列表中，按 file_inputs 顺序）
 
+### priority_sources：子查询引擎显式指定
+
+工作包的 `priority_sources` 列表按序成为该子查询的引擎优先序列（内部映射为
+`preferred_engines`），优先级固定高于机器启发（profile 的 `vertical_engines` /
+`engines_priority` 轮转 boost 与语言 boost）——「显式指定 > 机器启发」。research
+context 下 combo 预算不截断，指定的引擎都会参战：
+
+```json
+{
+  "id": "wp-news",
+  "question": "新规发布后市场的最新反应是什么",
+  "query": "新规 市场反应",
+  "priority_sources": ["deepseek_search", "anysearch"]
+}
+```
+
+适用场景：新闻/实体/带时间窗的取证——`deepseek_search` 结果逐条带 authority
+权威分级（0-4，≥3 极权威）与发布时间，配 `--since`/`--until` 真过滤，适合
+「最近几天市场怎么说」这类子问题；学术选题写 `arxiv` / `semantic_scholar`。
+按场景选引擎的总口径见 SKILL.md，不在本页复制。
+
 ## 广泛研究（wide research，多轨道取证账本）
 
 深度研究回答一个问题的取证；广泛研究是**多视角对比、要跨轨道引用账本**的形态。两条路径共用同一套语义（轨道分阶段、URL 去重账本 S1..Sn、门禁 failures→low / warnings→medium / 干净→high），产物差异只在取证引擎：
