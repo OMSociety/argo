@@ -365,6 +365,38 @@ def _compact_research_result(report: dict[str, Any], summary: bool = False) -> d
     return out
 
 
+def _prewarm_anysearch_connection() -> None:
+    """在 warm 线程里预建 anysearch 的隧道连接（2026-10-18）。
+
+    为什么放在 MCP 而不是 CLI 启动：实测 cli 路径上没有任何窗口——引擎在
+    117–140ms 就借连接，而经代理的 TLS 握手要 320–970ms，预连接总是慢一步
+    （对拍见 docs-local；强行预连接反而多付一次握手）。MCP 是长驻进程，
+    initialize 之后的 warm 与用户第一次 tools/call 之间通常有整秒级间隔，
+    这批固定成本正好藏在里面。
+
+    只做 anysearch：它是 general 域主力**POST** 引擎，也是当前唯一每次都
+    走 _do_post 的域；失败静默（离线/代理不可用/池关闭都不影响服务）。
+    """
+    if os.environ.get("ARGO_NO_PREWARM", "").strip() not in ("", "0"):
+        return
+    try:
+        import urllib.parse
+        from conn_pool import (give_back, key_for, stats as pool_stats)
+        from net_proxy import open_connection, resolve_proxy
+        if not pool_stats().get("enabled"):
+            return
+        url = "https://api.anysearch.com/mcp"
+        parsed = urllib.parse.urlparse(url)
+        proxy_url = resolve_proxy(url)
+        conn, _via = open_connection(parsed, 8.0, proxy_url)
+        # open_connection 返回的是**未连接**的 HTTPSConnection（懒连接），
+        # 必须显式 connect；否则还进池的只是个空壳，_sock_alive 会直接丢弃。
+        conn.connect()
+        give_back(key_for(parsed, proxy_url), conn)
+    except Exception as e:
+        sys.stderr.write(f"[argo-mcp] prewarm-skip: {type(e).__name__}: {e}\n")
+
+
 def _warm_core_async() -> None:
     """initialize 后后台预热 search+cache，摊平首次 tools/call 延迟。"""
     global _warm_started
@@ -386,6 +418,9 @@ def _warm_core_async() -> None:
                 warm_compiled_domains()
             except Exception:
                 pass
+            # 连接预热排在模块预热之后：先把 search/route 的导入税付掉，
+            # 再付 TLS。两段都在同一个 daemon 线程里串行，互不抢占首包。
+            _prewarm_anysearch_connection()
             ms = int((__import__("time").time() - t0) * 1000)
             sys.stderr.write(f"[argo-mcp] warm-core ok {ms}ms\n")
         except Exception as e:

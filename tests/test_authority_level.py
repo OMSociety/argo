@@ -102,7 +102,7 @@ class TestUpstreamFieldPassthrough(unittest.TestCase):
 
 
 class TestDeepseekSpecContract(unittest.TestCase):
-    """deepseek_search spec 的契约（默认关 + 开启步骤 + 透传声明）。"""
+    """deepseek_search spec 的契约（默认开 + 无 key 自动跳过 + 显式调用）。"""
 
     def _spec(self):
         import yaml
@@ -110,10 +110,18 @@ class TestDeepseekSpecContract(unittest.TestCase):
         self.assertTrue(p.exists(), "deepseek_search.yaml 应存在")
         return yaml.safe_load(p.read_text(encoding="utf-8"))
 
-    def test_default_disabled_with_reason(self):
+    def test_default_enabled_but_explicit_only(self):
+        """2026-10-18：产品决策改为默认开（4a71693）。
+
+        默认开不等于自动路由：付费源不进任何 combo，只经 --engine 显式调用。
+        「无 key 自动跳过」由 required_env + routable 过滤保证，不靠 enabled=false。
+        """
         s = self._spec()
-        self.assertFalse(s.get("enabled"), "必须默认关闭")
-        self.assertTrue(s.get("disabled_reason"), "停用须带原因")
+        self.assertTrue(s.get("enabled"), "默认开：无 key 由 required_env 兜底")
+        self.assertTrue(s.get("explicit_only"),
+                        "付费源必须显式调用，不得进自动路由")
+        self.assertIn("DEEPSEEK_API_KEY", s.get("required_env") or [],
+                      "无 key 时须能自动跳过")
 
     def test_paid_cost_and_env(self):
         s = self._spec()

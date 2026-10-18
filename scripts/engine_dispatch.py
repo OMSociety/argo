@@ -40,6 +40,7 @@ from query_signals import (
 _NOTE_STATUS = {
     "auth": "auth-failed",          # 凭证失效/未登录
     "rate_limited": "rate-limited",  # 源端限流
+    "quota_exhausted": "quota-exhausted",  # 余额/套餐耗尽（停用，非短冷却）
     "blocked": "blocked",           # 反爬/拦截页
     "dependency": "error",          # 缺后端命令（requires 未满足）
     "upstream": "error",            # 上游改版/页面结构变化
@@ -49,7 +50,9 @@ _NOTE_STATUS = {
 
 # 配额耗尽错误关键词（唯一来源）：classify_engine_outcome 的 quota-exhausted
 # 分类与自适应学习跳过逻辑共用。新增配额错误码（如新的 API 业务码）只改这里。
-_QUOTA_ERROR_KEYWORDS = ("quota", "10406")
+_QUOTA_ERROR_KEYWORDS = ("quota", "10406", "insufficient balance",
+                         "insufficient funds", "not enough money",
+                         "余额不足", "额度不足", "配额耗尽")
 
 # 「这次调用对最终答案有贡献」的 outcome 状态（唯一来源）。
 # `no-results` / `skipped-*` / `timeout` / `error` 一律不算——它们消耗了时间但

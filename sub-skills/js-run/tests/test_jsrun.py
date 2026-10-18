@@ -6,9 +6,22 @@
 """
 from __future__ import annotations
 
+import importlib.util
 import sys
 import time
 from pathlib import Path
+
+import pytest
+
+# mini-racer 是 js-run 的可选依赖（V8 沙箱）。没装的机器上这 10 条用例会
+# 全部 RuntimeError，把主套件染红——而缺依赖本应是 skip，不是失败
+# （2026-10-18 实测：主套件 4236 passed / 4 failed，其中 1 条就是这里）。
+# 用模块级 pytestmark 而不是 importorskip：后者会让收集数为 0，旧版 pytest
+# 返回 rc=5（no tests collected），外层 sub-skills 套件门照样红。
+pytestmark = pytest.mark.skipif(
+    importlib.util.find_spec("py_mini_racer") is None,
+    reason="js-run 可选依赖 mini-racer 未安装",
+)
 
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE.parent / "scripts"))

@@ -261,13 +261,19 @@ def _clear_autostart_marker(root):
 def _daemon_autostart(root, py):
     """指针缺失/失效时后台拉起 daemon（fire-and-forget，不拖慢本次调用）。
 
-    首次调用仍走冷路径，下一笔调用起享受快路径。失败静默（daemon 是加速器
-    不是依赖）；60s 节流防每次调用都拉一个；ARGO_NO_DAEMON=1 时不拉。
+    2026-10-18 起改为**显式 opt-in**：只有 `ARGO_DAEMON=1` 才后台拉起，
+    `argo daemon start` 手动启动的实例照常服务。理由是本机实测的净收益
+    只有中位 33.5ms/笔（缓存命中 41 vs 75ms，网络查询 1–3s 时无感），
+    却要养 20–27MB 常驻进程、866 行生命周期代码与 bind/stale 竞态。
+    首次调用仍走冷路径，下一笔起享受快路径；失败静默（daemon 是加速器
+    不是依赖）；60s 节流防每次调用都拉一个；ARGO_NO_DAEMON=1 优先关闭。
     py 必须是 _pick_python/_self_capable 判定的达标解释器（带 PyYAML、版本
     达标）——用当前解释器盲拉，会在「当前解释器不达标」的机器上起一个跑不动
     search 的 daemon：它每次 run 都以 exit 1 告终，而客户端对「已执行」的响应
     不回退（与冷路径 execv 升级解释器的行为不符）。
     """
+    if os.environ.get("ARGO_DAEMON", "").strip().lower() not in ("1", "true", "yes", "on"):
+        return 1
     if os.name == "nt":
         return 1  # Windows 无后台化，别拉（start 在前台阻塞）
     marker = os.path.join(root, ".daemon_autostart-" + _tree_tag())

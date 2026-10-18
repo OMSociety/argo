@@ -402,10 +402,24 @@ def test_client_falls_back_when_daemon_busy(tmp_path):
         fake.wait(timeout=10)
 
 
-def test_autostart_brings_daemon_up(tmp_path):
-    """指针缺失时首次调用仍出结果（冷路径），并后台把 daemon 拉起。"""
+def test_autostart_requires_opt_in(tmp_path):
+    """默认不自启（2026-10-18 B2）：未设 ARGO_DAEMON 时调用只走冷路径，不起进程。"""
     env = _env(tmp_path)
     env.pop("ARGO_NO_DAEMON", None)
+    env.pop("ARGO_DAEMON", None)
+    r = subprocess.run([sys.executable, str(BIN), "search", "--list-engines", "--json"],
+                       env=env, capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    assert len(json.loads(r.stdout)) > 100
+    time.sleep(1.0)
+    assert not _pointer(tmp_path).exists(), "未 opt-in 却写了指针"
+
+
+def test_autostart_brings_daemon_up(tmp_path):
+    """ARGO_DAEMON=1 时首次调用仍出结果（冷路径），并后台把 daemon 拉起。"""
+    env = _env(tmp_path)
+    env.pop("ARGO_NO_DAEMON", None)
+    env["ARGO_DAEMON"] = "1"
     r = subprocess.run([sys.executable, str(BIN), "search", "--list-engines", "--json"],
                        env=env, capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, r.stderr

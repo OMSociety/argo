@@ -104,7 +104,7 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "2026-10-06 A2 登录态车道 +11（auth_profile 判定与传参），"
               "同日浏览器档整级拆出 fetch_browser.py −36"),
     "scripts/mcp_handlers.py": (
-        1039, "MCP 工具 handler 分发（19 工具 → CLI 模块）；"
+        1074, "MCP 工具 handler 分发（19 工具 → CLI 模块）；"
               "2026-09-29 +8：661e0f1（H2 seek 进程内化）带入的增量，"
               "并行会话未登记即合入——本行补登记；同日 −1：路由预热改调 "
               "route_domains.warm_compiled_domains（原在此内联复刻同一句，"
@@ -112,7 +112,10 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "已拆出（mcp_handlers_surface），剩余是分发表与粘合层；"
               "2026-10-03 +32：数值参数守卫收口（_InvalidParam/_int_param "
               "助手 + timeout×5 与 max_chars×6 共 11 处裸 int() 转换，"
-              "非法类型显式 -32602，测试 test_mcp_param_guard.py 锁行为）"),
+              "非法类型显式 -32602，测试 test_mcp_param_guard.py 锁行为）；"
+              "2026-10-18 +35：warm 线程补 anysearch 预连接（_prewarm_anysearch_"
+              "connection，initialize 后把代理 TLS 藏进首包前的空闲期；CLI 侧实测"
+              "无窗口故不改 bin/argo），上限 1039 → 1074 随动登记"),
     "scripts/engines_base.py": (
         1521, "引擎基类 + HTTP 出口 + 输出映射，与 100+ 源声明的字段契约绑在一起；"
               "2026-10-17 +13：通用 HTML 解析器接入 jump_resolver 的离线跳转"
@@ -162,7 +165,7 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "dispatch+恢复链」结构性循环，12 行；策略常量在 cache_guard."
               "RECOVERED_DEGRADED_TTL）；随动上限 1357 → 1385"),
     "scripts/engine_dispatch.py": (
-        1033, "引擎编排调度器（wave-1 竞速 / wave-2 补全 / 串行对冲 / 收账）；"
+        1036, "引擎编排调度器（wave-1 竞速 / wave-2 补全 / 串行对冲 / 收账）；"
               "不拆的理由：三个分支共用同一棵闭包（raw_results / engine_latency / "
               "engine_done_ms / abandoned_ms / quota_batch 等 15 处共享状态），"
               "拆分会把闭包状态摊成参数面，风险与 diff 面都大于 1000 行本身的 "
@@ -174,14 +177,21 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "分层判据——死条目会把尾宽拉长，方向反了），上限 1000 → 1029 随动登记；"
               "2026-10-17 +4：per-engine 缓存 get/set 键从 query 改为 "
               "retrieval_query（键与实际检索词同源，clean_query 变更不再发旧语义"
-              "结果），上限 1029 → 1033 随动登记"),
+              "结果），上限 1029 → 1033 随动登记；"
+              "2026-10-18 +3：硬配额耗尽独立分类（_NOTE_STATUS 加 "
+              "quota-exhausted，_QUOTA_ERROR_KEYWORDS 补「余额/额度/配额」文本），"
+              "上限 1033 → 1036 随动登记"),
     "scripts/http_client.py": (
-        1027, "HTTP 客户端（UA 轮换 + Cookie 积累 + 重试 + 主机节流）；"
+        1053, "HTTP 客户端（UA 轮换 + Cookie 积累 + 重试 + 主机节流）；"
               "2026-09-27 +8：host throttle buckets 加 LRU 淘汰（100 个上限）；"
               "2026-09-28 +10：淘汰只踢零活跃桶（_active 计数 + idle 过滤），"
               "消灭「踢掉在用桶 → 同主机限速击穿」；"
               "同日 +12：POST curl fallback 补 resolve_proxy（POST 代理缝隙）+ "
-              "Set-Cookie 解析失败 debug 留痕（最高频静默点）"),
+              "Set-Cookie 解析失败 debug 留痕（最高频静默点）；"
+              "2026-10-18 +26：POST 改走 conn_pool（借/还/失效换新重试一次，"
+              "与 GET 同构）——anysearch 是 POST 引擎，长驻 MCP/daemon 此前每次"
+              "查询重付代理后 TLS，实测同连接第二次省 322ms（anysearch）/ 561ms"
+              "（octen）；上限 1027 → 1053 随动登记"),
     "scripts/search_rank.py": (
         991, "RRF 融合 + minhash 去重 + 五维重排；"
               "2026-10-17 口径隔离逻辑拆出 caliber_isolation.py（−79 行）；"

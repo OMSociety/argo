@@ -860,7 +860,12 @@ class HttpClient:
 
     def _do_post(self, url: str, payload: bytes | None,
                  extra_headers: dict | None, follow_redirects: bool) -> dict:
-        """实际执行 POST（使用 http.client，逻辑与 _do_get 保持一致但不改 GET 路径）。"""
+        """实际执行 POST（http.client；连接复用与失效重借与 _do_get 同构）。
+
+        2026-10-18：此前 POST 每次直连再 close，绕开 conn_pool——而 anysearch
+        正是 POST 引擎。实测同连接第二次请求省 320ms（anysearch）/ 561ms
+        （octen）；长驻 MCP/daemon 进程本可整段省掉，却每次重付代理后的 TLS。
+        """
         start = time.time()
         current_url = url
         redirects_left = 5 if follow_redirects else 0
@@ -873,28 +878,49 @@ class HttpClient:
             if not parsed.scheme:
                 current_url = "https://" + current_url
                 parsed = urllib.parse.urlparse(current_url)
-            from net_proxy import open_connection, request_selector, resolve_proxy
+            from net_proxy import request_selector, resolve_proxy
+            from conn_pool import (borrow_via_net_proxy as _pool_borrow,
+                                   discard as _pool_discard,
+                                   give_back as _pool_give)
             proxy_url = resolve_proxy(current_url)
-            conn, via_proxy = open_connection(parsed, self.timeout, proxy_url)
+            conn, _key, _reused = _pool_borrow(parsed, self.timeout, proxy_url)
             path = parsed.path or "/"
             if parsed.query:
                 path += "?" + parsed.query
-            conn.request("POST", request_selector(parsed, path, via_proxy),
-                         body=payload, headers=headers)
-            resp = conn.getresponse()
+            for _try in (0, 1):
+                try:
+                    conn.request("POST", request_selector(parsed, path, bool(proxy_url)),
+                                 body=payload, headers=headers)
+                    resp = conn.getresponse()
+                    break
+                except (http.client.HTTPException, ConnectionError, OSError):
+                    # 与 GET 同口径：复用连接被服务端悄悄关闭时丢弃换新重试一次，
+                    # 不占调用方重试预算
+                    _pool_discard(_key, conn)
+                    if not _reused or _try:
+                        raise
+                    conn, _key, _reused = _pool_borrow(parsed, self.timeout, proxy_url)
             status = resp.status
             resp_headers = dict(resp.getheaders())
             self._cookies.extract_from_response(current_url, resp.getheaders())
             if status in (301, 302, 303, 307, 308) and redirects_left > 0:
                 loc = resp.getheader("Location")
-                conn.close()
+                # 响应体读干才能还池；读失败（连接已坏）就地丢弃
+                try:
+                    resp.read()
+                    _pool_give(_key, conn)
+                except Exception:
+                    _pool_discard(_key, conn)
                 if not loc:
                     break
                 current_url = urllib.parse.urljoin(current_url, loc)
                 redirects_left -= 1
                 continue
             raw_body = resp.read()
-            conn.close()
+            if getattr(resp, "will_close", False):
+                _pool_discard(_key, conn)
+            else:
+                _pool_give(_key, conn)
             encoding = resp.getheader("Content-Encoding", "")
             if "gzip" in encoding:
                 import gzip, io

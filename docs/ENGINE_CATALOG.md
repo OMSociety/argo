@@ -11,7 +11,7 @@
 - **需自备密钥 22 个**：`bocha`、`bocha_ai`、`byted`、`deepseek_search`、`em_miaoxiang`、`exa`、`keenable`、`octen`、`parallel`、`qweather`、`seltz`、`tavily`、`tinyfish`、`tinyfish_news`、`tinyfish_paper`、`unpaywall`、`weread`、`you`、`zhihu`、`zhihu_global`、`zhihu_hot`、`zhihu_user`（没配也不影响搜索，路由会跳过）
 - **需装后端工具 3 个**：`reddit`、`twitter`、`xiaohongshu`（装好并登录后即可用）
 - **已停用 12 个**：`brave`、`digup`、`europeana`、`felo`、`jikan`、`local_goodreads`、`metaso`、`nbs_stats`、`realtime_index`、`searxng`、`soilgrids`、`wolframalpha`
-- **显式专用 17 个**：`bing_rss`、`cisa_kev`、`datagov_uk`、`doi`、`ecosia`、`gdelt`、`opencitations`、`osv`、`qwant`、`tineye`、`tinyfish`、`tinyfish_news`、`tinyfish_paper`、`twitter_syndication`、`unpaywall`、`x_trending`、`zbmath`（设计上不进自动路由，按 `--engine` 或交接提示调用）
+- **显式专用 18 个**：`bing_rss`、`cisa_kev`、`datagov_uk`、`deepseek_search`、`doi`、`ecosia`、`gdelt`、`opencitations`、`osv`、`qwant`、`tineye`、`tinyfish`、`tinyfish_news`、`tinyfish_paper`、`twitter_syndication`、`unpaywall`、`x_trending`、`zbmath`（设计上不进自动路由，按 `--engine` 或交接提示调用）
 
 自己核一遍（口径不同，别混用）：
 
@@ -101,7 +101,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 | `bocha` | 需自备密钥 | 低价计费 | 10000/月 | ARGO_BOCHA_API_KEY | 域 chinese_general、域 local_chinese、域 modal_card、语义画像命中 | 博查搜索 API（中文，freshness 按查询时效动态化） |
 | `brave` | 已停用 | 低价计费 | 不限 | ARGO_BRAVE_API_KEY | 域 semantic_discovery | Brave Search API |
 | `byted` | 需自备密钥 | 低价计费 | 不限 | ARGO_BYTED_API_KEY | 域 chinese_general、域 chinese_tech_deep、域 fact_check、域 financial_news、域 legal、域 local_news、域 news_realtime、域 weather_query、语义画像命中 | 字节搜索 API，中文通用/news |
-| `deepseek_search` | 需自备密钥 | 付费 | 不限 | DEEPSEEK_API_KEY | — | DeepSeek Search |
+| `deepseek_search` | 需自备密钥 + 显式专用 | 付费 | 不限 | DEEPSEEK_API_KEY | 显式调用（--engine） | DeepSeek Search |
 | `digup` | 已停用 | 免费 | 不限 | — | 已停用 | DigUp（EmbeddingGemma 2 本地多模态嵌入，全程离线）——照片/截图/PDF/文档/音视频按内容检索 |
 | `ecosia` | 显式专用 | 免费 | 不限 | — | 显式调用（--engine） | Ecosia（ecosia.org HTML 解析），环保隐私取向通用网页 |
 | `exa` | 需自备密钥 | 按调用计费 | 1000/月 | ARGO_EXA_API_KEY | 域 english_tech、域 semantic_discovery、域 us_stock、深度研究 boost | Exa 语义搜索（embedding 匹配 + 内容摘要，新户 $20 赠金 + 每月 $10 赠金） |

@@ -35,6 +35,7 @@
 engine_id: deepseek_search
 type: http
 enabled: true          # 默认开；无 DEEPSEEK_API_KEY 时不可用，路由自动跳过
+explicit_only: true    # 不进任何域 combo 与通用兜底，只经 --engine 显式调用
 cost_tier: paid
 method: POST
 url: https://api.deepseek.com/v1/tools/search

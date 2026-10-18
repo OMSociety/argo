@@ -336,6 +336,10 @@ def format_text_output(results: dict[str, Any]) -> str:
 _NON_ERROR_OUTCOME = frozenset({
     "ok", "ok-cached", "partial", "no-results", "no-results-cached",
     "cancelled",
+    # 配额耗尽的跳过是**持续状态**，不是本次查询的失败：标记默认持续到周期
+    # 边界（一天），若每个查询都把它塞进 errors，调用方会看到一条持续一天的
+    # 「错误」并误判本次检索降级。状态本身在 --list-engines 可见。
+    "skipped-quota-exhausted",
 })
 
 

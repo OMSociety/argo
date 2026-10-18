@@ -225,8 +225,9 @@ class TestHttpOpenFailurePath:
                     pass
         note = pop_failure_note("attr_src")
         assert note is not None, "HTTP 失败没有写归因寄存器"
-        # 403 + 额度文案 → 限流语义（不是 auth，重登录无用）
-        assert note["category"] == "rate_limited"
+        # 403 + 额度文案 → 配额耗尽语义（不是 auth，重登录无用；也不是限流，
+        # 重试到账户充值前都不会成功）
+        assert note["category"] == "quota_exhausted"
         assert "quota" in note["detail"]
 
     def test_http_error_body_still_readable_by_caller(self):
@@ -543,3 +544,56 @@ class TestSurveyFixes:
             f"配额见底未被降权: {aware}"
         assert aware["healthy"] == pytest.approx(neutral["healthy"]), \
             "配额健康的引擎不应被惩罚"
+
+
+class TestHardQuotaExhaustion:
+    """余额/套餐耗尽必须是独立类别，不能混进限流（2026-10-18）。
+
+    现场：octen 返回 `403 Insufficient balance in account`，归因落 rate_limited，
+    熔断器把 rate-limited 排除在 drives_opens 之外，于是只冷却 60s、永不自动
+    停用——后备链第二顺位长期是死引擎，每次 1–2.4s 白烧。
+    """
+
+    def test_403_balance_is_quota_exhausted(self):
+        from engine_failure import classify, QUOTA_EXHAUSTED
+        out = classify(status_code=403,
+                       output='{"code":403,"msg":"Insufficient balance in account."}')
+        assert out["category"] == QUOTA_EXHAUSTED
+        assert out["reason"] == "http-403+quota-exhausted"
+        assert out["confidence"] == "high"
+
+    def test_402_package_quota_is_quota_exhausted(self):
+        from engine_failure import classify, QUOTA_EXHAUSTED
+        out = classify(status_code=402, output="套餐额度不足，请充值")
+        assert out["category"] == QUOTA_EXHAUSTED
+
+    def test_text_only_balance_is_quota_exhausted(self):
+        from engine_failure import classify, QUOTA_EXHAUSTED
+        out = classify(output="Free quota has been exhausted.")
+        assert out["category"] == QUOTA_EXHAUSTED
+
+    def test_429_stays_rate_limited(self):
+        """真正的限流不许被升级成停用：冷却 60s 后重试是正确动作。"""
+        from engine_failure import classify, RATE_LIMITED
+        out = classify(status_code=429, output="Too many requests")
+        assert out["category"] == RATE_LIMITED
+
+    def test_generic_quota_exceeded_stays_rate_limited(self):
+        """泛化的 quota exceeded 可能几小时后恢复，不按账户余额耗尽处理。"""
+        from engine_failure import classify, RATE_LIMITED
+        out = classify(status_code=403, output="quota exceeded, retry later")
+        assert out["category"] == RATE_LIMITED
+
+    def test_note_status_maps_to_execution_status(self):
+        """归因类别必须能翻译成执行层状态，否则配额状态机永远收不到信号。"""
+        from engine_dispatch import _NOTE_STATUS
+        from engine_failure import QUOTA_EXHAUSTED
+        assert _NOTE_STATUS[QUOTA_EXHAUSTED] == "quota-exhausted"
+
+    def test_classify_outcome_keywords_cover_balance_wording(self):
+        from engine_dispatch import classify_engine_outcome
+        out = classify_engine_outcome(
+            "octen", [{"error": "403 Insufficient balance in account", "source": "octen"}],
+            300)
+        assert out["status"] == "quota-exhausted"
+

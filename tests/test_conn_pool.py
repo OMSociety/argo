@@ -13,6 +13,7 @@
 
 import http.client
 import os
+import socket
 import sys
 import threading
 import time
@@ -201,6 +202,18 @@ class _CountingHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def do_POST(self):
+        type(self).requests += 1
+        # 读干请求体，否则 keep-alive 上残留字节会污染下一次请求
+        length = int(self.headers.get("Content-Length") or 0)
+        self.rfile.read(length)
+        body = b"posted-argo"
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
 
 class TestEndToEndKeepAlive(unittest.TestCase):
     """端到端：HttpClient 对同一主机两次 GET 只建一条 TCP 连接。"""
@@ -252,6 +265,87 @@ class TestEndToEndKeepAlive(unittest.TestCase):
         self.assertTrue(st["enabled"])
         self.assertGreaterEqual(st["idle"], 1, "请求结束后连接应还池")
         self.assertIn(("http", "127.0.0.1", self.port, ""), st["live"])
+
+    def test_second_post_reuses_connection(self):
+        """POST 必须走池（2026-10-18）：此前每次直连再 close，anysearch 是
+        POST 引擎，长驻 MCP 进程每次查询都要重付代理后的 TLS（实测 322ms）。
+        """
+        from http_client import HttpClient
+        url = f"http://127.0.0.1:{self.port}/z"
+        client = HttpClient(timeout=5.0, max_retries=0, jitter=False)
+        with patch.dict(os.environ, {"ARGO_ALLOW_PRIVATE_URLS": "1"}):
+            r1 = client.post(url, body={"a": 1})
+            r2 = client.post(url, body={"a": 2})
+
+        self.assertEqual(r1["status"], 200)
+        self.assertEqual(r2["status"], 200)
+        self.assertEqual(r1["text"], "posted-argo")
+        self.assertEqual(r2["text"], "posted-argo",
+                         "复用连接串了响应体——读干/归还契约被破坏")
+        self.assertEqual(_CountingHandler.requests, 2)
+        self.assertLessEqual(_CountingHandler.connections, 1,
+                             "第二次 POST 没有复用连接（又建了一条 TCP）")
+
+
+class _FlakyHandler(_CountingHandler):
+    """第一条连接上的第二个请求模拟服务端 keep-alive 空闲关闭（不回包直接断）。"""
+
+    def setup(self):
+        super().setup()
+        self.conn_id = type(self).connections
+        self.n = 0
+
+    def do_POST(self):
+        self.n += 1
+        if self.conn_id == 1 and self.n == 2:
+            type(self).requests += 1
+            length = int(self.headers.get("Content-Length") or 0)
+            self.rfile.read(length)
+            self.close_connection = True
+            try:
+                self.connection.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            self.connection.close()
+            return
+        super().do_POST()
+
+
+class TestPostRetryOnStaleConnection(unittest.TestCase):
+    """复用连接被对端关掉时，POST 应丢弃换新并重试一次（不占调用方重试预算）。"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.server = HTTPServer(("127.0.0.1", 0), _FlakyHandler)
+        cls.port = cls.server.server_address[1]
+        cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
+        cls.thread.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+        cls.server.server_close()
+
+    def setUp(self):
+        conn_pool.clear()
+        _FlakyHandler.connections = 0
+        _FlakyHandler.requests = 0
+        self.addCleanup(conn_pool.clear)
+
+    def test_stale_reused_post_retried_once(self):
+        from http_client import HttpClient
+        url = f"http://127.0.0.1:{self.port}/r"
+        client = HttpClient(timeout=5.0, max_retries=0, jitter=False)
+        with patch.dict(os.environ, {"ARGO_ALLOW_PRIVATE_URLS": "1"}):
+            r1 = client.post(url, body={"a": 1})
+            r2 = client.post(url, body={"a": 2})
+
+        self.assertEqual(r1["status"], 200)
+        self.assertEqual(r2["status"], 200, "陈旧复用连接未被换新重试")
+        self.assertEqual(r2["text"], "posted-argo")
+        self.assertEqual(_FlakyHandler.requests, 3, "客户端应重发一次（2 次业务 + 1 次失败尝试）")
+        self.assertEqual(_FlakyHandler.connections, 2,
+                         "重试应新建连接，而不是把死连接再借一次")
 
 
 if __name__ == "__main__":

@@ -26,20 +26,18 @@ triggers:
 
 # Argo — 统一搜索与证据核验
 
-> 不止「帮你搜到」，还要「帮你核到」：高后果问题标 `fetch_required`、结果标
-> `fetch_suggested`，`--verify` 核验正文并回填证据分。收录 266 个源、229 个免密钥开箱可用；另有默认关的 digup（本机文件搜索）引擎，以及默认开、需自备 DEEPSEEK_API_KEY 的 deepseek_search（按次计费，无 key 时路由自动跳过）。
+> 不止搜到，还要核到：高后果问题标 `fetch_required`、结果标 `fetch_suggested`，`--verify` 核验正文并回填证据分。收录 266 个源、229 个免密钥可用；digup 默认关；deepseek_search 默认开、需 DEEPSEEK_API_KEY（按次计费，无 key 自动跳过）。
 
 ## 快速上手
 
 ```bash
-argo search "查询词"                     # 自动路由搜索（常驻快路径自动启用）
+argo search "查询词"                     # 自动路由搜索（daemon 需显式启动）
 argo search "查询词" --json --fields agent  # Agent 消费档
 argo search "查询词" --verify 3           # 核验 top-3 并回填证据分
 python3 scripts/research.py "复杂问题" --json  # 取证包（扩词或多工作包 → dossier）
 ```
 
-默认不附归档用的 candidates/sources；`--fields agent` 剥遥测只留答案（~4.3 KB），
-要来源追溯或归档才加 `--envelope`（`--archive` 自动带上）。
+默认不附 candidates/sources；`--fields agent` 只留答案（~4.3 KB），要追溯或归档才加 `--envelope`（`--archive` 自动带）。
 
 深度研究只此一条，产出**取证包（dossier）**（来源/覆盖/缺口/达标，不是判断稿）：先读 `references/research-protocol.md` 写工作包再取证，判断按事实/推断/建议写。不要另装「专业深度研究」skill。
 
@@ -60,7 +58,7 @@ python3 scripts/research.py "复杂问题" --json  # 取证包（扩词或多工
 | `--verify [N]` | 对 top-N 未核验结果 fetch 正文，回填证据分（URL→证据分缓存，同 URL 二次搜索自动复用） |
 | `--domain` `--sub_domain` | 垂直域 / 子域限定 |
 
-**按场景选引擎**：时事新闻/实体人物/带时间窗的查询 → `--engine deepseek_search`（默认开、按次计费；结果带 authority 权威分级与发布时间，`--since/--until` 只对它真过滤——另两家无日期字段；多语言与 anysearch 持平，exa 韩语查询会空手）；学术 → `--academic-deep` 或 exa；社交 UGC → anysearch。
+**按场景选引擎**：时事/时间窗 → deepseek_search，学术 → `--academic-deep`/exa，社交 → anysearch。口径与取舍见 `references/usage.md`。
 
 ### 图片检索
 
@@ -104,13 +102,13 @@ argo watch add|check|list|remove   # 观察模式（--json 供 cron）
 4. **社交帖**：叙事/舆情，不进事实真值
 5. **深度研究**：先读 `references/research-protocol.md`；有决策含义就交工作包，不要靠扩词充问题树；`quality_gate_results.passed=false` 必须降级表述
 6. **引用**：讲给用户的事实带 URL 出处，日常档也要带（URL 在 `results[].url`，零成本）
-7. **上下文纪律**：Agent 搜索用 `--json --fields agent`、按需 `-n`；要来源追溯或归档才加 `--envelope`；查引擎状态用 `--list-engines --detail --engine <名>`（单引擎 ~0.9 KB）。踩坑记录见下方 Gotchas
+7. **上下文纪律**：Agent 用 `--json --fields agent`、按需 `-n`；追溯/归档才加 `--envelope`；引擎状态用 `--list-engines --detail --engine <名>`（~0.9 KB）。踩坑见 Gotchas
 
 ## Gotchas
 
-踩到新坑加一行，口径见 `references/usage.md`。
+踩坑加一行，口径见 `references/usage.md`。
 
-- **`--envelope` 与 `--fields agent` 别同给**：后者会把 envelope 的增量剥成 0 字节——以为拿到了 provenance、实际没有。要 provenance 就去掉 `--fields agent`。
+- **`--envelope` 与 `--fields agent` 别同给**：后者把 envelope 增量剥成 0 字节；要 provenance 就去掉 `--fields agent`。
 - **结果异常少**：看 `funnel` 六格阶段计数，哪格归零即塌陷点。
 - **慢查询**：看 `timing.dispatch` 的 `useful_ms`/`wasted_ms`，区分「等答案」与「白等」。
 - **`--list-engines` 别直接 `--all`**：全量 ~54 KB 灌爆版面，默认摘要够用。

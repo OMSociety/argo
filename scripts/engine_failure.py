@@ -5,10 +5,15 @@
 不回答「为什么坏」。用户看到 `--list-engines --detail` 里某引擎 blocked 或
 连续失败，只能自己猜是没登录、没装工具、还是站点改版。
 
-本模块把最后一次失败归类为六类，并给出对应动作：
+本模块把最后一次失败归类为七类，并给出对应动作：
 
   dependency  后端命令/工具不存在或不可执行（如 xhs / tw / rdt 未安装）
               → 动作：按 requires.fix 安装
+  quota_exhausted 余额/套餐/免费额度已耗尽（402/403 + 「余额不足」「insufficient
+              balance」）——充值或到下一计费周期前重试都不会成功
+              → 动作：充值或等周期边界自愈；期间路由自动跳过该引擎
+              与 rate_limited 的区别：后者是「慢点来」，冷却几十秒后值得再试；
+              前者重试只烧时间，必须驱动停用而不是短冷却。
   auth        认证/授权失效（401/403、login required、cookie 过期）
               → 动作：重新登录（如 `xhs login`），并注意结果应进登录态分区
   rate_limited 限流（429/Retry-After）——源端在说「慢点来」，引擎本身是好的
@@ -44,6 +49,7 @@ from typing import Any
 DEPENDENCY = "dependency"
 AUTH = "auth"
 RATE_LIMITED = "rate_limited"
+QUOTA_EXHAUSTED = "quota_exhausted"
 BLOCKED = "blocked"
 UPSTREAM = "upstream"
 NETWORK = "network"
@@ -54,6 +60,8 @@ _ACTIONS = {
     DEPENDENCY: "按 requires.fix 安装缺失的后端命令，确保其在 PATH 上",
     AUTH: "重新登录/刷新凭证；登录态结果应标记 cache_eligible=false 进独立分区",
     RATE_LIMITED: "源端限流，等待后重试（尊重 Retry-After）；不降权、不改代码",
+    QUOTA_EXHAUSTED: "配额/余额已耗尽：充值或等下一计费周期自动恢复；"
+                     "期间自动跳过该引擎（quota.py reset 可提前恢复）",
     BLOCKED: "请求在到达内容前被拦截（反爬/TLS 指纹）。升级请求形态"
              "（完整浏览器请求头 / TLS 指纹 / 浏览器态通道），重登录与重试均无效",
     UPSTREAM: "上游接口或页面结构可能已改版，需更新该引擎的解析实现",
@@ -88,6 +96,22 @@ _RATE_LIMITED_PATTERNS = (
     r"quota.*(exceed|exhausted| depleted)", r"请求过于频繁", r"限流", r"访问频率",
     r"not enough money", r"package quota", r"insufficient (funds|balance|credit|quota)",
     r"(余额|额度|配额).{0,4}(不足|不够|耗尽)", r"(套餐|package).{0,12}(到期|用尽|不足|quota)",
+)
+
+# 硬配额耗尽信号（余额/套餐/免费额度）。与限流分开判定：这类失败重试不会
+# 成功，必须让配额状态机停用到下一周期，而不是冷却几十秒后再撞一次。
+# 只收「账户/套餐层面已没有额度」的表述；泛化的 quota exceeded 仍按限流处理
+# （它常与 429 同现，且可能几小时后恢复）。
+_QUOTA_EXHAUSTED_PATTERNS = (
+    r"insufficient (funds|balance|credit|quota)",
+    r"not enough (money|credit|balance)",
+    r"(do not|don't|does not) have enough (money|credit|balance)",
+    r"package quota",
+    r"out of credits",
+    r"no (remaining|available) quota",
+    r"quota.{0,20}(exhausted|depleted|used up)",
+    r"(余额|额度|配额).{0,4}(不足|不够|耗尽)",
+    r"(套餐|package).{0,12}(到期|用尽|不足)",
 )
 
 # 上游改版类信号
@@ -145,10 +169,10 @@ def classify(*,
          （调用方在拿到 HTML 时已做页面级检测，这是强证据，先于状态码——
           拦截页也常披着 200/403 的皮）
       4. 异常类型（FileNotFoundError 等）→ dependency
-      5. HTTP 状态码（429 → rate_limited；403 带封锁特征 → blocked，
-         纯 403 → auth；404/410/5xx → upstream）
-      6. 文本模式匹配（依次 auth → blocked → rate_limited → dependency
-         → upstream → network）
+      5. HTTP 状态码（429 → rate_limited；402/403 带额度不足文案 → quota_exhausted；
+         403 带封锁特征 → blocked，纯 403 → auth；404/410/5xx → upstream）
+      6. 文本模式匹配（依次 auth → blocked → quota_exhausted → rate_limited →
+         dependency → upstream → network）
       7. 保底 unknown
 
     返回 {category, reason, evidence, action, confidence}
@@ -235,7 +259,20 @@ def classify(*,
         # 额度/套餐文案优先于鉴权仲裁：403 里写着「套餐额度不足」时，
         # 让人「重新登录」是错误方向（登录改不了套餐）。search.py 的
         # _QUOTA_ERROR_KEYWORDS 早就把 quota 排在 auth 之前，这里保持一致。
+        #
+        # 硬配额耗尽与限流再分一层（2026-10-18）：octen 的
+        # `403 Insufficient balance in account` 此前落进 rate_limited，
+        # 只换来 60s 冷却、永不自动停用，后备链第二顺位长期是个死引擎。
+        # 这不是「慢点来」，重试不会成功——必须交给配额状态机停用。
         if status_code in (401, 402, 403) and blob_probe:
+            if _matches(_QUOTA_EXHAUSTED_PATTERNS, blob_probe):
+                return {
+                    "category": QUOTA_EXHAUSTED,
+                    "reason": f"http-{status_code}+quota-exhausted",
+                    "evidence": blob_probe[:200],
+                    "action": _ACTIONS[QUOTA_EXHAUSTED],
+                    "confidence": "high",
+                }
             hit = _matches(_RATE_LIMITED_PATTERNS, blob_probe)
             if hit:
                 return {
@@ -289,6 +326,9 @@ def classify(*,
         for patterns, category in (
             (_AUTH_PATTERNS, AUTH),
             (_BLOCKED_PATTERNS, BLOCKED),
+            # 配额耗尽先于限流：文本里同时出现「quota exhausted」与
+            # 「rate limit」时，前者是更具体、更可行动的结论
+            (_QUOTA_EXHAUSTED_PATTERNS, QUOTA_EXHAUSTED),
             (_RATE_LIMITED_PATTERNS, RATE_LIMITED),
             (_DEPENDENCY_PATTERNS, DEPENDENCY),
             (_UPSTREAM_PATTERNS, UPSTREAM),

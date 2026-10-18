@@ -48,10 +48,12 @@ argo daemon status    # 运行状态
 argo daemon stop      # 停止并清场（等在途请求收尾，上限 20s）
 ```
 
-- 快路径自动生效：daemon 在位时 `argo search ...` 直达常驻进程；**不在位时
-  首次调用会自动后台拉起**（60s 节流；本次仍走冷路径，下一笔起加速）。任何
-  失败——不在位、连不上、正忙、源码已变更——都静默回退常态执行，CLI 行为不变。
-  `ARGO_NO_DAEMON=1` 显式关闭（同时关闭自启）。
+- 快路径生效：daemon 在位时 `argo search ...` 直达常驻进程。**默认不自启**
+  （2026-10-18 起改为显式 opt-in）：用 `argo daemon start` 或 `ARGO_DAEMON=1`
+  拉起。实测净收益中位 33ms/笔（缓存命中 41 vs 75ms），1–3s 的网络查询下无感，
+  故不再默认养 20–27MB 常驻进程。任何失败——不在位、连不上、正忙、源码已
+  变更——都静默回退常态执行，CLI 行为不变。`ARGO_NO_DAEMON=1` 强制关闭，
+  优先级高于 `ARGO_DAEMON`。
 - 第一笔请求多付 ~100ms（daemon 内首次 import search 全家），此后全热路径。
 - daemon 空闲 1800s 自杀退出（`start --idle-exit N` 调整，0=常驻）；
   SIGTERM 同样清场。
@@ -88,7 +90,7 @@ python3 scripts/search.py "查询词" \
 
 **时间窗**：`--since`/`--until` 支持相对值（`7d`）或绝对日期（`2026-08-01`，含当天）；下推到支持时间窗的引擎，任意引擎组合融合后按 `published_at` 保底过滤（`time_filtered: N`）；`--sort newest` 找最新动态、`oldest` 找最早出处。`wayback_cdx` 输出标准 `published_at`（CDX 最早快照）。
 
-按场景选引擎的口径（时事/实体/时间窗 → `deepseek_search`，学术 → `--academic-deep` 或 exa，社交 → anysearch）以 SKILL.md 的「按场景选引擎」行为唯一真源，本页不复制第二份。
+**按场景选引擎**（唯一真源，SKILL.md 只留指针）：时事新闻/实体人物/带时间窗的查询 → `--engine deepseek_search`（默认开、按次计费；结果带 authority 权威分级与发布时间，`--since/--until` 只对它真过滤——另两家无日期字段；多语言与 anysearch 持平，exa 韩语查询会空手）；学术 → `--academic-deep` 或 exa；社交 UGC → anysearch。
 
 **Python 解释器**：脚本最低支持 3.9（与 `bin/argo` 的 `MIN_PYTHON` 一致）。`bin/argo` 自动探测 `ARGO_PYTHON` → python3.14/3.13/3.12/3.11/3.10 → 保底。强制：`ARGO_PYTHON=/opt/homebrew/bin/python3.14 argo ...`。
 
@@ -511,10 +513,10 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 
 ## 功能开关总表（`ARGO_*`，唯一事实=源码扫描）
 
-> 93 个开关按六类 MECE。原则：调试/运行配置不进模型上下文（MCP schema 不暴露）；
+> 105 个开关按六类 MECE。原则：调试/运行配置不进模型上下文（MCP schema 不暴露）；
 > 本表由门禁与源码双向锁定——文档里的开关必须代码实存，代码新增开关必须入表。
 
-### 能力开关（36）
+### 能力开关（37）
 
 | 变量 | 作用 | 默认/备注 |
 |------|------|----------|
@@ -542,6 +544,7 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 | `ARGO_MULTI_QUERY` | ('multi-query 变体召回（普适性增强）', '默认开；=0 一键回滚/A-B') | 见 variant_recall.py docstring |
 | `ARGO_NO_AUTORELOAD` | no autoreload | 见 references/operations.md 与模块 docstring |
 | `ARGO_NO_CACHE` | ('跳过结果缓存读', '默认关；等价 --no-cache') | 见 references/operations.md 与模块 docstring |
+| `ARGO_NO_PREWARM` | ('MCP warm 线程里的 anysearch 预连接', '默认开；非空且非 0 时跳过') | 预连接把 TLS 握手藏进 initialize 到首次 tools/call 的空档；对拍/排障时置 1 |
 | `ARGO_PROXY` | proxy | 见 references/operations.md 与模块 docstring |
 | `ARGO_PYTHON` | python | 见 references/operations.md 与模块 docstring |
 | `ARGO_REDSKILL_CACHE` | redskill cache | 见 references/operations.md 与模块 docstring |
@@ -580,7 +583,7 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 | `ARGO_YDC_API_KEY` | 对应引擎/服务的凭据（you.com） | 缺密钥=该源跳过或降级 |
 | `ARGO_ZHIHU_ACCESS_SECRET` | 对应引擎/服务的凭据 | 缺密钥=该源跳过或降级 |
 
-### 行为调参（21）
+### 行为调参（22）
 
 | 变量 | 作用 | 默认/备注 |
 |------|------|----------|
@@ -588,6 +591,7 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 | `ARGO_GENERAL_FALLBACK_LEGACY` | 通用兜底链退回旧顺序（anysearch → local_bing，不含 octen） | 默认关；=1 开启。2026-10-17 交错 A/B：octen 第二顺位在 anysearch 抖动窗口把 p90 3273→1614ms、max 6266→1928ms、错误 9→0，健康窗口中位无差 |
 | `ARGO_ADAPTIVE_TAIL` | 尾宽按 backup 引擎历史 P75 分层（快源等满/慢源早收工） | 默认关；=1 开启（2026-10-16 三轮交错 A/B 未证实收益，对拍记录在本机 docs-local/调度对拍_尾宽分层与并发_2026-10-16.md，属本地归档不随发布件分发） |
 | `ARGO_ADMISSION_TTL_S` | 行为阈值/预算调参 | 默认经实测校准，勿轻动 |
+| `ARGO_DAEMON` | 允许 search 在 daemon 不在位时自动后台拉起（显式 opt-in） | 默认关；=1 开启。`argo daemon start` 手动启动的实例不受此开关影响；`ARGO_NO_DAEMON=1` 优先 |
 | `ARGO_DAEMON_TIMEOUT` | daemon 快路径客户端等待上限（秒） | 默认 120；deep 长查询可调大 |
 | `ARGO_FETCH_DEADLINE_S` | 行为阈值/预算调参 | 默认经实测校准，勿轻动 |
 | `ARGO_DEDUP_FUZZY` | ('minhash 去重的 rapidfuzz 模糊近重复复核（近似命中带内启用）', '默认开；=0 关；未装 rapidfuzz 时自动回退纯 minhash') | 见 rank_signals.py docstring |

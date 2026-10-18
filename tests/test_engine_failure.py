@@ -144,11 +144,15 @@ class TestFailureClassification:
         实测来源：博查 AI Search 端点对本机 key 返回
         403 {"message":"You do not have enough money or package quota"}，
         结构化模态卡因此长期静默降级成普通网页结果。
+
+        2026-10-18 起这批文案归 quota_exhausted 而不是 rate_limited：
+        充值或到周期边界前重试都不会成功，必须由配额状态机停用，
+        而不是冷却 60s 后再撞（octen 后备链死引擎事故）。
         """
         for body in ('{"message":"You do not have enough money or package quota"}',
                      "insufficient quota", "套餐额度不足"):
             r = ef.classify(status_code=403, output=body)
-            assert r["category"] == ef.RATE_LIMITED, (body, r["category"])
+            assert r["category"] == ef.QUOTA_EXHAUSTED, (body, r["category"])
         # 反例：纯 403 / 反爬页特征仍按原语义
         assert ef.classify(status_code=403)["category"] == ef.AUTH
         assert ef.classify(status_code=403,

@@ -42,7 +42,10 @@ def _query_summary(n: int) -> dict:
             engines[e] += 1
     return {
         "samples": len(rows),
-        "hit_rate": round(sum(1 for c in counts if c) / len(rows), 3),
+        # 2026-10-18 改名：原字段叫 hit_rate，实际算的是「有结果的查询比例」
+        # （count>0），与 SearchCache.stats 的缓存命中率同名不同义——实测被
+        # 读成「缓存全命中」（=1.0）。保留语义，换掉会误导的名字。
+        "result_rate": round(sum(1 for c in counts if c) / len(rows), 3),
         "avg_elapsed_ms": round(sum(lat) / len(lat)) if lat else None,
         "recovered": sum(1 for r in rows if r.get("recovered")),
         "top_engines": engines.most_common(5),
