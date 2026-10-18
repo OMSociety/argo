@@ -35,7 +35,7 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "搜索查询词"},
-                "engine": {"type": "string", "description": "指定搜索引擎（auto 自动选择；可选 octen/anysearch/exa/zhihu/eastmoney/arxiv/byted/bocha/tavily/github/wikipedia/semantic_scholar/local_search 等）", "default": "auto"},
+                "engine": {"type": "string", "description": "指定搜索引擎（auto 自动选择；可选 octen/anysearch/exa/zhihu/eastmoney/arxiv/byted/bocha/tavily/deepseek_search/github/wikipedia/semantic_scholar/local_search 等；deepseek_search 为按次计费的官方 DeepSeek 搜索，结果带权威分级与发布时间，新闻时事类查询优先考虑）", "default": "auto"},
                 "max_results": {"type": "integer", "description": "返回结果条数", "default": 5, "minimum": 1, "maximum": 20},
                 "depth": {"type": "string", "enum": ["fast", "balanced", "deep"], "description": "搜索深度：fast 快、deep 全（慢）", "default": "fast"},
                 "mode": {"type": "string", "enum": ["fast", "auto", "deep", "budget"], "description": "预算模式：fast=免费优先, auto=成本感知, deep=质量优先, budget=配额控制", "default": "auto"},

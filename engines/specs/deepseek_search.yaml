@@ -1,4 +1,4 @@
-# DeepSeek Search 引擎（官方 API）——默认关闭，按需启用
+# DeepSeek Search 引擎（官方 API）——默认开启（需 DEEPSEEK_API_KEY，无 key 时自动停用）
 #
 # 它是什么：DeepSeek 官方网页搜索（POST api.deepseek.com/v1/tools/search），
 # 按次计费 5 元/千次**成功**请求，账号级 QPS 5。返回结果自带四样 Argo 既有
@@ -19,21 +19,22 @@
 # -"短语"/"短语"/lang:zh,en/after:/before: 操作符）——查询级操作符契约层
 # 见 scripts/query_operators.py（2026-10-17 同期落地）。
 #
-# 开启步骤：
+# 启用前提：
 #   1. export DEEPSEEK_API_KEY=<key>（DeepSeek 开放平台申请；只进 env，
-#      与 {ENV} 占位纪律一致，不写进任何仓库文件）
-#   2. 本文件 enabled 改 true
-#   3. 健康门：python3 scripts/engine_validate.py --engine deepseek_search --stage all --admit
-#   4. 显式调用：argo search "查询" --engine deepseek_search
-# 不进任何域 combo：默认关 + 按次计费的引擎由用户显式指定（或自行加槽），
-# 不参与自动路由，避免日常查询误烧额度。
+#      与 {ENV} 占位纪律一致，不写进任何仓库文件）——无 key 时引擎不可用，
+#      路由自动跳过，不影响其他源
+#   2. 健康门：python3 scripts/engine_validate.py --engine deepseek_search --stage all --admit
+#   3. 显式调用：argo search "查询" --engine deepseek_search
+# 路由形态：不进任何域 combo；auto/deep 档位下仅可能经 TF-IDF 强匹配注入
+# （罕见，如查询本身就是 deepseek 主题），显式 --engine deepseek_search
+# 是主路径；fast/budget 模式按成本纪律自动排除付费源。计费口径见文件头
+# （5 元/千次成功请求，失败/空结果不计费）。
 #
 # 配套 Fetch 接口（api.deepseek.com/v1/tools/fetch，返回 Markdown 正文）
 # 留作抓取链备选，本 spec 只接 search。
 engine_id: deepseek_search
 type: http
-enabled: false         # ← 默认关；开启步骤见文件头
-disabled_reason: 按需启用的付费 API 引擎——需 DEEPSEEK_API_KEY 且按次计费（5 元/千次成功请求）；开启后以 --engine deepseek_search 显式调用，不参与自动路由
+enabled: true          # 默认开；无 DEEPSEEK_API_KEY 时不可用，路由自动跳过
 cost_tier: paid
 method: POST
 url: https://api.deepseek.com/v1/tools/search
