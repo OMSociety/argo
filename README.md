@@ -29,7 +29,7 @@
   <img alt="mcp" src="https://img.shields.io/badge/MCP-19%20tools-purple">
 </p>
 
-> **这是踏雪寻仙 DeepSeek Harness 插件系列的一员**（[dsh-files](https://github.com/taxueseek/dsh-files) 39★）。同作者完整技能系列：[session-digger](https://github.com/taxueseek/session-digger) 29★ · [taxue-invest](https://github.com/taxueseek/taxue-invest) 21★ · [taxueskills](https://github.com/taxueseek/taxueskills) 23★ · [taxue-creative-style](https://github.com/taxueseek/taxue-creative-style) 12★
+> **这是踏雪寻仙 DeepSeek Harness 插件系列的一员**（[dsh-files](https://github.com/taxueseek/dsh-files) 39★ · [dsh-models](https://github.com/taxueseek/dsh-models) 模型选择 + 子代理路由 + 推理层级）。同作者完整技能系列：[session-digger](https://github.com/taxueseek/session-digger) 29★ · [taxue-invest](https://github.com/taxueseek/taxue-invest) 21★ · [taxueskills](https://github.com/taxueseek/taxueskills) 23★ · [taxue-creative-style](https://github.com/taxueseek/taxue-creative-style) 12★
 
 ## 它和「模型自带搜索 / AI 搜索 / 聚合搜索」比，强在哪
 
@@ -47,6 +47,176 @@
 | 重复查询 | 每次都打网 | 每次都打网 | 靠页面缓存 | **双层缓存（内存 + SQLite），热查询约 10ms** |
 | 成本控制 | 不可控 | 单次贵 | 免费但费事 | **预算模式，免费优先，Key 全可选** |
 | 多语言 | 随模型走 | 随模型走 | 随引擎走 | **语言检测 + 引擎语言参数 + 多国语言支持** |
+
+## 性能 Benchmark
+
+| 指标 | 模型自带搜索 | AI 搜索（总结型） | 聚合搜索 / 搜索引擎 | **Argo** |
+|------|------------|-------------------|---------------------|----------|
+| 热查询延迟 | ~2000ms | ~1500ms | ~800ms | **~10ms** |
+| 结果形态 | 拼好的长文本 | 给人看的总结页 | SERP 链接清单 | **精简 JSON：证据候选 + 可信度分解** |
+| 证据可信度 | 无评分 | 无结构化评分 | 无评分 | **selection · absorption · freshness · 共识** |
+| 缓存 | 无 | 页面缓存 | 页面缓存 | **双层缓存（内存 + SQLite）** |
+| 成本控制 | 不可控 | 单次贵 | 免费但费事 | **预算模式，免费优先，Key 全可选** |
+| 多语言 | 随模型走 | 随模型走 | 随引擎走 | **语言检测 + 引擎语言参数 + 多国语言支持** |
+
+## 架构
+
+### 主流程
+
+```mermaid
+graph LR
+    A[用户查询] --> B[语言检测]
+    B --> C[引擎分诊]
+    C --> D[并行搜索]
+    D --> E[结果聚合]
+    E --> F[可信度评分]
+    F --> G[JSON 输出]
+    
+    H[双层缓存] -.-> D
+    I[预算控制] -.-> C
+```
+
+### 引擎分诊流程
+
+```mermaid
+graph TD
+    A[用户查询] --> B{语言检测}
+    B -->|中文| C[中文引擎组]
+    B -->|英文| D[英文引擎组]
+    B -->|日韩| E[日韩引擎组]
+    B -->|其他| F[通用引擎组]
+    
+    C --> G{领域判断}
+    D --> G
+    E --> G
+    F --> G
+    
+    G -->|学术| H[学术引擎]
+    G -->|代码| I[代码引擎]
+    G -->|购物| J[购物引擎]
+    G -->|金融| K[金融引擎]
+    G -->|新闻| L[新闻引擎]
+    G -->|通用| M[网页引擎]
+    
+    H --> N[并行搜索]
+    I --> N
+    J --> N
+    K --> N
+    L --> N
+    M --> N
+```
+
+### 缓存机制
+
+```mermaid
+graph LR
+    A[查询请求] --> B{内存缓存}
+    B -->|命中| C[直接返回]
+    B -->|未命中| D{SQLite 缓存}
+    D -->|命中| E[返回并更新内存]
+    D -->|未命中| F[执行搜索]
+    F --> G[结果写入 SQLite]
+    G --> H[结果写入内存]
+    H --> I[返回结果]
+```
+
+### 可信度评分流程
+
+```mermaid
+graph TD
+    A[搜索结果] --> B[Selection 评分]
+    A --> C[Absorption 评分]
+    A --> D[Freshness 评分]
+    A --> E[共识评分]
+    
+    B --> F[综合可信度]
+    C --> F
+    D --> F
+    E --> F
+    
+    F --> G{阈值判断}
+    G -->|高于阈值| H[保留]
+    G -->|低于阈值| I[丢弃]
+    
+    H --> J[JSON 输出]
+```
+
+### 预算控制流程
+
+```mermaid
+graph LR
+    A[搜索请求] --> B{预算检查}
+    B -->|预算充足| C[免费引擎优先]
+    B -->|预算紧张| D[仅免费引擎]
+    B -->|预算耗尽| E[返回缓存]
+    
+    C --> F{免费引擎有结果?}
+    D --> F
+    
+    F -->|有| G[返回结果]
+    F -->|无| H{有 Key?}
+    
+    H -->|有| I[付费引擎搜索]
+    H -->|无| J[返回空结果]
+    
+    I --> G
+```
+
+### 整体架构
+
+```mermaid
+graph TB
+    subgraph 用户层
+        A[Agent / 用户]
+    end
+    
+    subgraph 接入层
+        B[CLI]
+        C[MCP Server]
+        D[Python SDK]
+    end
+    
+    subgraph 核心层
+        E[语言检测]
+        F[引擎分诊]
+        G[并行搜索]
+        H[结果聚合]
+        I[可信度评分]
+    end
+    
+    subgraph 数据层
+        J[内存缓存]
+        K[SQLite 缓存]
+        L[265+ 搜索引擎]
+    end
+    
+    subgraph 控制层
+        M[预算控制]
+        N[多语言支持]
+    end
+    
+    A --> B
+    A --> C
+    A --> D
+    
+    B --> E
+    C --> E
+    D --> E
+    
+    E --> F
+    F --> G
+    G --> H
+    H --> I
+    
+    J -.-> G
+    K -.-> G
+    L --> G
+    
+    M -.-> F
+    N -.-> E
+    
+    I --> A
+```
 
 > 机制上，Argo 把搜索当成一条**证据管线**：语言检测 → 领域路由 → 多引擎召回 → RRF 融合 → 证据快评，交付的是 Agent 可直接排序、可 `fetch` 复核、不撑爆上下文的材料。工具链不用换，需要换的是「搜索结果应该长什么样」——再往下一层，还有和「再包一层搜索 API 的差别」，那是实现细节的对比。
 
