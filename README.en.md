@@ -22,9 +22,9 @@
 </p>
 
 <p align="center">
-  <img alt="license" src="https://img.shields.io/badge/license-MIT-blue">
+  <img alt="license" src="https://img.shields.io/badge/license-Apache_2.0-blue">
   <img alt="python" src="https://img.shields.io/badge/python-3.9+-green">
-  <img alt="version" src="https://img.shields.io/badge/version-2.9.6-informational">
+  <img alt="version" src="https://img.shields.io/badge/version-2.9.7-informational">
   <img alt="engines" src="https://img.shields.io/badge/engines-266-orange">
   <img alt="mcp" src="https://img.shields.io/badge/MCP-19%20tools-purple">
 </p>
@@ -69,6 +69,8 @@
 **Argo is multilingual search infrastructure for AI agents.**
 
 Real-world retrieval is never “one language + one search box”: someone asks for A-share quotes, someone else asks about the World Cup, someone searches anime in Japanese, someone wants a film director from IMDb. Argo’s premise is simple—**route by domain, language, and intent** to the right sources, instead of always scraping generic web titles. Web search and local file search work together.
+
+> Current phase (since v2.9.7): the project has shifted from point performance tuning to architecture work — contract closure, unified state contracts, gates and evidence chains — with incremental releases on top: every version is recomputable and revertible.
 
 > Output is not a “list of links”, but **evidence candidates + credibility breakdown**. Good routing is what makes evidence stand up.
 
@@ -153,7 +155,7 @@ Results include `selection`, `absorption`, `credibility_fast`, `evidence_flags`,
 
 ## Quick start
 
-Pick any path. **GitHub is the only install source of truth** (`npx github:taxueseek/argo` or `install.sh`); current recommendation **v2.9.6**. **Do not `npm install argo-search`** — the npm registry copy is an **unofficial stale v1.0.1** (not this repo, incomplete, not updated). This package sets `private: true` so it is not published to npm by mistake.
+Pick any path. **GitHub is the only install source of truth** (`npx github:taxueseek/argo` or `install.sh`); current recommendation **v2.9.7**. **Do not `npm install argo-search`** — the npm registry copy is an **unofficial stale v1.0.1** (not this repo, incomplete, not updated). This package sets `private: true` so it is not published to npm by mistake.
 
 **Zero-config works**: without API keys, free engines + local `local_*` engines run; keyed engines are skipped when missing (and usually better when present).
 
@@ -515,6 +517,16 @@ argo/
 
 ## Recent updates
 
+### v2.9.7: Architecture consolidation — DSH web_fetch seam + explicit_only contract + unified state contracts (License: Apache-2.0)
+
+- **License change**: MIT → Apache License 2.0 (explicit patent grant, safer for commercial use); nothing else changes
+- **DSH plugin web_fetch seam**: the host's web_fetch used to bypass argo entirely as the default "read this URL" path; it now registers a fetch provider on the argo_fetch chain (HTTP first, auto-upgrade to an anti-detection browser on Cloudflare / JS-rendered pages); isomorphic dual-path execution with the search provider — resident MCP pool first, CLI single-shot only on transport failure, tool-level errors and timeouts are not retried (those mean the call already ran; retrying doubles engine calls and quota); failures classified into five kinds (timeout / blocked / empty / generic / cancelled) with actionable messages; new config `fetchProviderEnabled` / `fetchProviderId` / `fetchTimeoutMs` (25000) / `fetchMaxChars` (50000), all on by default with escape hatches; measured: cross-origin redirects (short links, protocol upgrades, redirect shells) and JS challenge pages flip from structural host failures to argo successes, static pages unchanged
+- **explicit_only contract closure**: `config._routable_filter` filtered env blacklists / keys / blocklists but not explicit_only, so 18 explicit-only engines (including the only paid `deepseek_search`) sat in the enabled candidate pool where six routing paths (TF-IDF injection, catch-all, backfill, fallback, etc.) could select them — it never fired only because the corpus had no matching entry; one entry would have auto-fired paid engines in auto mode; now filtered at the single producer, locked by `tests/test_explicit_only_gate.py`
+- **Unified state contracts**: circuit breaker memory short-circuit when healthy closed and zero-count (no file lock, no disk rewrite) with cross-process awareness via `(st_mtime_ns, st_size)`; adaptive accounting folds `MAX(created_at)` into one aggregate SQL plus a `batch()` context manager for single-transaction multi-engine commits; quota exhaustion records the credential fingerprint and auto-unlocks on key rotation; the route cache invalidates when a combo engine is exhausted or recovers; `is_engine_routable` becomes the single admission predicate behind backfill / tfidf / breaker_filter
+- **Dispatch and transport**: auto / deep also drop hard-exhausted engines (fail-open fallback); hedge wait window narrowed, Wave-1 early stop now accepts cross-engine cumulative sufficiency; POST connection pooling (saves ~320ms anysearch / ~561ms octen per request) + MCP pre-connect; weather domain gains `early_stop_min_results: 1`
+- **Sub-skill hot-path subtraction**: js-run replaces SIGALRM with MiniRacer's native timeout, fixing the `ValueError: signal only works in main thread` crash when called from crawl / research / mcp worker threads; local-seek rerank drops per-query O(N) disk reads; local-search reuses the registry (no double YAML parse); ego-search short-circuits probing under auto
+- **Validation**: 71 plugin unit tests; full suite 4264 passed / 28 skipped; pre-commit seven gates 123 passed; fetch-chain A/B shows no static-page regression and failures flipped to successes on redirects / JS challenges
+
 ### v2.9.6: DeepSeek Search engine + query operator contract + transport connection pooling + routing snapshot gate
 
 - New engine `deepseek_search` (official `api.deepseek.com/v1/tools/search`) on by default: auto-skipped without `DEEPSEEK_API_KEY`, other 265 sources unaffected; measured 445-510ms (anysearch 1.7-4.5s / exa 3.7s), the only one of the three with full authority tier / rerank_score / publish-time coverage, on par with anysearch for ja/ko/es; pay-per-use, excluded from domain combos, explicit `--engine deepseek_search` is the main path; DSH hosts share the same key with the official backend via the native credential seam (key rotation on the web Models page takes effect on the next hop, never persisted or logged)
@@ -625,6 +637,7 @@ argo/
 
 | Version | Notes |
 |---------|-------|
+| **v2.9.7** | **Architecture consolidation + DSH web_fetch seam + License to Apache-2.0**: MIT → Apache License 2.0; host web_fetch now flows through the argo_fetch chain (HTTP first, browser upgrade on JS challenges, dual-path execution, no retry on tool errors, five-class failures); 18 explicit-only engines removed from the routing candidate pool (closes the accidental paid-engine billing hole); breaker health short-circuit, adaptive single-transaction accounting, quota auto-unlock on key rotation, route cache exhaustion invalidation; auto/deep drop hard-exhausted engines + wider early stop + POST connection pooling; js-run fixes the non-main-thread crash. |
 | **v2.9.6** | **DeepSeek Search engine + query operator contract + transport connection pooling + routing snapshot gate**: new `deepseek_search` engine on by default (auto-skipped without key; 445-510ms, the only engine with full authority/rerank_score/publish-time coverage, time windows truly effective; DSH shares the key via the native credential seam); `site:`/`-site:`/`-term`/`lang:`/`after:`/`before:` converge into an operator contract layer with real post-filtering + cache-key join; POST connection pooling (saves 320-561ms per request) + MCP pre-connect; octen joins fallback and hedge slots (p90 3273→1614ms, `ARGO_GENERAL_FALLBACK_LEGACY=1` escape); fixes RRF rank decay and Bing redirect shell (40.2% empty results); new pre-commit gate and routing snapshot gate; DSH plugin adapts to 0.2.1-rc.2 dual-stack + alpha.1 unit coverage. |
 | **v2.9.5** | **FX-rate dedicated domain + two-layer dedup + ranking false-kill fix + per-checkout daemon isolation**: new `fx_query` domain (rate/parity queries: live rate + daily news in 675ms vs encyclopedia before); dedup gains site-suffix normalization (zero-dep) + rapidfuzz fuzzy check (optional, `ARGO_DEDUP_FUZZY`, fallback); fixes separator ×0.6 false-kill (official docs back on top); negation gains "not-X"; daemon names scoped per checkout. |
 | **v2.9.4** | **Explicit engine domain attribution + recovery chain circuit-breaker + gate sync**: `--engine X` supplements `match_domains` fixing cache TTL blanket-general; single-engine no-fallback skips L1 empty run; `config.yaml` domain rules enhanced (org_entity/fund_query unless terms); `mcp_launch.sh` env var export narrowed; local-search engine registry layer closure and quality improvement; gate sync. |
@@ -672,7 +685,7 @@ Before commit: no real API keys, absolute machine paths, or account cookies. Loc
 
 ## License
 
-MIT License © 2026 [taxueseek](https://github.com/taxueseek)
+Apache License 2.0 © 2026 [taxueseek](https://github.com/taxueseek)
 
 <p align="center">
   <a href="https://github.com/oil-oil/beautify-github-readme"><img src="assets/readme/made-with-beautify.svg" width="300" alt="README made with beautify-github-readme"></a>

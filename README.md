@@ -22,9 +22,9 @@
 </p>
 
 <p align="center">
-  <img alt="license" src="https://img.shields.io/badge/license-MIT-blue">
+  <img alt="license" src="https://img.shields.io/badge/license-Apache_2.0-blue">
   <img alt="python" src="https://img.shields.io/badge/python-3.9+-green">
-  <img alt="version" src="https://img.shields.io/badge/version-2.9.6-informational">
+  <img alt="version" src="https://img.shields.io/badge/version-2.9.7-informational">
   <img alt="engines" src="https://img.shields.io/badge/engines-266-orange">
   <img alt="mcp" src="https://img.shields.io/badge/MCP-19%20tools-purple">
 </p>
@@ -71,6 +71,8 @@ Agent 干活的量级变了，检索的玩法跟着变了四件事，每一件 A
 **Argo 是给 AI Agent 用的多语言搜索基础设施。**
 
 真实检索从来不是「一种语言 + 一个搜索框」：有人问 A 股行情，有人问 World Cup，有人用日文找动画，有人要 IMDb 上的导演信息。Argo 的出发点很朴素——**按领域、按语言、按需求选路**，把问题送到合适的源，而不是一律扫网页标题。联网搜索与本机文件搜索一体可用。
+
+> 当前阶段（v2.9.7 起）：项目重心已从单点性能优化转向架构优化——契约收口、状态态统一、门禁与证据链建设；在此基础上保持增量更新，每个版本可复算、可回滚。
 
 > 产出不是「链接清单」，而是「证据候选 + 可信度分解」。路选对了，证据才站得住。
 
@@ -155,7 +157,7 @@ freshness  ≈ 发布时间（会忽略「2015 年以来」这类历史对比年
 
 ## 快速开始
 
-任选一种即可。**以 GitHub 为唯一安装来源**（`npx github:taxueseek/argo` 或 `install.sh` / `install.ps1`），当前推荐 **v2.9.6**。**请勿用 `npm install argo-search`**——npm registry 上那份是**非官方陈旧版 v1.0.1**（非本仓库维护，功能残缺、不随本项目更新）。本包 `package.json` 已设 `private: true` 防止误发布到 npm registry。
+任选一种即可。**以 GitHub 为唯一安装来源**（`npx github:taxueseek/argo` 或 `install.sh` / `install.ps1`），当前推荐 **v2.9.7**。**请勿用 `npm install argo-search`**——npm registry 上那份是**非官方陈旧版 v1.0.1**（非本仓库维护，功能残缺、不随本项目更新）。本包 `package.json` 已设 `private: true` 防止误发布到 npm registry。
 
 **零配置就能跑**：不配 API Key 时走免费引擎 + 本地 `local_*` 引擎；配了 Key 的源质量通常更好，没配则自动跳过。
 
@@ -633,6 +635,16 @@ argo/
 
 ## 最近更新
 
+### v2.9.7：架构收口——DSH web_fetch 占位 + explicit_only 契约 + 状态态统一（License 转 Apache-2.0）
+
+- **License 变更**：MIT → Apache License 2.0（专利授权明示、商用更安心；其余不变）
+- **DSH 插件 web_fetch 占位**：宿主 web_fetch 此前作为「读这个 URL」的默认路径完全绕开 argo，现注册 fetch provider 走 argo_fetch 链（HTTP 优先，遇 Cloudflare / JS 渲染自动升级反检测浏览器）；与 search provider 同构的双路执行——常驻 MCP 池优先、传输层故障才回退 CLI 单发，工具级错误与超时不重发（那两类表示调用已跑完，重发只会双倍引擎调用与配额）；失败分五类（超时 / 被挡 / 空结果 / 通用 / 取消）各带可行动文案；新增配置 `fetchProviderEnabled` / `fetchProviderId` / `fetchTimeoutMs`（默认 25000）/ `fetchMaxChars`（默认 50000），默认全开、留逃生口；实测跨源跳转（短链、协议升级、跳转壳）与 JS 挑战页从宿主结构性失败变为 argo 成功，普通静态页质量不降
+- **explicit_only 契约收口**：`config._routable_filter` 此前只过滤黑白名单 / 密钥 / 拉黑，不过滤 explicit_only，18 个显式专用引擎（含唯一 `cost_tier=paid` 的 deepseek_search）躺在 enabled 候选池里，TF-IDF 注入、catch-all、backfill、兜底等六条路径全能选中——此前没爆只因语料没词条，补一条 auto 档就会并行调起付费引擎扣费；现在候选池唯一生产者处过滤，`tests/test_explicit_only_gate.py` 锁死三契约（注入不带入 / 候选池排除 / 显式 `--engine` 照常单发）
+- **状态态契约统一**：熔断器在健康 closed 态且计数为 0 时内存短路（零文件锁零重写磁盘），基于 `(st_mtime_ns, st_size)` 感知跨进程变更；adaptive 记账 `MAX(created_at)` 合入单条聚合 SQL，新增 `batch()` 上下文管理器把多引擎记账并为单次事务；配额耗尽记录生效凭证指纹、换新 key 自动解锁；route 缓存遇 combo 引擎耗尽或旧耗尽引擎恢复时自动失效重算；`is_engine_routable` 单一准入谓词收口 backfill / tfidf / breaker_filter 的五层过滤
+- **调度与传输**：auto / deep 档也剔除配额硬耗尽引擎（fail-open 兜底）；对冲等待窗收窄、早停判据放宽（Wave-1 跨引擎累计达标即停，不启 Wave-2）；POST 连接池打通（anysearch 省 ~320ms / octen 省 ~561ms 每次）+ MCP 预连接；天气域补 `early_stop_min_results: 1`
+- **子技能热路径减法**：js-run 用 MiniRacer 原生 timeout 替 SIGALRM，根治 crawl / research / mcp 工作线程调用必抛 `ValueError: signal only works in main thread` 的崩溃；local-seek 重排免每次 O(N) 读盘与 JSON 解析；local-search 复用 registry 免双份 YAML 解析；ego-search auto 下按需短路探测
+- **验证**：插件单测 71 passed；argo 全量回归 4264 passed / 28 skipped；pre-commit 七道 123 passed；fetch 链对普通页不回归、跨源跳转与 JS 挑战由失败转成功
+
 ### v2.9.6：DeepSeek Search 接入 + 查询操作符契约 + 传输层去重付费 + 路由快照门
 
 - 新引擎 `deepseek_search`（官方 `api.deepseek.com/v1/tools/search`）默认启用：无 `DEEPSEEK_API_KEY` 时路由自动跳过、其余 265 源不受影响；实测延迟 445-510ms（anysearch 1.7-4.5s / exa 3.7s），authority 权威分级 / rerank_score / 发布时间为三引擎中唯一全覆盖，ja/ko/es 多语言与 anysearch 持平；按次计费，不进域 combo，显式 `--engine deepseek_search` 为主路径；DSH 宿主经原生凭证 seam 与官方后端共用同一把 key（web Models 页轮换后下一跳生效，不落盘不打日志）
@@ -745,6 +757,7 @@ argo/
 
 | 版本 | 说明 |
 |------|------|
+| **v2.9.7** | **架构收口 + DSH web_fetch 占位 + License 转 Apache-2.0**：MIT → Apache License 2.0；DSH 宿主 web_fetch 占位走 argo_fetch 链（HTTP 优先、JS 挑战升级浏览器，双路执行、错误不重发、失败五分类）；18 个 explicit_only 引擎从路由候选池剔除（堵住 auto 档误调付费引擎的扣费口子）；熔断健康短路、adaptive 单事务记账、配额换 key 自动解锁、route 缓存耗尽失效；auto/deep 剔除硬耗尽引擎 + 早停放宽 + POST 连接池打通；js-run 修非主线程崩溃。 |
 | **v2.9.6** | **DeepSeek Search 接入 + 查询操作符契约 + 传输层去重付费 + 路由快照门**：新引擎 `deepseek_search` 默认启用（无 key 自动跳过；445-510ms，authority/rerank_score/发布时间唯一全覆盖，时间窗真生效；DSH 经原生凭证 seam 共用 key）；`site:`/`-site:`/`-词`/`lang:`/`after:`/`before:` 收敛为操作符契约层并真正后置过滤 + 入缓存键；POST 连接池复用（省 320-561ms/次）+ MCP 预连接；octen 进兜底与对冲位（p90 3273→1614ms，`ARGO_GENERAL_FALLBACK_LEGACY=1` 逃生）；修复 RRF 名次衰减与 Bing 跳转壳（40.2% 空结果）；新增 pre-commit 快门禁与路由决策快照门；DSH 插件适配 0.2.1-rc.2 双栈 + alpha.1 兼容单测。 |
 | **v2.9.5** | **汇率查询专域 + 去重双轨 + 排序误杀修复 + daemon 多检出隔离**：新增 `fx_query` 域（汇率/中间价 675ms 出即期+快讯，改前百科词条）；去重补站后缀归一（零依赖）+ rapidfuzz 模糊复核（可选、`ARGO_DEDUP_FUZZY` 可控、缺失回退）；修复标题分隔符 ×0.6 误杀（官方文档回前排）；否定补「不是X」；daemon 落盘名字按检出目录隔离。 |
 | **v2.9.4** | **显式引擎域归因 + 恢复链止损 + 门禁同步**：`--engine X` 补 `match_domains` 域判定修复缓存 TTL 一刀切；单引擎无备选跳过 L1 空跑；`config.yaml` 域规则增强（org_entity/fund_query unless 词）；`mcp_launch.sh` 环境变量导出收窄；local-search 引擎注册表层收口与质量提升；门禁同步。 |
@@ -794,7 +807,7 @@ python3 scripts/ab_eval_p0p1.py   # 可选，含在线实测
 
 ## License
 
-MIT License © 2026 [taxueseek](https://github.com/taxueseek)
+Apache License 2.0 © 2026 [taxueseek](https://github.com/taxueseek)
 
 <p align="center">
   <a href="https://github.com/oil-oil/beautify-github-readme"><img src="assets/readme/made-with-beautify.svg" width="300" alt="README made with beautify-github-readme"></a>

@@ -22,9 +22,9 @@
 </p>
 
 <p align="center">
-  <img alt="license" src="https://img.shields.io/badge/license-MIT-blue">
+  <img alt="license" src="https://img.shields.io/badge/license-Apache_2.0-blue">
   <img alt="python" src="https://img.shields.io/badge/python-3.9+-green">
-  <img alt="version" src="https://img.shields.io/badge/version-2.9.6-informational">
+  <img alt="version" src="https://img.shields.io/badge/version-2.9.7-informational">
   <img alt="engines" src="https://img.shields.io/badge/engines-266-orange">
   <img alt="mcp" src="https://img.shields.io/badge/MCP-19%20tools-purple">
 </p>
@@ -69,6 +69,8 @@
 **Argo は AI エージェント向けの多言語検索インフラです。**
 
 現実の検索は「1 言語 + 1 検索ボックス」ではありません。A 株の株価を聞く人もいれば、World Cup を聞く人も、日本語でアニメを探す人も、IMDb で監督を調べる人もいます。Argo の出発点はシンプルです——**領域・言語・意図に応じて経路を選び**、適切なソースへ問題を届け、常に一般的なウェブタイトルを浚うだけにはしない。ウェブ検索とローカルファイル検索を一体で使えます。
+
+> 現在の段階（v2.9.7 以降）：プロジェクトの重心は単発の性能最適化からアーキテクチャ最適化へ移行しました——契約の收口、状態契約の統一、門と証拠链の整備。その上で增量更新を続け、各版は再計算・ロールバック可能です。
 
 > 出力は「リンク一覧」ではなく **証拠候補 + 信頼度分解** です。経路が正しければ、証拠が立ちます。
 
@@ -153,7 +155,7 @@ freshness  ≈ 公開時刻（「2015 年以来」のような歴史比較年は
 
 ## クイックスタート
 
-どれか 1 つで十分です。**インストールの来源は GitHub のみ**（`npx github:taxueseek/argo` または `install.sh`）、現在推奨 **v2.9.6**。**`npm install argo-search` は使わないでください**——npm registry 上のそれは**非公式の古い v1.0.1**（本リポジトリ外、機能不足、更新されない）。本パッケージは `private: true` で npm 誤公開を防ぎます。
+どれか 1 つで十分です。**インストールの来源は GitHub のみ**（`npx github:taxueseek/argo` または `install.sh`）、現在推奨 **v2.9.7**。**`npm install argo-search` は使わないでください**——npm registry 上のそれは**非公式の古い v1.0.1**（本リポジトリ外、機能不足、更新されない）。本パッケージは `private: true` で npm 誤公開を防ぎます。
 
 **ゼロ設定で動く**：API Key なしなら無料エンジン + ローカル `local_*`。Key があるソースは品質が上がりやすく、無いものは自動スキップ。
 
@@ -557,6 +559,16 @@ argo/
 
 ## 最近の更新
 
+### v2.9.7: アーキテクチャ收口——DSH web_fetch シーム + explicit_only 契約 + 状態契約統一（License を Apache-2.0 へ）
+
+- **License 変更**：MIT → Apache License 2.0（特許許諾が明示され、商用でより安全；他は不変）
+- **DSH プラグイン web_fetch シーム**：宿主の web_fetch は「この URL を読む」既定経路として完全に argo を迂回していたが、fetch provider を登録し argo_fetch 链を流れるように（HTTP 优先、Cloudflare / JS レンダリング時は反检测ブラウザへ自動升级）；search provider と同构の双路実行——常駐 MCP プール优先、传输层故障时のみ CLI 単发にフォールバック、ツールレベルエラーとTimeoutは再送しない（呼び出しは既に完了しており、再送は引擎呼び出しと配额を倍にするだけ）；失败は五类（Timeout / ブロック / 空结果 / 一般 / キャンセル）に分类し行动可能な文案を付与；新设定 `fetchProviderEnabled` / `fetchProviderId` / `fetchTimeoutMs`（既定 25000）/ `fetchMaxChars`（既定 50000）は既定全开・逃げ口付き；实测：クロスオリジンジャンプ（短链、协议アップグレード、リダイレクト殻）と JS チャレンジ页が宿主の构造的失败から argo 成功へ、普通の静止页は品质不変
+- **explicit_only 契约の收口**：`config._routable_filter` は環境白黒リスト / 键 / 拉黑だけを滤し explicit_only を滤していなかったため、18 个の明示专用引擎（唯一の有料 `deepseek_search` を含む）が enabled 候选池に寝たまま、TF-IDF 注入・catch-all・backfill・兜底など六つの経路全てが选択できた——语料に词条がなかっただけで、一条追加すれば auto 档で有料引擎を并行呼び出して课金される；候选池の唯一生产者一处で滤し、`tests/test_explicit_only_gate.py` が三契约（注入不带入 / 候选池排除 / 明示 `--engine` は通常単发）をロック
+- **状態契约の统一**：熔断器は健全 closed 态で计数 0 のときメモリ短路（ファイル锁ゼロ・ディスク书き换えゼロ）、`(st_mtime_ns, st_size)` でクロスプロセス变更を感知；adaptive 记账は `MAX(created_at)` を単条集约 SQL に统合し、`batch()` コンテキストマネージャで多引擎记账を単一トランザクションに；配额耗尽は生效凭证の指纹を记録し新 key 交换时に自动アンロック；route キャッシュは combo 引擎耗尽・旧耗尽引擎の恢复時に自动无效再计算；`is_engine_routable` 单一准入谓词が backfill / tfidf / breaker_filter の五层滤过を收口
+- **调度と传输**：auto / deep 档も配额ハード耗尽引擎を除外（fail-open 兜底）；ヘッジ待机窗を狭め、早停判定を缓和（Wave-1 のクロス引擎累计达标で停止、Wave-2 を起动しない）；POST 接続プール开通（anysearch 约 320ms / octen 约 561ms を毎回节约）+ MCP 事前接続；気象ドメインに `early_stop_min_results: 1` を追加
+- **子スキル热路径减法**：js-run は SIGALRM を MiniRacer ネイティブ timeout に替换し、crawl / research / mcp の作业スレッドから呼ぶと必ず `ValueError: signal only works in main thread` で落ちるクラッシュを根治；local-seek の再顺は毎回 O(N) 读盘と JSON 解析を解消；local-search は registry を复用し双重 YAML 解析を解消；ego-search は auto 下で探査を必要时短路
+- **検証**：プラグイン単测 71 passed；argo 全量回归 4264 passed / 28 skipped；pre-commit 七门 123 passed；fetch 链の対撮で普通页は非退行、クロスオリジンジャンプと JS チャレンジは失败→成功
+
 ### v2.9.6: DeepSeek Search エンジン + クエリ演算子契約 + 传输層の接続プール + ルーティングスナップショット門
 
 - 新エンジン `deepseek_search`（公式 `api.deepseek.com/v1/tools/search`）がデフォルト有効：`DEEPSEEK_API_KEY` がない場合のみ自動スキップ、他の 265 ソースには影響なし；実測 445-510ms（anysearch 1.7-4.5s / exa 3.7s）、authority 権威階層 / rerank_score / 公開時刻の三者中唯一の全項目カバー、ja/ko/es 多言語は anysearch と同等；従量課金、ドメイン combo には入らず、明示 `--engine deepseek_search` が主経路；DSH ホストはネイティブ認証情報 seam で公式バックエンドと同じ key を共用（web Models ページでのキー交替は次のホップから効く、保存もログもされない）
@@ -667,6 +679,7 @@ argo/
 
 | 版 | 内容 |
 |----|------|
+| **v2.9.7** | **アーキテクチャ收口 + DSH web_fetch シーム + License を Apache-2.0 へ**：MIT → Apache License 2.0；宿主 web_fetch が argo_fetch 链を流れる（HTTP 优先、JS チャレンジでブラウザ升级、双路実行、ツールエラーは再送せず、失败五分类）；18 个の explicit_only 引擎を路由候选池から除外（auto 档での误课金口を闭塞）；熔断健全短路、adaptive 単一トランザクション记账、配额 key 交换時の自动アンロック、route キャッシュ耗尽无效；auto/deep のハード耗尽除外 + 早停缓和 + POST 接続プール；js-run が非メインスレッドクラッシュを修正。 |
 | **v2.9.6** | **DeepSeek Search エンジン + クエリ演算子契約 + 传输層の接続プール + ルーティングスナップショット門**: 新エンジン `deepseek_search` デフォルト有効（key なしで自動スキップ；445-510ms、authority/rerank_score/公開時刻の唯一の全カバー、時間窓が真に効く；DSH はネイティブ認証 seam で key 共用）；`site:`/`-site:`/`-語`/`lang:`/`after:`/`before:` が演算子契約層に収束し真の後置フィルタ + キャッシュキー投入；POST 接続プール（1 回あたり 320-561ms 節約）+ MCP 事前接続；octen がフォールバックとヘッジ枠に（p90 3273→1614ms、逃げスイッチ `ARGO_GENERAL_FALLBACK_LEGACY=1`）；RRF 名次減衰と Bing リダイレクト殻（40.2% 空結果）を修正；pre-commit 快门禁とルーティングスナップショット門を新設；DSH プラグインは 0.2.1-rc.2 デュアルスタック + alpha.1 単測カバー。 |
 | **v2.9.5** | **為替専用ドメイン + 二層重複排除 + 順位誤殺修正 + チェックアウト別 daemon 隔離**: 新ドメイン `fx_query`（レート/中心相場を 675ms で生レート+日次ニュース、修正前は百科事典）；重複排除にサイト suffix 正規化（ゼロ依存）+ rapidfuzz ファジーチェック（オプション、`ARGO_DEDUP_FUZZY`、フォールバック付き）を追加；区切り ×0.6 誤殺を修正（公式ドキュメントが前列に）；否定に「不是X」を追加；daemon 名をチェックアウト別に隔離。 |
 | **v2.9.4** | **明示的エンジンドメイン帰属 + 回復チェーン遮断 + ゲート同期**: `--engine X` で `match_domains` を補完しキャッシュ TTL 一般化を修正；単一エンジンでフォールバックなしの場合 L1 空実行をスキップ；`config.yaml` ドメインルール強化；`mcp_launch.sh` 環境変数エクスポートを收窄；ローカル検索エンジンレジストリ層の閉鎖と品質向上；ゲート同期。 |
@@ -714,7 +727,7 @@ python3 scripts/ab_eval_p0p1.py   # 任意、オンライン含む
 
 ## License
 
-MIT License © 2026 [taxueseek](https://github.com/taxueseek)
+Apache License 2.0 © 2026 [taxueseek](https://github.com/taxueseek)
 
 <p align="center">
   <a href="https://github.com/oil-oil/beautify-github-readme"><img src="assets/readme/made-with-beautify.svg" width="300" alt="README made with beautify-github-readme"></a>

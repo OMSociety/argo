@@ -327,6 +327,15 @@ class TestEarlyStopRescueIntegration(unittest.TestCase):
         当 anysearch 超时、只剩 local_bing 回声时，得由恢复链换引擎兜底。
         """
         decision = route_query(ECHO_QUERY, mode="auto", depth="fast", context="search")
+        # 场景钉桩：auto 组合随兜底/对冲位与引擎健康态漂移——v2.9.6 方案B 把
+        # octen 放进对冲位后，干净状态目录下 combo 是 ['anysearch','octen']，
+        # fake 给 octen 交足即收工、恢复链不触发，本用例红（全量里靠早前测试
+        # 把 octen 记死才蒙混过关，属会话状态耦合不是契约）。本用例要测的是
+        # 「唯一可用引擎是回声源时恢复链必须换引擎」，与路由器挑中谁无关，
+        # 故把主源/次源钉成 anysearch + local_bing，恢复链的换引擎池不动。
+        decision = {**decision,
+                    "engines": ["anysearch", "local_bing"],
+                    "engines_combo": ["anysearch", "local_bing"]}
 
         def fake(_q: str, eng: str, **_k: Any) -> list:
             if eng == "local_bing":

@@ -22,9 +22,9 @@
 </p>
 
 <p align="center">
-  <img alt="license" src="https://img.shields.io/badge/license-MIT-blue">
+  <img alt="license" src="https://img.shields.io/badge/license-Apache_2.0-blue">
   <img alt="python" src="https://img.shields.io/badge/python-3.9+-green">
-  <img alt="version" src="https://img.shields.io/badge/version-2.9.6-informational">
+  <img alt="version" src="https://img.shields.io/badge/version-2.9.7-informational">
   <img alt="engines" src="https://img.shields.io/badge/engines-266-orange">
   <img alt="mcp" src="https://img.shields.io/badge/MCP-19%20tools-purple">
 </p>
@@ -69,6 +69,8 @@
 **Argo es infraestructura de búsqueda multilingüe para agentes de IA.**
 
 La recuperación real nunca es «un idioma + un cuadro de búsqueda»: alguien pregunta por cotizaciones de acciones A, alguien más por el Mundial, alguien busca anime en japonés, alguien quiere el director de una película en IMDb. La premisa de Argo es simple: **enrutar por dominio, idioma e intención** hacia las fuentes adecuadas, en lugar de siempre raspado genérico de títulos web. La búsqueda en la red y la de archivos locales funcionan juntas.
+
+> Fase actual (desde v2.9.7): el proyecto pasó de la optimización de rendimiento puntual a la optimización de arquitectura — cierre de contratos, contratos de estado unificados, puertas y cadenas de evidencia — y sobre esa base mantiene actualizaciones incrementales: cada versión es recomputable y reversible.
 
 > El resultado no es una «lista de enlaces», sino **candidatos de evidencia + desglose de credibilidad**. Un buen enrutamiento es lo que hace que la evidencia se sostenga.
 
@@ -153,7 +155,7 @@ Los resultados incluyen `selection`, `absorption`, `credibility_fast`, `evidence
 
 ## Inicio rápido
 
-Elige cualquier camino. **GitHub es la única fuente de verdad de instalación** (`npx github:taxueseek/argo` o `install.sh`); recomendación actual **v2.9.6**. **No uses `npm install argo-search`** — la copia del registro npm es un **v1.0.1 no oficial y obsoleto** (no es este repo, incompleto, no se actualiza). Este paquete pone `private: true` para no publicarse en npm por error.
+Elige cualquier camino. **GitHub es la única fuente de verdad de instalación** (`npx github:taxueseek/argo` o `install.sh`); recomendación actual **v2.9.7**. **No uses `npm install argo-search`** — la copia del registro npm es un **v1.0.1 no oficial y obsoleto** (no es este repo, incompleto, no se actualiza). Este paquete pone `private: true` para no publicarse en npm por error.
 
 **Funciona sin configuración**: sin claves API corren motores gratis + `local_*` locales; los que requieren clave se omiten si faltan (y suelen mejorar cuando están).
 
@@ -557,6 +559,16 @@ argo/
 
 ## Actualizaciones recientes
 
+### v2.9.7: Consolidación de arquitectura — seam web_fetch DSH + contrato explicit_only + contratos de estado unificados (License: Apache-2.0)
+
+- **Cambio de licencia**: MIT → Apache License 2.0 (concesión de patentes explícita, más seguro para uso comercial); nada más cambia
+- **Seam web_fetch del plugin DSH**: el web_fetch del huésped antes esquivaba argo por completo como ruta predeterminada de «lee esta URL»; ahora registra un proveedor de fetch en la cadena argo_fetch (HTTP primero, ascenso automático a navegador anti-detección ante Cloudflare / páginas renderizadas con JS); ejecución de doble vía isomorfa con el proveedor de búsqueda — piscina MCP residente primero, CLI de un solo disparo solo ante fallo de transporte, errores de herramienta y timeouts no se reenvían (esas ya significan que la llamada terminó; reenviar duplica llamadas de motor y cuota); fallos clasificados en cinco clases (timeout / bloqueado / vacío / genérico / cancelado) con mensajes accionables; nueva configuración `fetchProviderEnabled` / `fetchProviderId` / `fetchTimeoutMs` (25000) / `fetchMaxChars` (50000), toda activa por defecto con salidas de emergencia; medido: redirecciones de origen cruzado (enlaces cortos, ascensos de protocolo, caparazones de redirección) y páginas de desafío JS pasan de fallos estructurales del huésped a éxitos de argo, las páginas estáticas no cambian
+- **Cierre del contrato explicit_only**: `config._routable_filter` filtraba listas negras/blancas de entorno, cles y bloqueos, pero no explicit_only, así que 18 motores de solo-uso-explícito (incluido el único `deepseek_search` de pago) yacían en el pool de candidados habilitados donde seis rutas de enrutado (inyección TF-IDF, catch-all, backfill, reserva, etc.) podían elegirlos — nunca disparó solo porque el corpus no tenía ninguna entrada; una entrada habría disparado motores de pago en modo auto; ahora se filtra en el único productor, fijado por `tests/test_explicit_only_gate.py`
+- **Contratos de estado unificados**: cortocircuito en memoria del cortacircuitos cuando está sano y cerrado con conteo cero (sin bloqueo de fichero, sin reescritura de disco) con conciencia cross-process vía `(st_mtime_ns, st_size)`; la contabilidad adaptativa pliega `MAX(created_at)` en un solo SQL agregado más un gestor de contexto `batch()` para confirmaciones multi-motor en una transacción; el agotamiento de cuota registra la huella de credencial vigente y se desbloquea solo al rotar la clave; la caché de ruta se invalida cuando un motor del combo se agota o se recupera; `is_engine_routable` se convierte en el predicado de admisión único tras backfill / tfidf / breaker_filter
+- **Despacho y transporte**: auto / deep también descartan motores agotados por duro (reserva fail-open); ventana de espera de cobertura estrechada, el early-stop de Wave-1 ahora acepta suficiencia acumulada cross-engine; agrupación de conexiones POST (ahorra ~320ms anysearch / ~561ms octen por petición) + preconexión MCP; el dominio de clima gana `early_stop_min_results: 1`
+- **Resta de rutas calientes en sub-skills**: js-run reemplaza SIGALRM por el timeout nativo de MiniRacer, arreglando el crash `ValueError: signal only works in main thread` al invocarse desde hilos de trabajo de crawl / research / mcp; el rerank de local-seek elimina las lecturas de disco O(N) por consulta; local-search reutiliza el registro (sin doble parseo YAML); ego-search corta en corto la detección bajo auto
+- **Validación**: 71 pruebas unitarias del plugin; suite completa 4264 passed / 28 skipped; siete puertas pre-commit 123 passed; la comparativa de la cadena de fetch no regresa páginas estáticas y convierte fallos en éxitos en redirecciones / desafíos JS
+
 ### v2.9.6: Motor DeepSeek Search + contrato de operadores de consulta + agrupación de conexiones + puerta de instantáneas de enrutado
 
 - Nuevo motor `deepseek_search` (`api.deepseek.com/v1/tools/search` oficial) activo por defecto: se omite solo sin `DEEPSEEK_API_KEY`, las otras 265 fuentes no se afectan; medido 445-510ms (anysearch 1.7-4.5s / exa 3.7s), el único de los tres con cobertura completa de nivel authority / rerank_score / hora de publicación, a la par de anysearch en ja/ko/es; pago por uso, fuera de los combos de dominio, `--engine deepseek_search` explícito es la vía principal; los hosts DSH comparten la misma key con el backend oficial por el seam nativo de credenciales (rotar la key en la página Models surte efecto en el siguiente salto, nunca se persiste ni se registra)
@@ -667,6 +679,7 @@ argo/
 
 | Versión | Notas |
 |---------|-------|
+| **v2.9.7** | **Consolidación de arquitectura + seam web_fetch DSH + License a Apache-2.0**: MIT → Apache License 2.0; el web_fetch del huésped ahora fluye por la cadena argo_fetch (HTTP primero, ascenso a navegador ante desafíos JS, ejecución de doble vía, sin reenvío en errores de herramienta, fallos en cinco clases); 18 motores explicit_only fuera del pool de candidatos de enrutado (cierra el agujero de facturación accidental de motores de pago en auto); cortocircuito de salud del breaker, contabilidad adaptativa de una transacción, desbloqueo automático de cuota al rotar clave, invalidación de caché de ruta por agotamiento; auto/deep descartan motores agotados + early-stop más amplio + agrupación de conexiones POST; js-run arregla el crash fuera del hilo principal. |
 | **v2.9.6** | **Motor DeepSeek Search + contrato de operadores de consulta + agrupación de conexiones + puerta de instantáneas de enrutado**: nuevo motor `deepseek_search` activo por defecto (se omite sin key; 445-510ms, el único con cobertura completa authority/rerank_score/hora, ventanas de tiempo realmente efectivas; DSH comparte la key por el seam nativo de credenciales); `site:`/`-site:`/`-término`/`lang:`/`after:`/`before:` convergen en una capa de contrato con posfiltrado real + entrada en clave de caché; agrupación de conexiones POST (ahorra 320-561ms por petición) + preconexión MCP; octen entra en fallback y cobertura (p90 3273→1614ms, escapatoria `ARGO_GENERAL_FALLBACK_LEGACY=1`); corrige decadencia de rango RRF y caparazón de redirección Bing (40.2% de vacíos); nuevas puertas pre-commit y de instantáneas de enrutado; plugin DSH se adapta al doble stack 0.2.1-rc.2 + cobertura unit de alpha.1. |
 | **v2.9.5** | **Dominio dedicado de tipo de cambio + deduplicación de dos capas + corrección de falsa penalización + aislamiento de daemon por checkout**: nuevo dominio `fx_query` (tipo/paridad: en vivo + noticia diaria en 675ms vs enciclopedia antes); dedup gana normalización de sufijo (cero dependencias) + revisión difusa rapidfuzz (opcional, `ARGO_DEDUP_FUZZY`, con vuelta atrás); corrige ×0.6 por separadores (docs oficiales de vuelta arriba); negación gana "no-X"; nombres de daemon acotados por checkout. |
 | **v2.9.4** | **Atribución explícita de dominio de motor + cortador de cadena de recuperación + sincronización de puertas**: `--engine X` complementa `match_domains` corrigiendo TTL de caché general; motor único sin alternativa omite ejecución vacía L1; reglas `config.yaml` mejoradas; exportación `mcp_launch.sh` reducida; capa de registro local cerrada y calidad mejorada; sincronización de puertas. |
@@ -714,7 +727,7 @@ Antes del commit: sin claves API reales, rutas absolutas de máquina ni cookies 
 
 ## License
 
-MIT License © 2026 [taxueseek](https://github.com/taxueseek)
+Apache License 2.0 © 2026 [taxueseek](https://github.com/taxueseek)
 
 <p align="center">
   <a href="https://github.com/oil-oil/beautify-github-readme"><img src="assets/readme/made-with-beautify.svg" width="300" alt="README made with beautify-github-readme"></a>
