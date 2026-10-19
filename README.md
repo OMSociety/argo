@@ -362,8 +362,30 @@ python3 -m pytest tests/test_unit.py -q             # 单测（可选）
 | `deep` | 调研、综述 | 质量优先，可多用引擎 |
 | `budget` | 额度紧 | 配额控制，用完降级 |
 
-### 当前大致能力（v2.9.3）
+### 当前大致能力（v2.9.7）
 
+以下这段是「说人话版」总览：近四个版本各自解决了什么疼点，每条都按「以前不行、现在能行」讲。逐项技术细节在下方清单与「最近更新」节。
+
+**v2.9.7（当前版）——从「跑得快」转向「站得稳」**
+- 以前：在 DSH 宿主里让 AI「读这个网址」，走的是宿主自带的抓取，短链跳转、JS 挑战页经常直接失败，argo 的抓取本事根本轮不上。现在：宿主的读网址改走 argo 抓取链，跳转和挑战页从失败变成功，普通页面质量不降。
+- 以前：18 个「只能显式指定」的引擎混在路由候选池里，万一被自动选中，唯一的付费引擎就会悄悄扣费。现在：候选池里没有它们，要用必须显式写出来，误扣费的口子堵死。
+- 以前：引擎每成功一次，熔断器都要加锁重写一次磁盘；多个引擎一起记账一笔一提交。现在：健康时零文件开销，多引擎记账合并成一笔事务。
+- 附带：开源协议 MIT → Apache-2.0，多了明确的专利授权，公司商用更安心。
+
+**v2.9.6——DeepSeek 接入 + 查询指令规范化 + 传输层省钱**
+- 以前：搜「site:github.com 某某」这类带指令的查询，指令有时被当普通词搜，有时只解析不过滤。现在：Google 风格指令有统一契约层，site: 真正执行过滤并进缓存键，两次搜索不串味。
+- 以前：每次 POST 都重新付一次 TLS 握手（320-561ms）。现在：连接复用 + MCP 预连接，常驻进程每笔查询都省。
+- 新增官方 deepseek_search 引擎：延迟 445-510ms，权威分级 / 重排分 / 发布时间三项唯一全覆盖，`--since/--until` 时间窗唯一真正生效。
+
+**v2.9.5——汇率专域 + 去重更干净**
+- 以前：问「人民币兑美元汇率」会绕到宏观域空转一圈，最后甩一个百科词条（1.4 秒还没答上）。现在：专属汇率域 675ms 直接给即期汇率和每日快讯。
+- 以前：标题带分隔符的官方文档被误杀压到后排。现在：排序修复，官方文档回前排。
+
+**v2.9.4——显式选引擎也讲归因 + 恢复链不白跑**
+- 以前：显式 `--engine X` 时缓存有效期一刀切，没备选引擎还会同引擎空跑一次。现在：补域判定、缓存 TTL 按域走，无备选跳过空跑，少一次无用往返。
+
+
+- **架构收口 + DSH web_fetch 占位 + License 转 Apache-2.0（v2.9.7 新增）**：DSH 宿主 web_fetch 从完全绕开 argo 改为走 argo_fetch 链（HTTP 优先，Cloudflare/JS 挑战自动升级反检测浏览器；与 search provider 同构双路执行，工具级错误与超时不重发；失败五分类带可行动文案；新增 `fetchProviderEnabled` / `fetchProviderId` / `fetchTimeoutMs` / `fetchMaxChars` 配置默认全开）；18 个 explicit_only 引擎从路由候选池唯一生产者处剔除，堵住 auto 档误调付费引擎的扣费口子；熔断健康 closed 零计数内存短路（mtime/size 感知跨进程变更）、adaptive `MAX(created_at)` 单条聚合 SQL + `batch()` 单事务、配额耗尽凭证指纹换 key 自动解锁、route 缓存引擎耗尽/恢复自动失效；auto/deep 剔除配额硬耗尽引擎、对冲等待窗收窄、Wave-1 跨引擎累计达标即停；js-run MiniRacer 原生 timeout 替 SIGALRM 根治非主线程崩溃；License MIT → Apache License 2.0
 - **DeepSeek Search 接入 + 查询操作符契约 + 传输层去重付费 + 路由快照门（v2.9.6 新增）**：官方 `deepseek_search` 引擎默认启用（无 `DEEPSEEK_API_KEY` 时路由自动跳过，其余 265 源不受影响；延迟 445-510ms，authority 权威分级 / rerank_score / 发布时间三引擎中唯一全覆盖，ja/ko/es 多语言与 anysearch 持平，`--since/--until` 时间窗唯一真生效；按次计费，不进域 combo，显式 `--engine deepseek_search` 为主路径；DSH 宿主经原生凭证 seam 共用同一把 key）；`site:` / `-site:` / `-词` / `lang:` / `after:` / `before:` 收敛为查询操作符契约层（`query_operators.py`，路由与缓存只认剥掉指令的 clean_query，`site:` 从「只解析不执行」到真正后置过滤并并入缓存键）；POST 走连接池复用（anysearch 省 320ms / octen 省 561ms 每次）+ MCP 预连接；octen 进通用兜底与对冲位（p90 3273→1614ms、max 6266→1928ms、错误 9→0，`ARGO_GENERAL_FALLBACK_LEGACY=1` 可退回旧序）；修复 RRF 口径隔离名次衰减（同引擎结果同分退化）与 Bing ck/a 跳转壳（此前 40.2% 空结果）；新增 pre-commit 快门禁（~12s 六道）与路由决策快照门（治 90 天 13 次 fix(route) 慢性病）；DSH 插件适配 0.2.1-rc.2 双栈（`startActivation` 新入口 + tool guard 承接已移除的 `toolFilter`），0.2.1-alpha.1 兼容分支单测覆盖
 - **汇率查询专域 + 去重双轨判定 + 排序误杀修复（v2.9.5 新增）**：`fx_query` 域让汇率/中间价类查询 675ms 出「即期汇率 + 每日快讯」（改前 1411ms 百科词条）；去重补站后缀归一（零依赖）+ rapidfuzz 模糊复核（可选依赖、`ARGO_DEDUP_FUZZY` 可控、缺失自动回退）；修复精排降级时标题分隔符 ×0.6 误杀（官方文档回到前排）；否定理解补「不是X」；daemon 落盘名字按检出目录隔离，多 worktree 互抢/误杀/静默旧代码三类故障根除
 - **显式引擎域归因 + 恢复链止损 + 门禁同步（v2.9.4 新增）**：`--engine X` 显式指定引擎时补 `match_domains` 域判定，修复缓存 TTL 一刀切 general；单引擎无备选时跳过 L1 同引擎空跑；`config.yaml` 域规则增强（`org_entity` 加 unless 股东尽调词、`fund_query` 加 unless 政策法规词）；`mcp_launch.sh` 环境变量导出收窄；local-search 引擎注册表层收口与质量提升；门禁同步（module_size_gate / ENGINE_CATALOG）

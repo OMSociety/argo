@@ -335,8 +335,30 @@ python3 scripts/search.py --list-engines
 | `deep` | 연구, 조사 | 품질 우선, 엔진 더 허용 |
 | `budget` | 할당량 타이트 | 쿼터 제어, 소진 시 저하 |
 
-### 대략적인 능력 세트 (v2.9.3)
+### 대략적인 능력 세트 (v2.9.7)
 
+아래는 「쉬운 말」 총람: 최근 네 판이 각각 어떤 불편을 해결했는지를 「예전에는 안 됐고 지금은 된다」로 풀어 쓴 것. 항목별 기술 상세는 아래 목록과 「최근 업데이트」 절에.
+
+**v2.9.7(현행판) — 「빠름」에서 「흔들리지 않음」으로**
+- 예전: DSH 호스트에서 「이 URL을 읽는다」는 호스트 자체 긁기를 써서 단축 링크 점프·JS 챌린지 페이지가 구조적으로 실패하는 일이 잦았다. 지금: 호스트 읽기가 argo_fetch 체인을 흘러 점프와 챌린지가 실패→성공, 일반 페이지는 품질 불변.
+- 예전: 명시 전용 18개 엔진이 라우팅 후보 풀에 섞여 자동 선택되면 유일한 유료 엔진이 조용히 과금될 위험이 있었다. 지금: 후보 풀에서 제외, 쓰려면 명시해야 함.
+- 예전: 엔진 성공마다 회로 차단기가 파일 잠금으로 디스크를 다시 쓰고, 다중 엔진 부기는 건당 제출. 지금: 건강 시 파일 오버헤드 제로, 다중 엔진 부기를 단일 트랜잭션으로 통합.
+- 그 외: License MIT → Apache-2.0(특허 허가 명시, 상용에 더 안전).
+
+**v2.9.6 — DeepSeek 연결 + 쿼리 연산자 계약 + 전송층 절약**
+- 예전: 「site:github.com 뭐뭐」식 질의는 일반 단어로 검색되거나解析만 되고過滤은 안 됐다. 지금: 연산자 계약층으로 라우트·캐시는 벗긴 clean_query만 인식, site:는 진짜 후치 필터로 실행되고 캐시 키에도 편입.
+- 예전: POST마다 TLS 핸드셰이크(320-561ms)를 다시 지불. 지금: 연결 풀 + MCP 사전 연결로 상주 프로세스는 매번 절약.
+- 새 엔진 deepseek_search: 445-510ms, authority/rerank_score/발행 시각 유일 전항목 커버, `--since/--until` 유일하게 진짜 효력.
+
+**v2.9.5 — 환율 전용 도메인 + 중복 제거 정화**
+- 예전: 「위안/달러 환율」은 거시 도메인을 돌아 백과사전 표제어에 착륙(1.4초, 무응답). 지금: 환율 전용 도메인에서 675ms, 즉시 환율 + 매일 뉴스 직접 반환.
+- 예전: 제목에 구분자 있는 공식 문서가 오살돼 후방으로. 지금: 순위 수정으로 전열 복귀.
+
+**v2.9.4 — 명시 엔진 도메인 귀속 + 회복 체인 공회전 방지**
+- 예전: 명시 `--engine X`는 캐시 TTL이 일률, 예비 없으면 같은 엔진 공회전도. 지금: 도메인 판정 보강, TTL은 도메인별, 공회전 스킵.
+
+
+- **아키텍처 수렴 + DSH web_fetch 심 + License Apache-2.0으로(v2.9.7 신규)**: 호스트 web_fetch가 argo를 완전 우회하는 경로에서 argo_fetch 체인을 흐르게(HTTP 우선, Cloudflare/JS 챌린지 시 반탐지 브라우저로 자동 승급; search provider와 동형의 쌍로 실행, 도구 레벨 오류와 타임아웃은 재발송 안 함; 실패 다섯 분류; 새 설정 fetchProviderEnabled / fetchProviderId / fetchTimeoutMs / fetchMaxChars 기본 전체 개방); 18개 explicit_only 엔진을 라우팅 후보 풀 유일 생산자에서 제외해 auto 단 유료 엔진 오과금 구멍 폐쇄; 회로 건강 closed 제로 카운트 메모리 단락, adaptive 단일 집약 SQL + batch() 단일 트랜잭션, 쿼터 고갈 자격증명 지문으로 새 키 교체 시 자동 잠금 해제, route 캐시 엔진 고갈·회복 시 자동 무효; auto/deep 하드 고갈 엔진 제외, 헤지 대기 창 축소, Wave-1 누적 충족 시 조기 정지; js-run이 SIGALRM을 MiniRacer 네이티브 timeout으로 교체; License MIT → Apache License 2.0
 - **DeepSeek Search 엔진 + 쿼리 연산자 계약층 + 传输층 연결 풀 + 라우팅 스냅샷 문(v2.9.6 신규)**: 공식 `deepseek_search` 엔진 기본 활성(`DEEPSEEK_API_KEY` 없을 때만 라우트가 자동 스킵, 나머지 265 소스 무영향; 지연 445-510ms, authority 권위 등급 / rerank_score / 발행 시각의 세 엔진 중 유일 전항목 커버, ja/ko/es 다언어는 anysearch와 대등, `--since/--until` 시간창이 유일하게 진짜로 효력; 종량 과금, 도메인 combo에 안 들고, 명시 `--engine deepseek_search`가 주 경로; DSH 호스트는 네이티브 자격증명 seam으로 같은 key 공유); `site:` / `-site:` / `-어` / `lang:` / `after:` / `before:` 가 쿼리 연산자 계약층으로 수렴(`query_operators.py`, 라우트와 캐시는 지령을 벗긴 clean_query만 인식, `site:` 는 「파싱만」에서 진짜 후치 필터로 이동하고 캐시 키에도 편입); POST가 풀 연결을 재사용(anysearch 320ms / octen 561ms 매번 절약) + MCP 사전 연결; octen이 일반 폴백과 헤지 슬롯에 진입(p90 3273→1614ms, max 6266→1928ms, 오류 9→0, `ARGO_GENERAL_FALLBACK_LEGACY=1` 로 구순 복귀); RRF 궤도 격리의 명차 감쇠(같은 엔진 결과 동점)와 Bing ck/a 리다이렉트 껍질(종전 40.2% 빈 결과) 수정; pre-commit 속문(≈12s, 여섯 문)과 라우팅 결정 스냅샷 문(90일 13회 fix(route) 치유) 신설; DSH 플러그인은 0.2.1-rc.2 듀얼 스택 대응(`startActivation` 새 입구 + tool guard가 제거된 `toolFilter` 승계), 0.2.1-alpha.1 호환 분지는 단위 테스트 커버
 - **환율 전용 도메인 + 2층 중복 제거 + 순위 오진단 수정(v2.9.5 신규)**: `fx_query`가 환율/중심환율 질문에 생환율 + 매일 뉴스를 675ms로 돌려준다(수정 전은 1411ms 백과사전); 중복 제거에 사이트 suffix 정규화(제로 의존) + rapidfuzz 퍼지 검사(선택, `ARGO_DEDUP_FUZZY`, 자동 폴백)를 추가; 열화 리랭크의 구분자 ×0.6 오진단을 수정(공식 문서가 앞열로); 부정에 「不是X」 추가; daemon 이름을 체크아웃별로 격리
 - **명시적 엔진 도메인 속성 + 복구 체인 차단기 + 게이트 동기화 (v2.9.4 신규)**: `--engine X` 시 `match_domains` 보충으로 캐시 TTL 일괄 일반화 수정; 단일 엔진에 대체 없으면 L1 빈 실행 건너뜀; `config.yaml` 도메인 규칙 강화; `mcp_launch.sh` 환경 변수 내보내기 축소; 로컬 검색 엔진 레지스트리 계층 폐쇄 및 품질 향상; 게이트 동기화(module_size_gate / ENGINE_CATALOG)

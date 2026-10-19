@@ -293,8 +293,30 @@ python3 scripts/search.py --list-engines
 | `deep` | research, surveys | quality first; more engines allowed |
 | `budget` | tight quota | quota control; degrade when exhausted |
 
-### Rough capability set (v2.9.3)
+### Rough capability set (v2.9.7)
 
+> Plain-language overview: what each of the last four releases actually fixed, told as "before it couldn't, now it can". Item-level detail lives in the list below and in "Recent updates".
+
+**v2.9.7 (current) — from "fast" to "solid"**
+- Before: "read this URL" in a DSH host used the host's own fetcher — short-link redirects and JS challenge pages often failed outright, and argo's fetch chain never got a turn. Now: the host's read flows through the argo_fetch chain — redirects and challenges flip from failure to success, static pages unchanged.
+- Before: 18 explicit-only engines sat in the routing candidate pool; if one ever got auto-selected, the only paid engine would quietly bill you. Now: they are not in the pool at all — using them requires saying so explicitly.
+- Before: every engine success took a file lock and rewrote breaker state on disk; multi-engine accounting committed one transaction per engine. Now: zero file overhead when healthy, multi-engine commits merged into one transaction.
+- Also: license MIT → Apache-2.0 (explicit patent grant, safer for commercial use).
+
+**v2.9.6 — DeepSeek + query-operator contract + transport savings**
+- Before: `site:github.com foo`-style queries were sometimes searched as plain words, sometimes parsed but never applied. Now: a contract layer lets routing and cache see only the clean_query, applies site: as a real post-filter, and folds operators into the cache key.
+- Before: every POST re-paid the TLS handshake (320-561ms). Now: pooled connections + MCP pre-connect save it on every query for resident processes.
+- New official deepseek_search engine: 445-510ms, the only one with full authority/rerank/publish-time coverage and truly effective `--since/--until`.
+
+**v2.9.5 — FX domain + cleaner dedup**
+- Before: "USD/CNY rate" spun through the macro domain and landed on an encyclopedia entry (1.4s, still no answer). Now: a dedicated fx domain answers in 675ms with live rate + daily news.
+- Before: official docs with separators in the title were false-killed and pushed to the back. Now: ranking fixed, official docs back on top.
+
+**v2.9.4 — explicit engine attribution + no empty recovery runs**
+- Before: explicit `--engine X` got blanket cache TTL, and with no fallback engine it could re-run the same engine for nothing. Now: domain determination added, TTL per domain, empty runs skipped.
+
+
+- **Architecture consolidation + DSH web_fetch seam + License to Apache-2.0 (new in v2.9.7)**: host web_fetch flows through the argo_fetch chain instead of bypassing argo entirely (HTTP first, anti-detection browser on Cloudflare/JS challenges; dual-path execution, tool errors and timeouts not retried; five-class failures; new fetchProviderEnabled / fetchProviderId / fetchTimeoutMs / fetchMaxChars config, on by default); 18 explicit-only engines removed from the routing candidate pool at the single producer (closes the accidental paid-engine billing hole); breaker memory short-circuit when healthy and zero-count, adaptive single aggregate SQL + batch() single transaction, quota credential-fingerprint auto-unlock on key rotation, route cache invalidation on engine exhaustion/recovery; auto/deep drop hard-exhausted engines, hedge window narrowed, Wave-1 cumulative early stop; js-run MiniRacer native timeout replaces SIGALRM; license MIT → Apache License 2.0
 - **DeepSeek Search engine + query operator contract + transport connection pooling + routing snapshot gate (new in v2.9.6)**: official `deepseek_search` engine on by default (auto-skipped without `DEEPSEEK_API_KEY`, other 265 sources unaffected; 445-510ms latency, the only one of three engines with full authority tier / rerank_score / publish-time coverage, on par with anysearch for ja/ko/es, the only one where `--since/--until` truly takes effect; pay-per-use, excluded from domain combos, explicit `--engine deepseek_search` is the main path; DSH hosts share the same key via the native credential seam); `site:` / `-site:` / `-term` / `lang:` / `after:` / `before:` converge into a query operator contract layer (`query_operators.py`; routing and cache only see the clean_query with instructions stripped; `site:` moves from parse-only to real post-filtering and joins the cache key); POST reuses pooled connections (saves 320ms anysearch / 561ms octen per request) + MCP pre-connect; octen joins the general fallback and hedge slots (p90 3273→1614ms, max 6266→1928ms, errors 9→0, `ARGO_GENERAL_FALLBACK_LEGACY=1` to revert); fixes RRF caliber-isolation rank decay (same-engine results scored identically) and the Bing ck/a redirect shell (40.2% empty results before); new pre-commit gate (~12s, six checks) and routing decision snapshot gate (treats the 13 fix(route) commits in 90 days); DSH plugin adapts to 0.2.1-rc.2 dual-stack (`startActivation` entry + tool guard absorbing the removed `toolFilter`), 0.2.1-alpha.1 compatibility branch unit-covered
 - **FX-rate dedicated domain + two-layer dedup + ranking false-kill fix (new in v2.9.5)**: `fx_query` answers rate/parity queries with live rate + daily news in 675ms (previously encyclopedia entries at 1411ms); dedup gains site-suffix normalization (zero-dep) + rapidfuzz fuzzy check (optional, `ARGO_DEDUP_FUZZY`, auto-fallback); fixes the separator ×0.6 false-kill during degraded rerank (official docs back on top); negation gains "not-X"; daemon names scoped per checkout
 - **Explicit engine domain attribution + recovery chain circuit-breaker + gate sync (new in v2.9.4)**: `--engine X` supplements `match_domains` domain determination, fixing cache TTL blanket-general; single-engine no-fallback skips L1 same-engine empty run; `config.yaml` domain rules enhanced (`org_entity` adds unless shareholder-diligence terms, `fund_query` adds unless policy-regulation terms); `mcp_launch.sh` env var export narrowed; local-search engine registry layer closure and quality improvement; gate sync (module_size_gate / ENGINE_CATALOG)
