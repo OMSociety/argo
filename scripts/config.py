@@ -565,7 +565,19 @@ def get_engines(config: dict[str, Any] | None = None,
 
 
 def _routable_filter(result: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    """逐引擎可路由过滤（env 白黑名单 → 密钥就绪 → 未被准入拉黑）。"""
+    """逐引擎可路由过滤（env 白黑名单 → 密钥就绪 → 未被准入拉黑 → explicit_only）。
+
+    explicit_only 这道是 2026-10-19 补的契约收口：spec 声明「不进自动路由，
+    只等显式 --engine」，engine_status 的 routable 判定一直排除它，两边注释
+    写的同一口径；但本函数不过滤，route_query 的 enabled 候选池因此躺着全部
+    18 个 explicit_only 引擎，TF-IDF 注入 / catch-all 注入 / backfill /
+    breaker_filter / tfidf_lead_combo / 通用兜底 sorted(enabled)[:2] 都能选中
+    它们。此前没爆只因它们都不在 domain_profiles.json 语料里（数据兜底）——
+    补一条语料词条，auto 档就会把唯一 cost_tier=paid 的 deepseek_search
+    并行调起来扣费。声明是 spec 对路由器的承诺，在候选池的生产者一处兑现，
+    好过在每个消费路径各判一次（漏一条就是一个新泄漏路径）。
+    显式 --engine 路径不经 enabled，不受影响。
+    """
     from engine_env import is_engine_allowed_by_env, env_ready
     from engine_admission import is_blocked
     filtered: dict[str, dict[str, Any]] = {}
@@ -575,6 +587,8 @@ def _routable_filter(result: dict[str, dict[str, Any]]) -> dict[str, dict[str, A
         if not env_ready(name, spec):
             continue
         if is_blocked(name):
+            continue
+        if spec.get("explicit_only"):
             continue
         filtered[name] = spec
     return filtered
