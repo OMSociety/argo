@@ -23,6 +23,7 @@ quality（2026-09-27 接通）：结果相关度代理 ∈ [0,1]，由 search �
 
 from __future__ import annotations
 
+import contextlib
 import os
 import sqlite3
 import threading
@@ -91,8 +92,24 @@ class AdaptiveLearner:
         self._lock = threading.Lock()
         self._local = threading.local()
         self._score_cache: dict[str, tuple[float, float]] = {}  # engine -> (score, expires_at)
+        self._batch_depth = 0
+        self._batch_dirty = False
         DB_DIR.mkdir(parents=True, exist_ok=True)
         self._init_db()
+
+    @contextlib.contextmanager
+    def batch(self):
+        """合并多次 record 为单次 SQLite commit，保持 record 调用面不变。"""
+        with self._lock:
+            self._batch_depth = getattr(self, "_batch_depth", 0) + 1
+        try:
+            yield
+        finally:
+            with self._lock:
+                self._batch_depth = max(0, getattr(self, "_batch_depth", 1) - 1)
+                if self._batch_depth == 0 and getattr(self, "_batch_dirty", False):
+                    self._connect().commit()
+                    self._batch_dirty = False
 
     def _connect(self) -> sqlite3.Connection:
         """线程本地复用连接，避免 route 每次 open/close SQLite。"""
@@ -159,7 +176,10 @@ class AdaptiveLearner:
                 (engine, 1 if success else 0, latency_ms, cost, time.time(),
                  1 if empty else 0, q),
             )
-            conn.commit()
+            if getattr(self, "_batch_depth", 0) > 0:
+                self._batch_dirty = True
+            else:
+                conn.commit()
             self._score_cache.pop(engine, None)
 
     def get_score(self, engine: str) -> float:
@@ -193,22 +213,18 @@ class AdaptiveLearner:
                 "       SUM(CASE WHEN empty = 0 THEN 1 ELSE 0 END), "
                 "       SUM(CASE WHEN empty = 0 THEN success ELSE 0 END), "
                 "       AVG(latency_ms), AVG(cost), "
-                "       AVG(quality), SUM(quality) "
+                "       AVG(quality), SUM(quality), MAX(created_at) "
                 "FROM engine_perf WHERE engine = ? AND created_at > ?",
                 (engine, cutoff),
             ).fetchone()
-        total, judged, judged_ok, avg_latency, avg_cost, avg_q, sum_q = row
+        total, judged, judged_ok, avg_latency, avg_cost, avg_q, sum_q, last_ts = row
         total = int(total or 0)
         judged = int(judged or 0)
         if not total:
             score = 0.5  # 无数据时中性分
         else:
             # 数据过时恢复：最后一次调用距今过久 → 中性分，给恢复探测机会
-            last_row = conn.execute(
-                "SELECT MAX(created_at) FROM engine_perf WHERE engine = ? AND created_at > ?",
-                (engine, cutoff),
-            ).fetchone()
-            last_ts = float(last_row[0] or 0)
+            last_ts = float(last_ts or 0)
             if last_ts and (now - last_ts) > STALE_AFTER_SECONDS:
                 score = 0.5
             elif judged == 0:

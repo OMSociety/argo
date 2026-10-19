@@ -189,6 +189,31 @@ def _route_cache_write(entries: dict[str, Any]) -> None:
         return
 
 
+def _current_exhausted_set() -> set[str]:
+    try:
+        import quota
+        return set(quota.get_quota_manager().remote_exhausted_marks())
+    except Exception:
+        return set()
+
+
+def _route_cache_entry_valid(hit: Any, ttl_s: float = _ROUTE_CACHE_TTL_S) -> bool:
+    """缓存条目是否有效：未超 TTL、且缓存 combo 不含新耗尽引擎、且无曾耗尽引擎已恢复。"""
+    if not (isinstance(hit, dict) and isinstance(hit.get("decision"), dict)):
+        return False
+    if time.time() - float(hit.get("ts") or 0) > ttl_s:
+        return False
+    cur_rex = _current_exhausted_set()
+    combo = set(hit["decision"].get("engines_combo") or ())
+    old_rex = set(hit.get("rex") or ())
+    return not (combo & cur_rex) and not (old_rex - cur_rex)
+
+
+def _route_cache_pack_entry(decision: dict[str, Any]) -> dict[str, Any]:
+    return {"ts": time.time(), "decision": decision,
+            "rex": sorted(_current_exhausted_set())}
+
+
 def invalidate_route_cache() -> bool:
     """删除磁盘上的路由决策缓存（测试隔离与显式失效用）。"""
     global _READ_MEMO

@@ -65,6 +65,12 @@ _STATE_FAIL_STATUSES = frozenset({
     "quota-exhausted", "skipped-quota-exhausted",
 })
 
+# 配额耗尽错误关键词（唯一来源）：classify_engine_outcome 的 quota-exhausted
+# 分类与自适应学习跳过逻辑共用。新增配额错误码（如新的 API 业务码）只改这里。
+_QUOTA_ERROR_KEYWORDS = ("quota", "10406", "insufficient balance",
+                         "insufficient funds", "not enough money",
+                         "余额不足", "额度不足", "配额耗尽")
+
 # builder 路径漏到 status="error" 的缺密钥形态：路由层 env 拦截覆盖不到
 # 自定义 required_env 的引擎（search.py:192-209 docstring 自认的缺口），
 # issue #12 的 parallel/seltz/you 就读裸名——状态层 env_ready=True、执行层
@@ -75,7 +81,7 @@ _MISSING_ENV_DETAIL_KEYWORDS = (
 
 
 def is_state_failure_outcome(outcome: Any) -> bool:
-    """单引擎结局是否「配置/状态类失败」（可修复，不该负缓存）。"""
+    """单引擎结局是否「配置/状态类失败」（可修复，不该负缓存或记入学习器失败）。"""
     if not isinstance(outcome, dict):
         return False
     status = str(outcome.get("status") or "")
@@ -85,6 +91,25 @@ def is_state_failure_outcome(outcome: Any) -> bool:
         detail = str(outcome.get("detail") or "").lower()
         return any(k in detail for k in _MISSING_ENV_DETAIL_KEYWORDS)
     return False
+
+
+def should_record_adaptive(outcome: dict[str, Any] | None,
+                           res: list[dict[str, Any]]) -> bool:
+    """单引擎结局是否应记入 adaptive 学习器（跳过早停弃置与配额/鉴权/缺密钥等状态类故障）。"""
+    st = str((outcome or {}).get("status") or "")
+    if st.startswith(("cancelled", "skipped-")) or is_state_failure_outcome(outcome):
+        return False
+    errors = [str(r.get("error", "")) for r in (res or ())
+              if isinstance(r, dict) and "error" in r]
+    if errors and all(
+        any(k in msg.lower() for k in (
+            *_QUOTA_ERROR_KEYWORDS, "unauthorized", "api key",
+            "forbidden", "401", "403",
+        ))
+        for msg in errors
+    ):
+        return False
+    return True
 
 
 def failed_state_reason(payload: object) -> str | None:

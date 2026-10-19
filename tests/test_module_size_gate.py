@@ -165,7 +165,7 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "dispatch+恢复链」结构性循环，12 行；策略常量在 cache_guard."
               "RECOVERED_DEGRADED_TTL）；随动上限 1357 → 1385"),
     "scripts/engine_dispatch.py": (
-        1036, "引擎编排调度器（wave-1 竞速 / wave-2 补全 / 串行对冲 / 收账）；"
+        1019, "引擎编排调度器（wave-1 竞速 / wave-2 补全 / 串行对冲 / 收账）；"
               "不拆的理由：三个分支共用同一棵闭包（raw_results / engine_latency / "
               "engine_done_ms / abandoned_ms / quota_batch 等 15 处共享状态），"
               "拆分会把闭包状态摊成参数面，风险与 diff 面都大于 1000 行本身的 "
@@ -180,7 +180,9 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "结果），上限 1029 → 1033 随动登记；"
               "2026-10-18 +3：硬配额耗尽独立分类（_NOTE_STATUS 加 "
               "quota-exhausted，_QUOTA_ERROR_KEYWORDS 补「余额/额度/配额」文本），"
-              "上限 1033 → 1036 随动登记"),
+              "上限 1033 → 1036 随动登记；"
+              "2026-10-19 −17：_QUOTA_ERROR_KEYWORDS 收口至 cache_guard 唯一真源 + "
+              "熔断器记账分支改为 _BREAKER_FAIL_KIND 表驱动，上限 1036 → 1019"),
     "scripts/http_client.py": (
         1053, "HTTP 客户端（UA 轮换 + Cookie 积累 + 重试 + 主机节流）；"
               "2026-09-27 +8：host throttle buckets 加 LRU 淘汰（100 个上限）；"
@@ -213,7 +215,9 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "2026-10-16 +1：_content_sig 末尾接 normalize_title_suffix 剥站后缀"
               "（跨站同文对差异几乎全在结尾后缀，零依赖；归一化逻辑在 rank_signals）"),
     "scripts/search_pipeline.py": (
-        1101, "搜索编排主管线（路由→分派→融合→恢复→漏斗输出）；"
+        1077, "搜索编排主管线（路由→分派→融合→恢复→漏斗输出）；"
+              "2026-10-19 −24：自适应学习循环改用 cache_guard.should_record_adaptive "
+              "统一状态态过滤 + learner.batch() 单事务批量提交，上限 1101 → 1077；"
               "2026-10-17 +3：finalize 的 cache.set 透传 recovered 标记（恢复成功"
               "批次整批退化时降级短 TTL 写入，判据与常量在 cache_guard，存储侧"
               "改动在 cache.SearchCache.set）；"

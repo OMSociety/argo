@@ -26,7 +26,11 @@ import time
 import threading
 from typing import Any, Callable
 
-from cache_guard import attempt_cache_write, is_state_failure_outcome  # 失败态判据：配置/状态类失败不写负缓存（2026-09-29）
+from cache_guard import (
+    _QUOTA_ERROR_KEYWORDS,
+    attempt_cache_write,
+    is_state_failure_outcome,
+)
 from time_utils import is_time_capable
 from query_signals import (
     cumulative_sufficient,
@@ -48,16 +52,18 @@ _NOTE_STATUS = {
     "unknown": "error",             # 信息不足（含非 200 状态码）
 }
 
-# 配额耗尽错误关键词（唯一来源）：classify_engine_outcome 的 quota-exhausted
-# 分类与自适应学习跳过逻辑共用。新增配额错误码（如新的 API 业务码）只改这里。
-_QUOTA_ERROR_KEYWORDS = ("quota", "10406", "insufficient balance",
-                         "insufficient funds", "not enough money",
-                         "余额不足", "额度不足", "配额耗尽")
-
 # 「这次调用对最终答案有贡献」的 outcome 状态（唯一来源）。
 # `no-results` / `skipped-*` / `timeout` / `error` 一律不算——它们消耗了时间但
 # 没有交出任何可用结果。wasted 记账与 timing 可观测面共用这张表。
 _CONTRIBUTING_STATUS = frozenset({"ok", "ok-cached", "partial"})
+
+# 非贡献结局 status → 熔断器 failure kind 映射（未列出的状态归为 "error"）。
+_BREAKER_FAIL_KIND = {
+    "no-results": "empty",
+    "timeout": "timeout",
+    "blocked": "blocked",
+    "rate-limited": "rate-limited",
+}
 
 # 并发上限的兜底值 = 原硬编码的 3。配置缺失 / 非法 / 读不到时用它，
 # 保证「接上配置」这件事不会改变任何既有环境下的行为。
@@ -568,45 +574,22 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
             note_quota_exhausted(eng, outcome.get("detail") or "")
 
         if breaker is not None:
-            if outcome["status"] in _CONTRIBUTING_STATUS:
-                # 「交出可用结果」的判据只在这一张表里（同 _ingest 的 wasted 记账）。
-                # partial 是「有结果 + 有错误条目」，它同样属于贡献者；此前它落到
-                # 最后的 else，被记成 kind=error 的失败——既累计 opens（可能把
-                # 一个正常交付的引擎推向 auto-disable），又写进负缓存 30s，于是
-                # 同一个查询再搜时直接跳过该引擎，把它自己刚交出来的结果丢掉。
+            st = outcome["status"]
+            if st in _CONTRIBUTING_STATUS:
+                # 「交出可用结果」的判据只在这一张表里（同 _ingest 的 wasted 记账）：
+                # partial 是「有结果 + 有错误条目」，同样属于贡献者。
                 breaker.record_success(eng)
                 breaker.clear_negative(query, eng)
-            elif outcome["status"] == "quota-exhausted":
-                # 配额问题不是引擎健康问题，停用交给配额状态机（上面已记账）；
-                # 但归因必须留下——「为什么不行」正是这一支的可观测缺口。
+            elif st == "quota-exhausted":
+                # 配额问题交由配额状态机接管，不计入健康熔断，但保留归因供诊断。
                 breaker.record_note(eng, _attr)
-            elif outcome["status"] == "skipped-quota-exhausted":
-                # 配额耗尽引擎的跳过：与 quota-exhausted 同语义
-                # （配额不是引擎健康问题，不计失败、不负缓存），
-                # 但不重标记——标记只由真 403 现场写，否则 skip
-                # 会以 now 重置 until、滑动延长冷却窗口，破坏
-                # quota.mark_remote_exhausted 的周期边界自愈。
-                pass
-            elif outcome["status"] == "no-results":
-                breaker.record_failure(eng, kind="empty", attribution=_attr)
-                breaker.set_negative(query, eng, status="no-results")
-            elif outcome["status"] == "timeout":
-                breaker.record_failure(eng, kind="timeout", attribution=_attr)
-                breaker.set_negative(query, eng, status="timeout")
-            elif outcome["status"] in ("blocked", "rate-limited"):
-                # 被拦截 / 被限流都是源站行为，不是引擎故障：60s 短冷却，
-                # 不累计 opens（否则被封引擎会被冤枉 auto-disable）。
-                breaker.record_failure(eng, kind=outcome["status"], attribution=_attr)
-                breaker.set_negative(query, eng, status=outcome["status"])
-            else:
-                breaker.record_failure(eng, kind="error", attribution=_attr)
-                # 配置/状态类失败（缺密钥/熔断/鉴权/配额）不写负缓存：它们
-                # 换个环境就能好，把「此刻没配对」固化成「这个查询没答案」
-                # 正是 cache_guard.FailedStateCacheRejected 要防的同一类
-                # 事故（issue #12 同构：配好 key 仍回放失败）。熔断计数保留
-                # ——引擎确实不健康，只是这个查询不该被负缓存连坐。
+            elif st != "skipped-quota-exhausted":
+                breaker.record_failure(
+                    eng, kind=_BREAKER_FAIL_KIND.get(st, "error"), attribution=_attr
+                )
+                # 配置/状态类失败（缺密钥/熔断/鉴权/配额）不写负缓存，换好环境即恢复。
                 if not is_state_failure_outcome(outcome):
-                    breaker.set_negative(query, eng, status=outcome["status"])
+                    breaker.set_negative(query, eng, status=st)
 
         # 写 per-engine 缓存。守卫拒绝（登录态 / 退化 / 失败态）只该跳过这次写入：
         # 异常不接的话会被 _daemon_start 的兜底 except 接走，把一次**成功**的

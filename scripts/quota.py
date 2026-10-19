@@ -309,15 +309,39 @@ class QuotaManager:
                 return 1.0
             return max(0.0, (limit - state.get("used", 0)) / limit)
 
+    @staticmethod
+    def _engine_key_fp(engine: str) -> str:
+        """当前引擎生效密钥的短指纹（8 hex）；无密钥或读取失败返回空串。"""
+        try:
+            import hashlib
+            from engine_env import get_env, resolve_env_name
+            val = get_env(resolve_env_name(engine))
+            return hashlib.sha256(val.encode("utf-8")).hexdigest()[:8] if val else ""
+        except Exception:
+            return ""
+
+    @classmethod
+    def _mark_expired(cls, engine: str, mark: Any, now: float) -> bool:
+        """远端耗尽标记是否已失效（周期到期、数据损坏、或已更换新 API Key）。"""
+        if not isinstance(mark, dict) or now >= float(mark.get("until") or 0):
+            return True
+        saved_fp = mark.get("key_fp")
+        if saved_fp:
+            cur_fp = cls._engine_key_fp(engine)
+            if cur_fp != saved_fp:
+                return True
+        return False
+
     def mark_remote_exhausted(self, engine: str, reason: str = "",
                               period: str | None = None) -> None:
         """远端明示「配额耗尽」（如火山 10406 Free quota exhausted）时调用。
 
         设计目标：配额问题不需要人工改配置——标记后路由组合层全模式排除
-        该引擎，备用源自然接管；到下一周期边界惰性自愈（is_available /
-        is_hard_down 检查时清除），恢复后引擎自动回归。提前恢复（如充值）
+        该引擎，备用源自然接管；到下一周期边界或更换新 Key 时惰性自愈（is_available /
+        is_hard_down 检查时清除），恢复后引擎自动回归。提前恢复（如原 Key 充值）
         可执行 `python3 scripts/quota.py reset <engine>`。
         """
+        key_fp = self._engine_key_fp(engine)
         with self._lock:
             def _apply() -> None:
                 st = self._state.setdefault(engine, {
@@ -333,6 +357,7 @@ class QuotaManager:
                     "until": time.time() + seconds,
                     "reason": (reason or "")[:200],
                     "marked_at": time.time(),
+                    "key_fp": key_fp,
                 }
             self._mutate_locked(_apply)
 
@@ -355,15 +380,14 @@ class QuotaManager:
         return cleared
 
     def _refresh_remote_state_locked(self, engine: str, now: float) -> None:
-        """周期边界自愈（调用方须已持锁）。
+        """周期边界或换 Key 自愈（调用方须已持锁）。
 
         走 _mutate_locked 而非就地 _save_state：这是 load-modify-write，
         只用 threading.Lock 时 CLI 与 MCP 并发会互相覆盖整个状态文件。
         """
         st = self._state.get(engine) or {}
         mark = st.get("remote_exhausted")
-        # mark 残缺（手工编辑/截断成非 dict）时按过期处理：清掉坏标记自愈
-        if mark and (not isinstance(mark, dict) or now >= float(mark.get("until") or 0)):
+        if mark is not None and self._mark_expired(engine, mark, now):
             def _drop() -> None:
                 (self._state.get(engine) or {}).pop("remote_exhausted", None)
             self._mutate_locked(_drop)
@@ -378,7 +402,7 @@ class QuotaManager:
         """处于「远端配额耗尽」状态的引擎 → {reason, until}。
 
         一次性快照，供 `--list-engines` 展示：逐引擎调 is_remote_exhausted 会
-        重复走热读检查。顺带做过期自愈（与 _refresh_remote_state_locked 同计算方式），
+        重复走热读检查。顺带做过期/换 Key 自愈（与 _refresh_remote_state_locked 同计算方式），
         坏标记（非 dict）按过期处理。
         """
         with self._lock:
@@ -387,12 +411,10 @@ class QuotaManager:
             out: dict[str, dict[str, Any]] = {}
             stale: list[str] = []
             for engine, st in list(self._state.items()):
-                if not isinstance(st, dict):
+                if not isinstance(st, dict) or "remote_exhausted" not in st:
                     continue
                 mark = st.get("remote_exhausted")
-                if not isinstance(mark, dict):
-                    continue
-                if now >= float(mark.get("until") or 0):
+                if self._mark_expired(engine, mark, now):
                     stale.append(engine)
                     continue
                 out[engine] = {

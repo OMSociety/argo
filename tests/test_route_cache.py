@@ -199,6 +199,43 @@ def test_quota_exhausted_keeps_cache(cache_on, counted_route, monkeypatch):
     assert again.get("route_cached") is True
 
 
+def test_combo_engine_exhausted_or_recovered_invalidates_entry(
+    cache_on, counted_route, monkeypatch
+):
+    """缓存 combo 内的引擎耗尽，或此前耗尽的引擎恢复时，条目必须失效重算。"""
+    import quota
+
+    class _Qm:
+        def __init__(self, marks):
+            self._marks = marks
+
+        def remote_exhausted_marks(self):
+            return self._marks
+
+    # 1) 初始：byted 耗尽，octen 在 combo 中
+    monkeypatch.setattr(
+        quota, "get_quota_manager", lambda: _Qm({"byted": {"reason": "quota"}})
+    )
+    first = route.route_query_cached("combo耗尽与恢复", mode="auto", depth="fast")
+    assert first.get("route_cached") is False
+
+    # 2) combo 内的 octen 耗尽 → 必须失效重算
+    monkeypatch.setattr(
+        quota, "get_quota_manager",
+        lambda: _Qm({"byted": {"reason": "quota"}, "octen": {"reason": "quota"}}),
+    )
+    second = route.route_query_cached("combo耗尽与恢复", mode="auto", depth="fast")
+    assert second.get("route_cached") is False
+
+    # 3) byted 恢复（从耗尽集移除）→ 必须失效重算以接纳恢复源
+    monkeypatch.setattr(
+        quota, "get_quota_manager", lambda: _Qm({"octen": {"reason": "quota"}})
+    )
+    third = route.route_query_cached("combo耗尽与恢复", mode="auto", depth="fast")
+    assert third.get("route_cached") is False
+    assert len(counted_route) == 3
+
+
 def test_corrupt_cache_file_is_tolerated(cache_on, counted_route):
     """缓存文件损坏只该导致未命中，不该让搜索失败。"""
     route._route_cache_file().parent.mkdir(parents=True, exist_ok=True)

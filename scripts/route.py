@@ -92,6 +92,8 @@ from route_cache import (  # noqa: E402
     _route_cache_read,
     _route_cache_prune,
     _route_cache_write,
+    _route_cache_entry_valid,
+    _route_cache_pack_entry,
     invalidate_route_cache,
 )
 
@@ -142,6 +144,7 @@ from route_combo import (  # noqa: E402
     geo_lang_must_keep,
     breaker_filter,
     engine_is_dead,
+    is_engine_routable,
     build_refill_pool,
     backfill_after_breaker,
     select_tfidf_best, tfidf_lead_combo, TFIDF_STRONG_SCORE,
@@ -918,8 +921,6 @@ def route_query(query: str, engine_override: str = "auto",
     return _route_by_fallback(ctx)
 
 
-
-
 def route_query_cached(query: str, engine_override: str = "auto",
                        mode: str = "auto", depth: str = "fast",
                        context: str = "search",
@@ -959,8 +960,7 @@ def route_query_cached(query: str, engine_override: str = "auto",
                            engines_boost, fingerprint)
     entries = _route_cache_read()
     hit = entries.get(key)
-    if isinstance(hit, dict) and isinstance(hit.get("decision"), dict) \
-            and time.time() - float(hit.get("ts") or 0) <= _ROUTE_CACHE_TTL_S:
+    if _route_cache_entry_valid(hit, _ROUTE_CACHE_TTL_S):
         # 深拷贝：调用方就地改 decision，route_cache memo 又让多次读共享对象
         # （走 JSON 往返而非 copy：能进缓存本就以 JSON 可逆为前提）
         decision = json.loads(json.dumps(hit["decision"], ensure_ascii=False))
@@ -976,7 +976,7 @@ def route_query_cached(query: str, engine_override: str = "auto",
     # （与 config 磁盘缓存「缓存不得改变语义」同一条纪律）。
     try:
         if json.loads(json.dumps(decision, ensure_ascii=False)) == decision:
-            entries[key] = {"ts": time.time(), "decision": decision}
+            entries[key] = _route_cache_pack_entry(decision)
             _route_cache_write(_route_cache_prune(entries))
     except (TypeError, ValueError):
         pass

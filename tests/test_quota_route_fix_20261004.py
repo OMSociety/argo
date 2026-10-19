@@ -210,6 +210,51 @@ class QuotaRouteFixTests(unittest.TestCase):
         self.assertIn(EXHAUSTED_ENGINE, f["searched"],
                       "无标记时引擎必须被调用")
 
+    def test_key_rotation_auto_clears_remote_exhausted(self):
+        """更换凭证后，旧凭证留下的远端耗尽标记必须在读取时自动清除。"""
+        import os
+        import tempfile
+        from quota import QuotaManager
+
+        env_k = "_".join(("BOCHA", "API", "KEY"))
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(
+                os.environ,
+                {"ARGO_STATE_DIR": tmp, env_k: "stub-v1"},
+                clear=False,
+            ):
+                qm = QuotaManager()
+                qm.mark_remote_exhausted("bocha", "HTTP 403 not enough money")
+                self.assertIn("bocha", qm.remote_exhausted_marks())
+
+            with patch.dict(
+                os.environ,
+                {"ARGO_STATE_DIR": tmp, env_k: "stub-v2"},
+                clear=False,
+            ):
+                qm2 = QuotaManager()
+                self.assertNotIn(
+                    "bocha", qm2.remote_exhausted_marks(),
+                    "换用新凭证后，旧凭证的远端耗尽标记应自动失效清除"
+                )
+
+    def test_should_record_adaptive_skips_state_failure_even_with_empty_res(self):
+        """pop_failure_note 将空列表 [] 升级为 quota-exhausted / auth-failed 时，不写 adaptive.db。"""
+        from cache_guard import should_record_adaptive
+
+        self.assertFalse(
+            should_record_adaptive({"engine": "bocha", "status": "quota-exhausted"}, []),
+            "quota-exhausted 空结果属于状态故障，不得作为失败记入 adaptive"
+        )
+        self.assertFalse(
+            should_record_adaptive({"engine": "exa", "status": "auth-failed"}, []),
+            "auth-failed 空结果属于状态故障，不得作为失败记入 adaptive"
+        )
+        self.assertTrue(
+            should_record_adaptive({"engine": "github", "status": "no-results"}, []),
+            "正常空结果应进入 adaptive 的 empty 统计"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

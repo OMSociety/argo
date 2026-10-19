@@ -195,6 +195,30 @@ def _hard_down_blocked(engine_id: str) -> bool:
         return False
 
 
+def is_engine_routable(
+    engine_id: str,
+    *,
+    enabled: set[str] | None = None,
+    check_breaker: bool = True,
+    check_hard_down: bool = True,
+    check_dead: bool = False,
+    lang: str = "",
+    specs: dict | None = None,
+) -> bool:
+    """单一引擎路由准入谓词：统一收口 enabled / 熔断 / 配额硬耗尽 / 死源地板 / 语言可达。"""
+    if enabled is not None and engine_id not in enabled:
+        return False
+    if lang and not lang_allows(engine_id, lang, (specs or {}).get(engine_id)):
+        return False
+    if check_dead and engine_is_dead(engine_id):
+        return False
+    if check_breaker and _breaker_blocked(engine_id):
+        return False
+    if check_hard_down and _hard_down_blocked(engine_id):
+        return False
+    return True
+
+
 def backfill_after_breaker(combo: list[str], enabled: set[str],
                            features: dict | None = None,
                            query: str = "", skip_aux: bool = False,
@@ -221,9 +245,8 @@ def backfill_after_breaker(combo: list[str], enabled: set[str],
         for cand in refill_pool:
             if len(combo) >= target_len:
                 break
-            if cand in combo or cand not in enabled:
-                continue
-            if _breaker_blocked(cand) or (not skip_aux and _hard_down_blocked(cand)):
+            if cand in combo or not is_engine_routable(
+                    cand, enabled=enabled, check_hard_down=not skip_aux):
                 continue
             if _filter_lang_bound_family(
                     [cand], features, _specs_snapshot(), query) != [cand]:
@@ -326,9 +349,8 @@ def select_tfidf_best(query: str,
         # 丢弃当前候选后继续看下一个（2026-08 修复：旧逻辑只看 top-1，
         # 丢弃后不检查 top-2/3，可能错失 anysearch 等合格候选）。
         _ql = (features or {}).get("primary_lang") or ""
-        if _ql and not lang_allows(cand, _ql, (specs or {}).get(cand)):
-            continue
-        if engine_is_dead(cand) or _hard_down_blocked(cand):
+        if not is_engine_routable(cand, check_breaker=False, check_dead=True,
+                                  lang=_ql, specs=specs):
             continue
         tfidf_best = cand
         tfidf_best_score = score
@@ -842,11 +864,10 @@ def breaker_filter(combo: list[str], enabled: set[str],
     态，会被 `_filter_breaker_blocked` 一并摘掉。
     """
     combo = apply_lang_aux(combo, features, enabled, query, skip=skip_aux)
-    combo = _filter_breaker_blocked(combo)
-    if not skip_aux and combo:
-        combo = [e for e in combo if not _hard_down_blocked(e)]
+    combo = [e for e in combo if is_engine_routable(
+        e, check_hard_down=not skip_aux)]
     if not combo:
-        combo = ([e for e in empty if e in enabled and not _hard_down_blocked(e)]
+        combo = ([e for e in empty if is_engine_routable(e, enabled=enabled, check_breaker=False)]
                  or [e for e in empty if e in enabled] or ["anysearch"])
     return combo
 

@@ -44,7 +44,24 @@ class CircuitBreaker:
         self._engines: dict[str, dict[str, Any]] = {}
         self._neg: dict[str, dict[str, Any]] = {}  # key → {expires, status}
         self._last_save_ts: float = 0.0  # 最近一次成功落盘时刻（观测用）
+        self._sig: tuple[int, int] | None = None
         self._load()
+
+    def _file_sig(self) -> tuple[int, int] | None:
+        try:
+            st = os.stat(self._path)
+            return (st.st_mtime_ns, st.st_size)
+        except OSError:
+            return None
+
+    def _fresh_locked(self) -> None:
+        sig = self._file_sig()
+        if sig != self._sig and (sig is not None or self._sig is not None):
+            if sig is None:
+                self._engines = {}
+                self._sig = None
+            else:
+                self._load()
 
     def _load(self) -> None:
         try:
@@ -55,9 +72,10 @@ class CircuitBreaker:
             with open(self._path, encoding="utf-8") as f:
                 data = json.loads(f.read())
             self._engines = data.get("engines") or {}
+            self._sig = self._file_sig()
             # 负缓存仅进程内有效，不从磁盘恢复（避免长期脏状态）
         except FileNotFoundError:
-            pass  # 文件不存在，保留空态
+            self._sig = None  # 文件不存在，保留空态
         except Exception as e:
             # 解析失败**不清空**已有记忆：清空 = 已被判死的源重新进路由、
             # auto-disable 全部重置，而且没有任何提示（用户看到的是「今天
@@ -78,6 +96,7 @@ class CircuitBreaker:
         相近备选，正常路径组合集合不变，缓存键不变，速度零影响。
         """
         with self._lock:
+            self._fresh_locked()
             st = self._engines.get(engine) or {}
             state = st.get("state", "closed")
             opened_at = float(st.get("opened_at") or 0)
@@ -97,6 +116,7 @@ class CircuitBreaker:
     def allow(self, engine: str) -> tuple[bool, str]:
         """是否允许调用该引擎。返回 (allowed, reason)。"""
         with self._lock:
+            self._fresh_locked()
             st = self._engines.get(engine) or {}
             state = st.get("state", "closed")
             opened_at = float(st.get("opened_at") or 0)
@@ -168,6 +188,7 @@ class CircuitBreaker:
                         {"engines": self._engines, "updated": time.time()},
                         indent=None,
                     )
+                    self._sig = self._file_sig()
                     self._last_save_ts = time.time()
             except Exception:
                 # 锁/写盘失败：若变更尚未落到内存则补一次，保证本进程内行为
@@ -185,18 +206,32 @@ class CircuitBreaker:
             # 直接 open 而非 os.path.exists + open：消灭 check-then-act 竞态
             with open(self._path, encoding="utf-8") as f:
                 self._engines = (json.loads(f.read()).get("engines") or {})
+            self._sig = self._file_sig()
         except FileNotFoundError:
-            pass  # 文件不存在，保留内存态
+            self._sig = None  # 文件不存在，保留内存态
         except Exception:
             pass
 
     def record_success(self, engine: str) -> None:
+        """引擎成功返回：本已健康 closed 且无失败计数时内存短路（零文件锁、零写盘）。"""
+        with self._lock:
+            self._fresh_locked()
+            st = self._engines.get(engine)
+            if not st or (
+                st.get("state", "closed") == "closed"
+                and not st.get("failures")
+                and not st.get("opens")
+                and not st.get("empty_streak")
+            ):
+                if st is None:
+                    self._engines[engine] = {"state": "closed", "failures": 0, "opens": 0}
+                return
+
         def _m() -> None:
             self._engines[engine] = {
                 "state": "closed",
                 "failures": 0,
                 "opens": 0,          # 重置连续 open 计数
-                "last_ok": time.time(),
             }
         self._mutate_locked(_m)
 
@@ -294,6 +329,7 @@ class CircuitBreaker:
     def auto_disabled(self) -> list[str]:
         """返回所有处于自动禁用状态的引擎。"""
         with self._lock:
+            self._fresh_locked()
             return [e for e, st in self._engines.items()
                     if st.get("state") == "disabled"]
 

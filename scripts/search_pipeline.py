@@ -50,8 +50,7 @@ def _log(message: str) -> None:
     logging.getLogger("unified_search").debug(message)
 
 from bounded_run import run_bounded
-from cache_guard import attempt_cache_write
-from engine_dispatch import _QUOTA_ERROR_KEYWORDS
+from cache_guard import attempt_cache_write, should_record_adaptive
 from engine_env import env_flag
 from variant_recall import augment_with_variants
 from phrase_filter import apply_phrase_filter, extract_phrases
@@ -918,58 +917,35 @@ def finalize(req: _SearchRequest, run: _SearchRun, hooks: Any) -> dict[str, Any]
         )
     _tock(timing, "cache_write", _tk_cache_write)
 
-    # 自适应学习
+    # 自适应学习（单事务批量写入 + cache_guard 统一状态态过滤）
     try:
+        import contextlib
         from adaptive import get_learner
         learner = get_learner()
-        # 引擎结局映射：下面要区分「空结果」与「真失败」，需要它
-        _status_of = {o.get("engine"): o.get("status")
-                      for o in engine_outcomes if isinstance(o, dict)}
-        for eng, res in raw_results.items():
-            # 早停收工弃置的引擎（cancelled）不参与成败记账：它没有失败，
-            # 也没交付结果——记失败会把健康引擎的 combo 分数被早停逐次毒化，
-            # 记空结果会污染 empty 统计。与上面配额/鉴权的中性语义同源。
-            if str(_status_of.get(eng) or "").startswith(("cancelled", "skipped-")):
-                continue
-            errors = [str(r.get("error", "")) for r in res if isinstance(r, dict) and "error" in r]
-            # 配额/鉴权类是配置态故障，不是引擎质量信号：计入会把恢复后的
-            # 引擎分数毒化在历史失败里（byted 配额期 38 连败 → 分数 0.072，
-            # 配额自愈后无流量刷正分，死锁）。此类错误不计入，保持中性。
-            # 配额关键词走 _QUOTA_ERROR_KEYWORDS 唯一来源；鉴权类仅此处有。
-            if errors and all(
-                any(k in msg.lower() for k in
-                    (*_QUOTA_ERROR_KEYWORDS, "unauthorized", "api key",
-                     "forbidden", "401", "403"))
-                for msg in errors
-            ):
-                continue
-            success = bool(res and any(isinstance(r, dict) and "error" not in r for r in res))
-            # 「引擎正常、但这次查询它没有结果」与「引擎失败」是两回事：
-            # 前者说明的是查询与源不匹配，不是源坏了。混在一起会误杀——实测
-            # github 窗口内 63 次调用的失败归因全是 empty，它却在 local_code /
-            # package_search 这些**声明要用它**的域里因分数低于 0.3 被整个剔除
-            # （同类还有 wikipedia 0.17 / openalex 0.29 / hackernews 0.10 /
-            # twitter 0.17 / open_library 0.17，共 16 个域受影响）。
-            # 空结果只单独统计，不参与成功率计算（见 adaptive.get_score）。
-            empty = (not success) and _status_of.get(eng) in (
-                "no-results", "no-results-cached")
-            latency = engine_latency.get(eng, elapsed / max(len(raw_results), 1))
-            cost = get_cost_factor(eng)
-            # 质量回写（2026-09-27 接通）：把「这次结果有多相关」喂给自适应
-            # 学习器，让引擎排序能学好坏而不只学快慢。零网络成本——只是对
-            # 已经拿在手里的 res 算一次词元覆盖率。
-            # 只在 success 时算：空/失败没有「结果质量」可言（empty 有独立
-            # 口径，见上），给一个 0.0 会被 quality_factor 当成「测过且很差」。
-            quality = None
-            if success:
-                try:
-                    from query_signals import result_relevance
-                    quality = result_relevance(query, res)
-                except Exception:
-                    quality = None
-            learner.record(eng, success=success, latency_ms=latency,
-                           cost=0.0 if cost >= 0.85 else 0.001, empty=empty,
-                           quality=quality)
+        _outcome_of = {o.get("engine"): o
+                       for o in engine_outcomes if isinstance(o, dict)}
+        _batch_ctx = learner.batch() if hasattr(learner, "batch") else contextlib.nullcontext()
+        with _batch_ctx:
+            for eng, res in raw_results.items():
+                outcome = _outcome_of.get(eng)
+                if not should_record_adaptive(outcome, res):
+                    continue
+                st = (outcome or {}).get("status")
+                success = bool(res and any(isinstance(r, dict) and "error" not in r for r in res))
+                # 空结果说明查询与源不匹配而非源故障，单独统计不拉低成功率（见 adaptive.get_score）。
+                empty = (not success) and st in ("no-results", "no-results-cached")
+                latency = engine_latency.get(eng, elapsed / max(len(raw_results), 1))
+                cost = get_cost_factor(eng)
+                quality = None
+                if success:
+                    try:
+                        from query_signals import result_relevance
+                        quality = result_relevance(query, res)
+                    except Exception:
+                        quality = None
+                learner.record(eng, success=success, latency_ms=latency,
+                               cost=0.0 if cost >= 0.85 else 0.001, empty=empty,
+                               quality=quality)
     except ImportError:
         pass
     except Exception as e:
