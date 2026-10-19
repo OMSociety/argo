@@ -54,7 +54,7 @@ class TestAllowUsesFreshState(unittest.TestCase):
             _seed(p, opens=1, failures=42, attribution="v1")
             b = cb.CircuitBreaker(state_path=str(p))
             # 「进程 B」在 A 构造之后落盘的新状态
-            _seed(p, opens=99, failures=777, attribution="v2")
+            _seed(p, opens=2, failures=777, attribution="v2")
             ok, reason = b.allow(ENG)
             self.assertTrue(ok)
             self.assertEqual(reason, "half_open_probe")
@@ -62,7 +62,7 @@ class TestAllowUsesFreshState(unittest.TestCase):
             self.assertEqual(on_disk["state"], "half_open")  # A 的转换生效
             self.assertEqual(on_disk["failures"], 777)       # B 的记忆未被回滚
             self.assertEqual(on_disk["last_attribution"], "v2")
-            self.assertEqual(on_disk["opens"], 99)
+            self.assertEqual(on_disk["opens"], 2)
 
 
 if __name__ == "__main__":
