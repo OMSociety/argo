@@ -19,13 +19,22 @@ import secrets
 from pathlib import Path
 
 try:
-    from py_mini_racer import MiniRacer, JSUndefined
+    from py_mini_racer import MiniRacer, JSUndefined, JSTimeoutException
 except ImportError as _e:  # pragma: no cover
     MiniRacer = None
     _IMPORT_ERR = _e
     JSUndefined = type("_JSUndefinedMissing", (), {})
+    JSTimeoutException = type("_JSTimeoutMissing", (Exception,), {})
 
 _SHIM_PATH = Path(__file__).parent / "shim.js"
+_SHIM_CODE: str | None = None
+
+
+def _get_shim_code() -> str:
+    global _SHIM_CODE
+    if _SHIM_CODE is None:
+        _SHIM_CODE = _SHIM_PATH.read_text(encoding="utf-8")
+    return _SHIM_CODE
 
 
 def _to_py(v):
@@ -52,34 +61,26 @@ class JsRun:
         env = json.dumps(environment or {}, ensure_ascii=False)
         entropy = secrets.token_hex(16)
         self._ctx.eval(f"var __jsrun_env__ = {env}; var __jsrun_entropy__ = '{entropy}';")
-        self._ctx.eval(_SHIM_PATH.read_text(encoding="utf-8"))
+        self._ctx.eval(_get_shim_code())
 
     def run(self, source: str, timeout_ms: int = 5000) -> object:
         """执行 JS 脚本，返回完成值（递归转 Python 容器）。
 
         直接走 mini-racer 的脚本求值：顶层 var 声明与 window 赋值跨 run()
         持久（挑战脚本普遍依赖这个），脚本完成值即返回值（IIFE 结果能透出）。
-        timeout_ms: 执行超时（毫秒），超时抛 TimeoutError。
+        timeout_ms: 执行超时（毫秒），由 V8 原生 timeout_sec 控制（跨线程/跨平台
+        安全，不再用 signal.SIGALRM——后者在 crawl/research/mcp 工作线程必抛
+        ValueError: signal only works in main thread），超时抛 TimeoutError。
         """
-        import signal
-
-        if timeout_ms <= 0:
-            return _to_py(self._ctx.eval(source))
-
-        def _handler(signum, frame):
-            raise TimeoutError(f"js-run 执行超时（{timeout_ms}ms）")
-
-        old_handler = signal.signal(signal.SIGALRM, _handler)
-        signal.setitimer(signal.ITIMER_REAL, timeout_ms / 1000)
+        timeout_sec = (timeout_ms / 1000.0) if timeout_ms and timeout_ms > 0 else None
         try:
-            return _to_py(self._ctx.eval(source))
+            return _to_py(self._ctx.eval(source, timeout_sec=timeout_sec))
+        except JSTimeoutException as e:
+            raise TimeoutError(f"js-run 执行超时（{timeout_ms}ms）") from e
         except TimeoutError:
             raise
         except Exception as e:
             raise RuntimeError(f"js-run 执行失败: {e}") from e
-        finally:
-            signal.setitimer(signal.ITIMER_REAL, 0)
-            signal.signal(signal.SIGALRM, old_handler)
 
     def eval_raw(self, source: str):
         """不经 JSON 包装的原始求值（拿标量用）。"""

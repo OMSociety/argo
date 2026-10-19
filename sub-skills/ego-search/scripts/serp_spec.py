@@ -78,3 +78,32 @@ def build_serp_js(engine: str, n: int) -> str:
     return (SERP_EXTRACT_TEMPLATE
             .replace("%%ENGINE_JSON%%", _json.dumps(str(engine)))
             .replace("%%N%%", str(int(n))))
+
+
+# 页面内正文提取 IIFE 体（返回 JSON 字符串，ego 与 webbridge 双运行时唯一真源）。
+# 占位：%%CONTENT_MAX%%（整数）
+BODY_EXTRACT_TEMPLATE = r"""(() => {
+  const max = %%CONTENT_MAX%%;
+  const q = (sel) => document.querySelector(sel);
+  const title = (q('h1') || {}).innerText || document.title || '';
+  const candidates = ['article', '[role="main"]', '.article-content', '.post-content',
+                      '.entry-content', '#content', '.content', 'main'];
+  let best = null, bestLen = 0;
+  for (const sel of candidates) {
+    const el = q(sel);
+    if (!el) continue;
+    const len = (el.innerText || '').length;
+    if (len > bestLen) { best = el; bestLen = len; }
+  }
+  const root = best || document.body;
+  const clone = root.cloneNode(true);
+  clone.querySelectorAll('nav, footer, header, aside, script, style, noscript, iframe, .ad, .ads, .banner, .comment, .recommend, .related, .share, .sidebar').forEach(n => n.remove());
+  let content = clone.innerText || '';
+  if (!content && document.body) content = document.body.innerText;
+  return JSON.stringify({ title: (title || '').trim(), content: (content || '').slice(0, max), url: location.href });
+})()"""
+
+
+def build_body_js(content_max: int = 60_000) -> str:
+    """按字符上限生成正文提取 IIFE（占位符注入唯一入口）。"""
+    return BODY_EXTRACT_TEMPLATE.replace("%%CONTENT_MAX%%", str(int(content_max)))

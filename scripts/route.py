@@ -610,7 +610,7 @@ def _route_by_domain(ctx: _RouteCtx, domain: dict[str, Any], secondary: list[dic
         # 统计局），其余 enabled 引擎殿后
         engines_fallback=(
             [e for e in (domain.get("engines_combo") or [])
-             if e not in set(engines_combo)]
+             if e in enabled and e not in set(engines_combo)]
             + [e for e in enabled if e not in engines_combo
                and e not in set(domain.get("engines_combo") or [])]),
         reason=(
@@ -700,7 +700,8 @@ def _route_by_tfidf(ctx: _RouteCtx) -> dict[str, Any]:
         engines_combo=engines_combo,
         reason=(
             (f"TF-IDF 语义路由 → {_engine_display(engines_combo[0])}" if tfidf_best == engines_combo[0]
-             else f"TF-IDF 低分辅源 → {_engine_display(tfidf_best)}（通用保底领队）")
+             else f"TF-IDF 低分辅源 → {_engine_display(tfidf_best)}（通用保底领队）" if tfidf_best in engines_combo
+             else f"TF-IDF 回退通用保底 → {_engine_display(engines_combo[0])}")
             + f" (score={tfidf_best_score:.3f}, 正则未命中)"
             + (f" [boost={engines_boost}]" if engines_boost else "")
         ),
@@ -713,8 +714,7 @@ def _route_by_tfidf(ctx: _RouteCtx) -> dict[str, Any]:
 
 
 def _route_by_fallback(ctx: _RouteCtx) -> dict[str, Any]:
-    """通用保底分支：零分 TF-IDF 与无语义候选都走这里（本地优先 + 免费通用源）。
-    """
+    """通用保底分支：零分 TF-IDF 与无语义候选都走这里（本地优先 + 免费通用源）。"""
     query = ctx.query
     features = ctx.features
     enabled = ctx.enabled
@@ -859,9 +859,9 @@ def route_query(query: str, engine_override: str = "auto",
     # memo（真实环境全量过滤 13ms/次，连调多次成主热点；2026-09-30 修）。
     # 不包 try/except TypeError：兼容层死代码，改坏签名须显式报错。
     enabled = set(get_engines(routable_only=True).keys())
-    # 若过滤过狠导致空集，回退到 enabled 全集（避免完全不可用）
+    # 若过滤过狠导致空集，回退到非 explicit_only 的 enabled 集
     if not enabled:
-        enabled = set(get_engines().keys())
+        enabled = {k for k, s in get_engines().items() if not s.get("explicit_only")}
     quota_mgr = get_quota_manager()  # 预算过滤 + auto/deep 硬耗尽剔除（fail-open）
     if mode in ("fast", "budget"):
         enabled = {e for e in enabled if quota_mgr.is_available(e, mode=mode)}
@@ -895,7 +895,7 @@ def route_query(query: str, engine_override: str = "auto",
             _semantic_route = sys.modules[__name__].semantic_route
             tfidf_best, tfidf_best_score, tfidf_scores = select_tfidf_best(
                 query, features, _specs_snapshot(), _semantic_route,
-                min_score=TFIDF_MIN_SCORE)
+                min_score=TFIDF_MIN_SCORE, enabled=enabled)
         except ImportError:
             pass
         except Exception as e:

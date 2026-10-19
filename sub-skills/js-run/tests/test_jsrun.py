@@ -125,6 +125,33 @@ def test_close_releases():
         pass  # 预期行为
 
 
+def test_run_in_worker_thread():
+    # 回归：此前用 signal.SIGALRM，在工作线程（crawl/research/mcp_server）
+    # 必抛 ValueError: signal only works in main thread
+    import threading
+
+    out_box: dict = {}
+
+    def _worker():
+        try:
+            with JsRun() as jr:
+                out_box["val"] = jr.run("navigator.platform + ':' + (20 + 22)")
+                try:
+                    jr.run("while(true){}", timeout_ms=200)
+                    out_box["timeout_ok"] = False
+                except TimeoutError:
+                    out_box["timeout_ok"] = True
+        except BaseException as e:
+            out_box["err"] = e
+
+    t = threading.Thread(target=_worker)
+    t.start()
+    t.join(timeout=5)
+    assert "err" not in out_box, f"工作线程执行失败: {out_box.get('err')!r}"
+    assert out_box.get("val") == "Win32:42"
+    assert out_box.get("timeout_ok") is True
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in sorted(globals().items()):

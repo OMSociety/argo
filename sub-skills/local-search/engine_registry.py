@@ -46,23 +46,22 @@ DEFAULT_CATEGORIES = [
     "vertical",
 ]
 
-# 反爬/拦截标记（用于 health_check 快速判定）
-ANTI_BOT_MARKERS = [
-    "captcha", "recaptcha", "robot", "robots", "cloudflare", "challenge",
-    "blocked", "verification", "please verify", "access denied",
-    "too many requests", "rate limit",
-]
+def _ensure_root_scripts() -> None:
+    _root_scripts = SKILL_DIR.parents[1] / "scripts"
+    if _root_scripts.exists() and str(_root_scripts) not in sys.path:
+        sys.path.append(str(_root_scripts))
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
-    if yaml is None:
-        raise ImportError("缺少 PyYAML，请安装：pip install pyyaml")
     try:
+        _ensure_root_scripts()
         from yaml_load import load as _yaml_load
         with path.open("r", encoding="utf-8") as f:
             data = _yaml_load(f)
         return data if isinstance(data, dict) else {}
     except Exception:
+        if yaml is None:
+            raise ImportError("缺少 PyYAML，请安装：pip install pyyaml")
         try:
             with path.open("r", encoding="utf-8") as f:
                 data = yaml.safe_load(f)
@@ -73,9 +72,14 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 
 
 def _default_health_state_path() -> Path:
-    base = Path(os.path.expanduser("~/.cache/unified-search"))
-    base.mkdir(parents=True, exist_ok=True)
-    return base / "local_search_health.json"
+    try:
+        _ensure_root_scripts()
+        from argo_paths import state_path
+        return state_path("local_search_health.json")
+    except Exception:
+        base = Path(os.path.expanduser("~/.cache/unified-search"))
+        base.mkdir(parents=True, exist_ok=True)
+        return base / "local_search_health.json"
 
 
 class EngineRegistry:
@@ -89,13 +93,27 @@ class EngineRegistry:
     ):
         self.config_path = Path(config_path) if config_path else CONFIG_PATH
         self.parse_maps_path = Path(parse_maps_path) if parse_maps_path else PARSE_MAPS_PATH
-        self.health_state_path = Path(health_state_path) if health_state_path else _default_health_state_path()
+        self._explicit_health_path = Path(health_state_path) if health_state_path else None
+        self._loaded_health_path: Path | None = None
         self._config_mtime: float = 0.0
         self._parse_mtime: float = 0.0
         self._config: dict[str, Any] = {}
         self._parse_maps: dict[str, Any] = {}
         self._health: dict[str, Any] = {}
         self._load()
+
+    @property
+    def health_state_path(self) -> Path:
+        return self._explicit_health_path or _default_health_state_path()
+
+    @health_state_path.setter
+    def health_state_path(self, val: Path | str | None) -> None:
+        self._explicit_health_path = Path(val) if val else None
+
+    def _sync_health_path(self) -> None:
+        cur = self.health_state_path
+        if self._loaded_health_path != cur:
+            self._health = self._load_health()
 
     def _load(self) -> None:
         """加载配置、解析映射和健康状态缓存。"""
@@ -111,10 +129,12 @@ class EngineRegistry:
         self._health = self._load_health()
 
     def _load_health(self) -> dict[str, Any]:
-        if not self.health_state_path.exists():
+        hp = self.health_state_path
+        self._loaded_health_path = hp
+        if not hp.exists():
             return {}
         try:
-            with self.health_state_path.open("r", encoding="utf-8") as f:
+            with hp.open("r", encoding="utf-8") as f:
                 data = json.load(f)
             if isinstance(data, dict):
                 # 陈旧条目清理（2026-09-29）：健康文件此前只增不减——实测
@@ -129,24 +149,24 @@ class EngineRegistry:
 
     def _save_health(self) -> None:
         try:
+            hp = self.health_state_path
+            self._loaded_health_path = hp
             # 写回前套用与 _load_health 相同的陈旧过滤：内存快照是全量写回的，
             # 不过滤会让 30 天未刷新的条目复活并覆盖他进程新写的条目。
             cutoff = time.time() - _HEALTH_STALE_S
             payload = {k: v for k, v in self._health.items()
                        if isinstance(v, dict) and v.get("last_checked", 0) >= cutoff}
-            self.health_state_path.parent.mkdir(parents=True, exist_ok=True)
+            hp.parent.mkdir(parents=True, exist_ok=True)
             try:
-                _root_scripts = SKILL_DIR.parents[1] / "scripts"
-                if str(_root_scripts) not in sys.path:
-                    sys.path.append(str(_root_scripts))
-                from argo_paths import atomic_write_json
-                atomic_write_json(self.health_state_path, payload)
+                _ensure_root_scripts()
+                from argo_paths import atomic_write_json, file_lock
+                with file_lock(hp):
+                    atomic_write_json(hp, payload)
             except ImportError:
-                tmp = self.health_state_path.with_name(
-                    self.health_state_path.name + f".{os.getpid()}.tmp")
+                tmp = hp.with_name(hp.name + f".{os.getpid()}.tmp")
                 with tmp.open("w", encoding="utf-8") as f:
                     json.dump(payload, f, ensure_ascii=False, indent=2)
-                os.replace(tmp, self.health_state_path)
+                os.replace(tmp, hp)
         except Exception as e:
             logger.warning(f"保存健康状态失败: {e}")
 
@@ -182,6 +202,7 @@ class EngineRegistry:
 
     def get_engine(self, name: str) -> dict[str, Any] | None:
         """获取指定引擎的完整配置（含运行时可用状态）。"""
+        self._sync_health_path()
         spec = self.engines.get(name)
         if spec is None:
             return None
@@ -243,6 +264,7 @@ class EngineRegistry:
     # ── 可用性管理 ───────────────────────────────────────────────────────────────
 
     def get_health(self, name: str) -> dict[str, Any]:
+        self._sync_health_path()
         return dict(self._health.get(name, {}))
 
     def update_availability(self, name: str, available: bool,
@@ -252,6 +274,7 @@ class EngineRegistry:
         persist=False 时只改内存、不落盘——批量更新方（run_health_check 一轮
         N 个引擎）用它把 N 次全文件重写收成 1 次，由调用方最后统一 _save_health。
         """
+        self._sync_health_path()
         now = time.time()
         record = self._health.setdefault(name, {})
         record["last_checked"] = now
@@ -279,6 +302,7 @@ class EngineRegistry:
             self.update_availability(name, data.get("available", False), **data)
 
     def is_available(self, name: str) -> bool:
+        self._sync_health_path()
         eng = self.get_engine(name)
         if eng is not None:
             return bool(eng.get("available", True))

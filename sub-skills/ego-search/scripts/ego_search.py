@@ -66,9 +66,13 @@ EGO_BIN = rt.EGO_BIN
 RESULT_MARKER = "EGO_RESULT|"
 SOURCE = "ego-browser"
 
-# SEARCH_URLS / SERP 提取选择器唯一来源 = serp_spec（ego 与 webbridge 共用，
-# 2026-09-13 收编：此前两份逐字节相同的 IIFE 各自维护，修一处漏一处）
-from serp_spec import SEARCH_URLS, build_serp_js as _build_serp_js
+# SEARCH_URLS / SERP 与正文提取选择器唯一来源 = serp_spec（ego 与 webbridge 共用）
+from serp_spec import (
+    SEARCH_URLS,
+    BODY_EXTRACT_TEMPLATE as BODY_EXTRACT_IIFE,
+    build_serp_js as _build_serp_js,
+    build_body_js as _build_body_js,
+)
 
 DEFAULT_TIMEOUT = 120  # 秒
 API_DATA_LIMIT = 100_000  # 字符；超限截断并标记
@@ -199,32 +203,8 @@ def run_ego(js_script: str, timeout: int = DEFAULT_TIMEOUT) -> dict:
     return {"ok": True, "payload": payload}
 
 
-# ── JS 模板（单源：SERP / BODY 各一份，search·fetch·act 组合）──────────
+# ── JS 模板（单源：SERP / BODY 唯一来源见 serp_spec，search·fetch·act 组合）──
 # 转义纪律：页面内选择器写死在模板；Node 层只注入纯安全占位符。
-
-# 页面内 SERP 提取 IIFE 体（返回 JSON 字符串）。占位：%%ENGINE%% %%N%%
-# SERP 提取 IIFE 见 serp_spec.SERP_EXTRACT_TEMPLATE（唯一来源）
-
-# 页面内正文提取 IIFE 体（返回 JSON 字符串）。占位：%%CONTENT_MAX%%
-BODY_EXTRACT_IIFE = r"""(() => {
-  const q = (sel) => document.querySelector(sel);
-  const title = (q('h1') || {}).innerText || document.title || '';
-  const candidates = ['article', '[role="main"]', '.article-content', '.post-content',
-                      '.entry-content', '#content', '.content', 'main'];
-  let best = null, bestLen = 0;
-  for (const sel of candidates) {
-    const el = q(sel);
-    if (!el) continue;
-    const len = (el.innerText || '').length;
-    if (len > bestLen) { best = el; bestLen = len; }
-  }
-  const root = best || document.body;
-  const clone = root.cloneNode(true);
-  clone.querySelectorAll('nav, footer, header, aside, script, style, noscript, iframe, .ad, .ads, .banner, .comment, .recommend, .related, .share, .sidebar').forEach(n => n.remove());
-  let content = clone.innerText || '';
-  if (!content && document.body) content = document.body.innerText;
-  return JSON.stringify({ title: title.trim(), content: content.slice(0, %%CONTENT_MAX%%), url: location.href });
-})()"""
 
 FOCUS_FILTER = r"""
 const kw = '%%FOCUS%%'.toLowerCase();
@@ -345,7 +325,7 @@ def _serp_iife(engine: str, n: int) -> str:
 
 
 def _body_iife(content_max: int) -> str:
-    return build_js(BODY_EXTRACT_IIFE, CONTENT_MAX=content_max)
+    return _build_body_js(content_max)
 
 
 # ── 模式实现 ──────────────────────────────────────────────────────────

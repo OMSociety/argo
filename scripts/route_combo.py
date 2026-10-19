@@ -301,7 +301,8 @@ def select_tfidf_best(query: str,
                       features: dict | None,
                       specs: dict | None,
                       semantic_route,
-                      min_score: float = 0.12
+                      min_score: float = 0.12,
+                      enabled: set[str] | None = None,
                       ) -> tuple[str | None, float, list]:
     """TF-IDF 语义路由选源：返回 (最佳引擎, 分数, 候选表)。
 
@@ -328,6 +329,7 @@ def select_tfidf_best(query: str,
     }
     tfidf_best: str | None = None
     tfidf_best_score = 0.0
+    near_miss: tuple[str, float] | None = None
     tfidf_scores: list = semantic_route(query, top_k=3)
     for cand, score, _ in tfidf_scores:
         social_ok = True
@@ -349,12 +351,18 @@ def select_tfidf_best(query: str,
         # 丢弃当前候选后继续看下一个（2026-08 修复：旧逻辑只看 top-1，
         # 丢弃后不检查 top-2/3，可能错失 anysearch 等合格候选）。
         _ql = (features or {}).get("primary_lang") or ""
-        if not is_engine_routable(cand, check_breaker=False, check_dead=True,
-                                  lang=_ql, specs=specs):
+        if not is_engine_routable(cand, check_breaker=False,
+                                  check_dead=True, lang=_ql, specs=specs):
+            continue
+        if enabled is not None and cand not in enabled:
+            if near_miss is None:
+                near_miss = (cand, score)
             continue
         tfidf_best = cand
         tfidf_best_score = score
         break
+    if tfidf_best is None and near_miss is not None:
+        tfidf_best, tfidf_best_score = near_miss
     return tfidf_best, tfidf_best_score, tfidf_scores
 
 

@@ -33,10 +33,9 @@ WEBBRIDGE_URL = os.environ.get(
 )
 DEFAULT_TIMEOUT = int(os.environ.get("EGO_SEARCH_WEBBRIDGE_TIMEOUT", "90"))
 
-from serp_spec import SEARCH_URLS, build_serp_js  # noqa: E402  单一真源
+from serp_spec import SEARCH_URLS, build_serp_js, build_body_js  # noqa: E402  单一真源
 
-# 页面内 SERP 提取（与 ego 选择器同构）
-# SERP 提取 IIFE 见 serp_spec.SERP_EXTRACT_TEMPLATE（唯一来源，与 ego_search 共用）
+# 页面内 SERP 与正文提取选择器唯一来源见 serp_spec（与 ego_search 共用）
 
 # ── 时间窗工具（ego/webbridge 双路径共用）──────────────────────────────
 def _parse_time(s: str | None) -> str | None:
@@ -122,29 +121,6 @@ def filter_window(results: list, since: str | None, until: str | None) -> list:
             continue
         out.append(r)
     return out
-
-BODY_JS = r"""
-(() => {
-  const max = %MAX%;
-  const q = (sel) => document.querySelector(sel);
-  const title = (q('h1') || {}).innerText || document.title || '';
-  const candidates = ['article', '[role="main"]', '.article-content', '.post-content',
-                      '.entry-content', '#content', '.content', 'main'];
-  let best = null, bestLen = 0;
-  for (const sel of candidates) {
-    const el = q(sel);
-    if (!el) continue;
-    const len = (el.innerText || '').length;
-    if (len > bestLen) { best = el; bestLen = len; }
-  }
-  const root = best || document.body;
-  const clone = root.cloneNode(true);
-  clone.querySelectorAll('nav, footer, header, aside, script, style, noscript, iframe, .ad, .ads, .banner, .comment, .recommend, .related, .share, .sidebar').forEach(n => n.remove());
-  let content = clone.innerText || '';
-  if (!content && document.body) content = document.body.innerText;
-  return JSON.stringify({ title: (title || '').trim(), content: (content || '').slice(0, max), url: location.href });
-})()
-"""
 
 
 def _command(action: str, args: dict | None, session: str, timeout: int = DEFAULT_TIMEOUT) -> dict[str, Any]:
@@ -304,7 +280,7 @@ def fetch(
     nav = navigate(url, session, group_title=f"fetch:{url[:48]}")
     if not nav.get("ok"):
         return nav
-    code = BODY_JS.replace("%MAX%", "60000")
+    code = build_body_js(60_000)
     ev = evaluate(code, session)
     if not ev.get("ok"):
         return ev

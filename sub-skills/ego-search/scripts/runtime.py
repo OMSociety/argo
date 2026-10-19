@@ -157,13 +157,16 @@ def _install_hints(ego: dict, wb: dict) -> list[str]:
 
 
 def resolve_runtime(explicit: str | None = None) -> RuntimeName:
-    """解析 --runtime auto|ego|webbridge。"""
+    """解析 --runtime auto|ego|webbridge（按需短路探测，不无条件拉起未选中的运行时）。"""
     choice = (explicit or "auto").lower().strip()
-    info = detect_runtimes(try_start_webbridge=(choice in ("auto", "webbridge")))
-    if choice == "auto":
-        return info["preferred"]  # type: ignore[return-value]
     if choice == "ego":
-        return "ego" if info["ego"].get("available") else "none"
+        return "ego" if ego_available().get("available") else "none"
     if choice in ("webbridge", "wb", "extension"):
-        return "webbridge" if info["webbridge"].get("available") else "none"
-    return info["preferred"]  # type: ignore[return-value]
+        return "webbridge" if webbridge_available(try_start=True).get("available") else "none"
+    # auto（或未知值回退 auto）：优先探测 ego；ego 可用即短路返回，
+    # 不再无条件拉起 kimi-webbridge start 子进程（15s 超时）和请求 10086 端口。
+    if ego_available().get("available"):
+        return "ego"
+    if webbridge_available(try_start=True).get("available"):
+        return "webbridge"
+    return "none"

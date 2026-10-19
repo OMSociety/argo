@@ -178,11 +178,19 @@ def build_patterns(query: str, exact: bool = False):
     return out, all(is_literal(p) for p in out)
 
 
+_EXCLUDES_MEMO: tuple[int, list[str]] | None = None
+
+
 def load_excludes() -> list:
-    """解析 domains.yaml 的排除规则（极简段感知解析，不引入 YAML 依赖）。"""
+    """解析 domains.yaml 的排除规则（极简段感知解析，不引入 YAML 依赖；mtime 记忆化）。"""
+    global _EXCLUDES_MEMO
+    try:
+        mtime_ns = DOMAINS_FILE.stat().st_mtime_ns
+    except OSError:
+        return list(DEFAULT_EXCLUDES)
+    if _EXCLUDES_MEMO is not None and _EXCLUDES_MEMO[0] == mtime_ns:
+        return list(_EXCLUDES_MEMO[1])
     excludes = list(DEFAULT_EXCLUDES)
-    if not DOMAINS_FILE.exists():
-        return excludes
     section = None
     for raw in DOMAINS_FILE.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
@@ -202,7 +210,8 @@ def load_excludes() -> list:
             item = m.group(1).strip().strip("\"'")
             if item and item not in excludes:
                 excludes.append(item)
-    return excludes
+    _EXCLUDES_MEMO = (mtime_ns, excludes)
+    return list(excludes)
 
 
 def run(cmd, cwd=None, timeout=30):
@@ -628,17 +637,30 @@ def _gb2312_initial(b1: int, b2: int) -> str:
     return "?"
 
 
+_PYPINYIN_FN = None
+_PYPINYIN_PROBED = False
+
+
 def pinyin_initials(text: str) -> str:
     """文本的拼音首字母（中文→首字母，非中文保留原字符），用于「xjj→新建夹」。
     pypinyin 可用则用；否则 GB2312 区间表保底；两者都不可用时返回原文本。"""
+    global _PYPINYIN_FN, _PYPINYIN_PROBED
     if not text:
         return text
-    try:
-        from pypinyin import lazy_pinyin, Style  # type: ignore
-        parts = lazy_pinyin(text, style=Style.FIRST_LETTER, errors="default")
-        return "".join(parts)
-    except Exception:
-        pass
+    if not _PYPINYIN_PROBED:
+        _PYPINYIN_PROBED = True
+        try:
+            from pypinyin import lazy_pinyin, Style  # type: ignore
+            _PYPINYIN_FN = lambda s: "".join(  # noqa: E731
+                lazy_pinyin(s, style=Style.FIRST_LETTER, errors="default")
+            )
+        except Exception:
+            _PYPINYIN_FN = None
+    if _PYPINYIN_FN is not None:
+        try:
+            return _PYPINYIN_FN(text)
+        except Exception:
+            pass
     out = []
     for ch in text:
         if "\u4e00" <= ch <= "\u9fff":
@@ -658,7 +680,8 @@ def _looks_like_pinyin_abbrev(q: str) -> bool:
     return bool(q and q.isascii() and q.isalpha() and 2 <= len(q) <= 4)
 
 
-def _file_pinyin_bonus(path: str, query: str) -> int:
+def _file_pinyin_bonus(path: str, query: str,
+                       query_initials: str | None = None) -> int:
     """文件名拼音首字母与查询呼应 → 加分（「新建夹」↔ xjj）。
     正向（中文查询 → 拼音缩写）50；反向（拼音缩写查询 → 中文文件名）8，
     反向低于字面命中，避免把真名 xjj.docx 挤下去。"""
@@ -666,18 +689,20 @@ def _file_pinyin_bonus(path: str, query: str) -> int:
     if not q:
         return 0
     base = Path(path).name
+    has_cjk_query = any("\u4e00" <= c <= "\u9fff" for c in query)
+    is_abbrev = (not has_cjk_query and q.isascii() and q.isalpha()
+                 and 2 <= len(q) <= 4
+                 and any("\u4e00" <= c <= "\u9fff" for c in base))
+    if not has_cjk_query and not is_abbrev:
+        return 0
     initials = pinyin_initials(base).lower()
     if not initials:
         return 0
-    has_cjk_query = any("\u4e00" <= c <= "\u9fff" for c in query)
     if has_cjk_query:
-        qs = pinyin_initials(query).strip().lower()
+        qs = (query_initials if query_initials is not None
+              else pinyin_initials(query).strip().lower())
         return 50 if qs and qs in initials else 0
-    if (q.isascii() and q.isalpha() and 2 <= len(q) <= 4
-            and any("\u4e00" <= c <= "\u9fff" for c in base)):
-        # 拼音缩写查询（xjj）→ 中文文件名（新建夹.pdf）
-        return 8 if q in initials else 0
-    return 0
+    return 8 if q in initials else 0
 
 
 def _rank_path_results(results, query: str):
@@ -693,15 +718,18 @@ def _rank_path_results(results, query: str):
     except Exception:
         pass
     now = time.time()
+    q_low = query.lower()
+    q_init = (pinyin_initials(query).strip().lower()
+              if any("\u4e00" <= c <= "\u9fff" for c in query) else "")
 
     def key(it):
         fp = it[0] if isinstance(it, (list, tuple)) else str(it)
         sc = _fzf_score(Path(fp).name, query)
-        sc += _file_pinyin_bonus(fp, query)
+        sc += _file_pinyin_bonus(fp, query, query_initials=q_init)
         # 全路径段匹配也加分。V2 的分数量级是旧手搓版的 ~4 倍（基分 16 vs 3-4），
         # 除数同步 4→16，保持「路径段是文件名的从属信号」这一原比例——
         # 不调的话全路径匹配会反超文件名匹配 + 拼音加成，排序语义就变了。
-        sc += max(0, _fzf_score(fp, query.lower())) // 16
+        sc += max(0, _fzf_score(fp, q_low)) // 16
         if frec_on and boost_fn is not None:
             try:
                 sc += boost_fn(fp, now)

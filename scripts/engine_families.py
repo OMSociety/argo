@@ -576,15 +576,15 @@ def family_candidates(family: str, lang: str = "*",
     """
     if specs is None:
         try:
-            from config import load_config, get_engines
-            specs = get_engines(load_config(), routable_only=False)
+            from config import get_engines
+            specs = get_engines(routable_only=(enabled is None))
         except Exception:
             specs = {}
     out: list[str] = []
     for name, spec in (specs or {}).items():
         if not isinstance(spec, dict):
             continue
-        if spec.get("enabled") is False:
+        if spec.get("enabled") is False or spec.get("explicit_only"):
             continue
         if enabled is not None and name not in enabled:
             continue

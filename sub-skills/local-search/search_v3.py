@@ -149,11 +149,17 @@ def _get_search_cache() -> Any:
 
 @functools.lru_cache(maxsize=1)
 def _load_config() -> dict[str, Any]:
+    reg = get_registry()
+    if reg.config_path == CONFIG_PATH and reg._config:
+        return reg._config
     return _load_yaml(CONFIG_PATH)
 
 
 @functools.lru_cache(maxsize=1)
 def _load_parse_maps() -> dict[str, Any]:
+    reg = get_registry()
+    if reg.parse_maps_path == PARSE_MAPS_PATH and reg._parse_maps:
+        return reg._parse_maps
     return _load_yaml(PARSE_MAPS_PATH)
 
 
@@ -1514,6 +1520,24 @@ def search_engines(
     # 两次运行的 JSON 输出里顺序不同，破坏可复现性与快照对比）。
     _used = set(engines_used)
     engines_used = [e for e in engines if e in _used]
+
+    # 真实流量被动健康续期：实际产出结果的引擎刷新健康记录（60s 节流防写盘风暴），
+    # 避免活跃引擎每隔 5 分钟被 get_available_engines 发起冗余的 "test" 探针请求。
+    if engines_used:
+        try:
+            _reg = get_registry()
+            _now_ts = time.time()
+            _dirty = False
+            for _eng_ok in engines_used:
+                _h = _reg.get_health(_eng_ok)
+                if (not _h or not _h.get("available", True)
+                        or (_now_ts - float(_h.get("last_checked") or 0)) >= 60.0):
+                    _reg.update_availability(_eng_ok, True, persist=False)
+                    _dirty = True
+            if _dirty:
+                _reg._save_health()
+        except Exception:
+            pass
 
     # 相关度重排（D1，2026-09-27）：位次衰减 → BM25 相关度 × 引擎位次先验。
     # 旧口径 score=max(0.7-idx*0.05, 0.1) 是纯位次——「第 3 条」永远压

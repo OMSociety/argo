@@ -46,14 +46,32 @@ def _state_path() -> Path:
     return Path(cache_root) / "local-seek" / "frecency.json"
 
 
+_MEMO: tuple[str, int, int, dict[str, list[float]]] | None = None
+
+
 def _load() -> dict[str, list[float]]:
+    global _MEMO
     try:
-        return json.loads(_state_path().read_text(encoding="utf-8"))
+        path = _state_path()
+        p_str = str(path)
+        try:
+            st = path.stat()
+        except OSError:
+            _MEMO = (p_str, -1, -1, {})
+            return {}
+        if (_MEMO is not None and _MEMO[0] == p_str
+                and _MEMO[1] == st.st_mtime_ns and _MEMO[2] == st.st_size):
+            return _MEMO[3]
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        data = raw if isinstance(raw, dict) else {}
+        _MEMO = (p_str, st.st_mtime_ns, st.st_size, data)
+        return data
     except Exception:
         return {}
 
 
 def _save(data: dict[str, list[float]]) -> None:
+    global _MEMO
     try:
         path = _state_path()
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -61,6 +79,11 @@ def _save(data: dict[str, list[float]]) -> None:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False)
         os.replace(tmp, path)
+        try:
+            st = path.stat()
+            _MEMO = (str(path), st.st_mtime_ns, st.st_size, data)
+        except OSError:
+            _MEMO = None
     except Exception:
         pass  # frecency 是增益信号，写失败静默
 

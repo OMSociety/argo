@@ -47,23 +47,23 @@ def test_stamp_does_not_override_explicit():
 
 
 def test_serp_and_body_templates_are_single_source():
-    """SERP 提取选择器唯一来源 = serp_spec（P2-5）。
+    """SERP 与 BODY 提取选择器唯一来源 = serp_spec。
 
-    ego_search 与 webbridge_adapter 曾各持一份逐字节相同的 SERP IIFE 与
-    SEARCH_URLS——修一处漏一处。现在来源唯一，两消费方零副本；BODY 提取
-    仍单源定义在 ego_search。
+    ego_search 与 webbridge_adapter 曾各持一份逐字节相同的 SERP IIFE、
+    SEARCH_URLS 以及 BODY 正文提取 IIFE——修一处漏一处。现在全部收编到
+    serp_spec，两消费方零副本。
     """
     import serp_spec
     import webbridge_adapter
     spec_src = Path(serp_spec.__file__).read_text(encoding="utf-8")
     assert spec_src.count("const configs = {") == 1
-    assert spec_src.count("const candidates = ['article'") == 0
+    assert spec_src.count("const candidates = ['article'") == 1
     for mod in (ego_search, webbridge_adapter):
         src = Path(mod.__file__).read_text(encoding="utf-8")
         assert src.count("const configs = {") == 0, f"{mod.__name__} 仍有 SERP 选择器副本"
+        assert src.count("const candidates = ['article'") == 0, f"{mod.__name__} 仍有 BODY 选择器副本"
         assert "li.b_algo" not in src.replace("serp_spec", ""), f"{mod.__name__} 仍有选择器字面量"
     ego_src = Path(ego_search.__file__).read_text(encoding="utf-8")
-    assert ego_src.count("const candidates = ['article'") == 1
     assert "BODY_EXTRACT_IIFE" in ego_src
 
 
