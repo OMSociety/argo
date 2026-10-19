@@ -8,15 +8,28 @@ DeepSeek Harness 插件：一行同时挂上 [Argo](https://github.com/taxueseek
 dsh plugin --profile web add "github:taxueseek/argo#main&path:packages/dsh-plugin"
 ```
 
-重启 `dsh web` 后生效。本 bundle 提供 **三形态接入**——同一套 argo 搜索能力（同引擎、同压缩、同守卫），三种调用通道互为冗余，按宿主能力自动降级：
+重启 `dsh web` 后生效。本 bundle 提供 **三形态接入**——同一套 argo 检索能力（同引擎、同压缩、同守卫），三种调用通道互为冗余，按宿主能力自动降级：
 
 - **原生一等工具**（默认开）：`argo_search` / `argo_fetch`（`ctx.tools.register`），走 CLI 单发（`--call`）复用 MCP 同一套引擎与守卫，**不依赖 MCP 连接、零常驻 token 开销**；`nativeTools: []` 关闭
-- **原生 web seam**（默认开）：注册 `argo` 搜索 provider，宿主内置 `web_search` 路由到 argo 引擎链；`searchProviderEnabled: false` 时注册但不可选
+- **原生 web seam**（默认开）：注册 `argo` 搜索与抓取两个 provider，宿主内置 `web_search` 路由到 argo 引擎链、`web_fetch` 走 argo 抓取链（HTTP 优先，遇 Cloudflare/JS 渲染自动升级反检测浏览器）；`searchProviderEnabled: false` / `fetchProviderEnabled: false` 时对应 provider 注册但不可选
 - **MCP 形态**（按需开）：19 个 `mcp__argo__*` 完整工具面（`argo_search` / `argo_local_search` / `argo_local_read` / `argo_recompute` / `argo_research` / `argo_evidence` / `argo_clarify` / `argo_fetch` / `argo_crawl` / `argo_screenshot` / `argo_pdf` / `argo_social_search` / `argo_article` / `argo_job` / `argo_extract` / `argo_preflight` / `argo_answer` / `argo_watch` / `argo_cite`，与 CLI 能力面对齐）。工具定义每轮注入上下文且压缩清不掉（实测 19 工具 ≈3.7K token/轮），而搜索/抓取高频路径已由原生工具与 web seam 覆盖，故默认不挂载；需要长尾取证能力（screenshot / pdf / social / article / job / evidence / clarify / crawl / local_*）时在 profile patch 中取消 `mcp-argo` 行注释
 
 另有 1 个 `wide_research`：规划互补轨道（`depends_on` 依赖分阶段，默认并行）→ 有界并发子代理取证 → 来源账本（仅 http(s) URL 入账）→ 综合报告；输出自带 `quality_gate_results`（`conclusion_cap`：low/medium/high），`passed=false` 时降级表述、先核验账本来源再下结论。worker 取证工具白名单默认双写 MCP 与原生工具名（allow 语义）——MCP 挂载与否两态自洽：MCP 在时用全量面，缺席时自动落到 `argo_search` / `argo_fetch` 与宿主 `web_search` / `web_fetch`。
 
 日常一问用 `argo_search`；单代理取证用 `argo_research`；多视角对比、要引用账本用 `wide_research`。worker 默认只能调 argo 取证工具，不会再调 `argo_research`（硬保护，用户层放行也无效）。
+
+## web seam 的 pin 必读（漏配会打挂 web_fetch）
+
+宿主 `dsh-web` 的 provider 选择规则：配置 id 优先；都没有且恰好一个可用则选它；**多个可用直接报 `WEB_PROVIDER_AMBIGUOUS`**。web profile 默认挂着官方 http fetch provider（免 key、永远可用），本 bundle 再注册一个就是两个可用——**不 pin 的话 `web_fetch` 整个挂掉**（`web_search` 同理，若 profile 里另有搜索 provider）。故启用 web seam 的 profile 必须在 web 服务行显式指定：
+
+```yaml
+- id: web
+  config:
+    searchProvider: argo    # 已默认启用搜索 seam 时必配
+    fetchProvider: argo     # 已默认启用抓取 seam 时必配
+```
+
+用户层 `cordis.patch.yml` 同 id 覆盖（同 id + name 匹配才是替换）。`searchProviderEnabled: false` / `fetchProviderEnabled: false` 可整体关掉对应 seam（provider 仍注册但不可选，不影响另一个）。
 
 搜索引擎侧，Firecrawl 等匿名可用引擎 **keyless 免配置即用**（免费层额度），配置了密钥的引擎自动升级为认证请求；缺密钥不阻断路由。
 

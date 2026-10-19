@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { normalizeTracks, stageTracks, evaluateGates, normalizeSource, mapArgoToWebResult, buildLocalSources, parseJsonArray, parseJsonObject, extractValues, resolveNativeSpawn, resolveArgoEnv, makeNativeTool, buildChildToolFilters, apply, nativeViaMcpPool, disposeSharedMcp, startStructured, providerSupportsStructured } from '../dsh/index.js'
+import { normalizeTracks, stageTracks, evaluateGates, normalizeSource, mapArgoToWebResult, buildLocalSources, parseJsonArray, parseJsonObject, extractValues, resolveNativeSpawn, resolveArgoEnv, makeNativeTool, buildChildToolFilters, apply, nativeViaMcpPool, disposeSharedMcp, startStructured, providerSupportsStructured, fetchViaArgo, mapArgoToWebFetch, classifyFetchError } from '../dsh/index.js'
 import { NATIVE_TOOLS } from '../dsh/native-tools.mjs'
 
 test('mapArgoToWebResult maps compact argo payload to web sources', () => {
@@ -372,14 +372,18 @@ test('makeNativeTool: unknown tool name fails loudly', () => {
 function makeCtx() {
   const registered = []
   const providers = []
+  const fetchProviders = []
   const guards = []
   const ctx = {
     tools: { register: (t) => registered.push(t), guard: (g) => guards.push(g) },
     subagents: { getProvider: () => null, list: () => [] },
     effect() {},
-    get: (svc) => svc === 'web' ? { registerSearchProvider: (p) => providers.push(p) } : null,
+    get: (svc) => svc === 'web' ? {
+      registerSearchProvider: (p) => providers.push(p),
+      registerFetchProvider: (p) => fetchProviders.push(p),
+    } : null,
   }
-  return { ctx, registered, providers, guards }
+  return { ctx, registered, providers, fetchProviders, guards }
 }
 
 test('providerSupportsStructured: rc.2 capabilities no longer include toolFilter', () => {
@@ -480,6 +484,41 @@ test('apply: default config registers native tools and an available web provider
   assert.equal(providers[0].available(), true)
 })
 
+test('apply: default config also registers an available web fetch provider', () => {
+  const { ctx, fetchProviders } = makeCtx()
+  apply(ctx, {})
+  assert.equal(fetchProviders.length, 1, '宿主有 registerFetchProvider 时应注册 fetch provider')
+  assert.equal(fetchProviders[0].id, 'argo')
+  assert.equal(fetchProviders[0].available(), true)
+})
+
+test('apply: fetchProviderEnabled=false keeps the fetch provider registered but unavailable', () => {
+  const { ctx, fetchProviders } = makeCtx()
+  apply(ctx, { fetchProviderEnabled: false })
+  assert.equal(fetchProviders.length, 1, '与 search seam 同 pattern：注册但不可选')
+  assert.equal(fetchProviders[0].available(), false)
+})
+
+test('apply: old host without registerFetchProvider does not break search registration', () => {
+  const registered = []
+  const providers = []
+  const ctx = {
+    tools: { register: (t) => registered.push(t), guard: () => {} },
+    subagents: { getProvider: () => null, list: () => [] },
+    effect() {},
+    get: (svc) => svc === 'web' ? { registerSearchProvider: (p) => providers.push(p) } : null,
+  }
+  apply(ctx, {})
+  assert.equal(providers.length, 1, 'search seam 不受宿主缺 fetch seam 影响')
+  assert.equal(registered.filter(t => t.name === 'argo_fetch').length, 1, '原生 argo_fetch 工具仍在')
+})
+
+test('apply: fetchProviderId override changes the registered id', () => {
+  const { ctx, fetchProviders } = makeCtx()
+  apply(ctx, { fetchProviderId: 'argo-fetch' })
+  assert.equal(fetchProviders[0].id, 'argo-fetch')
+})
+
 test('apply: nativeTools=[] and searchProviderEnabled=false disables both seams', () => {
   const { ctx, registered, providers } = makeCtx()
   apply(ctx, { nativeTools: [], searchProviderEnabled: false })
@@ -495,7 +534,6 @@ test('apply: unknown native tool name fails loudly', () => {
   const { ctx } = makeCtx()
   assert.throws(() => apply(ctx, { nativeTools: ['argo_nope'] }), /unknown native tool/)
 })
-
 test('resolveArgoEnv: resolves host credential refs into the child env', async () => {
   const fake = {
     resolve: async (ref) => (ref === 'DEEPSEEK_API_KEY' ? { value: 'sk-host', source: 'file' } : undefined),
@@ -642,6 +680,7 @@ const fs = require('node:fs')
 if (process.env.ARGO_STUB_COUNTER) fs.appendFileSync(process.env.ARGO_STUB_COUNTER, 'spawn\\n')
 const delayMs = Number(process.env.ARGO_STUB_DELAY_MS || 0)
 const toolError = process.env.ARGO_STUB_TOOL_ERROR === '1'
+const fetchError = process.env.ARGO_STUB_FETCH_ERROR === '1'
 let buf = ''
 process.stdin.setEncoding('utf8')
 const write = (obj) => process.stdout.write(JSON.stringify(obj) + '\\n')
@@ -660,12 +699,30 @@ process.stdin.on('data', (chunk) => {
       continue
     }
     setTimeout(() => {
+      const isFetch = msg.params?.name === 'argo_fetch'
+      if (isFetch && fetchError) {
+        write({
+          jsonrpc: '2.0',
+          id: msg.id,
+          result: { content: [{ type: 'text', text: JSON.stringify({ error: 'blocked by robots' }) }], isError: true },
+        })
+        return
+      }
       write({
         jsonrpc: '2.0',
         id: msg.id,
         result: toolError
           ? { content: [{ type: 'text', text: 'stub tool failed' }], isError: true }
-          : { content: [{ type: 'text', text: 'pooled-ok' }] },
+          : isFetch
+            ? { content: [{ type: 'text', text: JSON.stringify({
+                success: true,
+                url: 'https://stub.example/final',
+                title: 'Stub page',
+                content: 'stub fetched body (max_chars=' + (msg.params && msg.params.arguments ? msg.params.arguments.max_chars : 'none') + ')',
+                length: 17,
+                truncated: false,
+              }) }] }
+            : { content: [{ type: 'text', text: 'pooled-ok' }] },
       })
     }, delayMs)
   }
@@ -773,4 +830,144 @@ test('pool: disposeSharedMcp closes every connection; next call rebuilds', async
   disposeSharedMcp()
   await tool.execute({ query: 'c' })
   assert.equal(spawnCount(), before + 1, 'dispose 后池应为空，下次调用重新建立连接')
+})
+
+// --- web_fetch seam：fetchViaArgo / mapArgoToWebFetch / classifyFetchError ---
+
+test('mapArgoToWebFetch: maps payload, prefers the final url, and carries the truncated flag', () => {
+  const mapped = mapArgoToWebFetch({
+    success: true,
+    url: 'https://final.example/doc',
+    title: 'T',
+    content: 'body text',
+    truncated: true,
+  }, 'https://request.example/doc', 100_000)
+  assert.equal(mapped.url, 'https://final.example/doc', '重定向后的最终 URL 优先')
+  assert.equal(mapped.statusCode, 200)
+  assert.equal(mapped.body.kind, 'text', 'argo 产出已是 markdown 正文，归 text 不再二次转换')
+  assert.equal(mapped.body.content, 'body text')
+  assert.equal(mapped.truncated, true, '上游截断标记必须透传，模型据此知道内容被裁过')
+})
+
+test('mapArgoToWebFetch: falls back to the request url and tolerates missing content', () => {
+  const mapped = mapArgoToWebFetch({ success: true }, 'https://request.example/doc', 100_000)
+  assert.equal(mapped.url, 'https://request.example/doc')
+  assert.equal(mapped.body.content, '')
+  assert.equal(mapped.truncated, false)
+})
+
+test('mapArgoToWebFetch: clips to maxChars and flags truncation', () => {
+  const mapped = mapArgoToWebFetch(
+    { success: true, url: 'https://a.test', content: 'x'.repeat(50) },
+    'https://a.test',
+    10,
+  )
+  assert.equal(mapped.body.content.length, 10)
+  assert.equal(mapped.truncated, true)
+})
+
+test('classifyFetchError: every failure class carries an actionable category and the url', () => {
+  const cases = [
+    [{ code: 'ARGO_TIMEOUT', message: 'argo MCP request timed out after 25000ms' }, /argo fetch timeout/],
+    [{ code: 'ARGO_TOOL_ERROR', message: '403 blocked by robots.txt' }, /argo fetch blocked/],
+    [{ code: 'ARGO_TOOL_ERROR', message: 'no readable content extracted' }, /argo fetch empty/],
+    [{ code: 'ARGO_TOOL_ERROR', message: 'weird upstream failure' }, /argo fetch failed/],
+    [{ code: 'WEB_ABORTED', message: 'argo search aborted' }, /argo fetch aborted/],
+  ]
+  for (const [err, pattern] of cases) {
+    const classified = classifyFetchError(err, 'https://x.test/page')
+    assert.match(classified.message, pattern)
+    assert.match(classified.message, /url=https:\/\/x\.test\/page/, '失败必须带 URL，模型才知道是哪一页')
+    assert.ok(typeof classified.code === 'string' && classified.code.startsWith('ARGO_FETCH_'))
+  }
+})
+
+test('fetch: pool path maps the stub argo_fetch payload to the seam result shape', async () => {
+  stubEnv()
+  const result = await fetchViaArgo('https://stub.example/page', undefined, {
+    command: process.execPath,
+    args: [STUB_SERVER],
+    timeoutMs: 5000,
+  })
+  assert.equal(result.url, 'https://stub.example/final')
+  assert.equal(result.statusCode, 200)
+  assert.equal(result.body.kind, 'text')
+  assert.match(result.body.content, /^stub fetched body \(max_chars=50000\)$/)
+  assert.equal(result.truncated, false)
+})
+
+test('fetch: maxChars above the tool schema maximum clamps to 50000', async () => {
+  stubEnv()
+  const result = await fetchViaArgo('https://stub.example/page', undefined, {
+    command: process.execPath,
+    args: [STUB_SERVER],
+    timeoutMs: 5000,
+    maxChars: 100_000,
+  })
+  assert.match(result.body.content, /max_chars=50000/,
+    '超出 argo_fetch schema 上限（50000）必须 clamp 回 50000：声明与实效一致，不静默顶掉')
+})
+
+test('fetch: tool-level error is classified and NOT retried through single-shot spawn', async () => {
+  stubEnv({ ARGO_STUB_FETCH_ERROR: '1' })
+  const spawned = []
+  await assert.rejects(() => fetchViaArgo('https://stub.example/x', undefined, {
+    command: process.execPath,
+    args: [STUB_SERVER],
+    timeoutMs: 5000,
+  }, { run: async (spec) => { spawned.push(spec); return '{}' } }), /argo fetch blocked/)
+  assert.equal(spawned.length, 0, '工具级错误不得回退单发（双倍引擎调用与配额）')
+  assert.equal(spawnCount(), 1, '工具级错误不得新起进程重跑')
+})
+
+test('fetch: timeout is classified and NOT retried through single-shot spawn', async () => {
+  stubEnv({ ARGO_STUB_DELAY_MS: '2000' })
+  const spawned = []
+  await assert.rejects(() => fetchViaArgo('https://stub.example/slow', undefined, {
+    command: process.execPath,
+    args: [STUB_SERVER],
+    timeoutMs: 300,
+  }, { run: async (spec) => { spawned.push(spec); return '{}' } }), /argo fetch timeout/)
+  assert.equal(spawned.length, 0, '超时不是传输故障，重发只会把同一次慢调用再跑一遍')
+})
+
+test('fetch: transport failure falls back to single-shot spawn once', async () => {
+  const spawned = []
+  const result = await fetchViaArgo('https://stub.example/page', undefined, {
+    command: process.execPath,
+    args: [join(STUB_DIR, 'does-not-exist.js')],
+    timeoutMs: 5000,
+  }, {
+    run: async (spec) => {
+      spawned.push(spec)
+      return JSON.stringify({ content: [{ type: 'text', text: JSON.stringify({
+        success: true, url: 'https://spawn.example/final', content: 'spawned body', truncated: true,
+      }) }] })
+    },
+  })
+  assert.equal(spawned.length, 1, '连接建立失败应回退单发一次，功能不丢')
+  assert.equal(result.url, 'https://spawn.example/final')
+  assert.equal(result.body.content, 'spawned body')
+  assert.equal(result.truncated, true)
+})
+
+test('fetch: an already-aborted signal sends no request and releases the claim', async () => {
+  stubEnv()
+  const controller = new AbortController()
+  controller.abort()
+  await assert.rejects(() => fetchViaArgo('https://stub.example/page', controller.signal, {
+    command: process.execPath,
+    args: [STUB_SERVER],
+    timeoutMs: 5000,
+    searchIdleMs: 0,
+  }), /argo fetch aborted/)
+  // 认领已归还：紧接着的顺序调用仍应复用同一条连接（不会因泄漏退化成串行）
+  const result = await fetchViaArgo('https://stub.example/page', undefined, {
+    command: process.execPath,
+    args: [STUB_SERVER],
+    timeoutMs: 5000,
+    searchIdleMs: 0,
+  })
+  assert.match(result.body.content, /^stub fetched body \(max_chars=50000\)$/)
+  assert.equal(spawnCount(), 1, 'abort 后认领应已归还，不该为此多开连接')
 })

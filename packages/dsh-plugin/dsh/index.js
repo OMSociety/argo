@@ -122,6 +122,30 @@ const DEFAULTS = Object.freeze({
   nativeMaxChars: 24_000,
   /** provider id；改它需同步 web 行的 searchProvider 配置。 */
   searchProviderId: 'argo',
+  /**
+   * 原生 web_fetch 是否走 argo provider；false 时 provider 注册但不可选。
+   * 与 searchProviderEnabled 同 pattern：宿主 http provider 免 key 常驻可用，
+   * 两个可用 provider 不 pin 会 WEB_PROVIDER_AMBIGUOUS，故启用即须在
+   * profile patch 的 web 行配 fetchProvider: argo（见 cordis.patch.yml）。
+   */
+  fetchProviderEnabled: true,
+  /** fetch provider id；改它需同步 web 行的 fetchProvider 配置。 */
+  fetchProviderId: 'argo',
+  /**
+   * web_fetch 单次调用预算（ms）。宿主 web_fetch 工具预算（fetchTimeoutMs）
+   * 默认 30s，内层必须留出余量让失败在工具预算内结清：25s 对应宿主默认
+   * 30s；改小时注意别让浏览器兜底（本就慢的路径）被提前杀。
+   */
+  fetchTimeoutMs: 25_000,
+  /**
+   * web_fetch 正文上限（字符）。50000 是 argo_fetch 工具 schema 的
+   * maximum（native-tools.mjs，由 mcp_tools.py 唯一真源生成），不是随意
+   * 选的：配更大会被 clamp 回 50000，声明与实效不符。宿主 http provider
+   * 的 maxBodyChars 默认 100k，要追平需先改工具 schema 真源并重新生成，
+   * 不在本插件职权内。对拍实测（docs.python.org 全文 12743 字符）50000
+   * 足以完整交付常见长文。
+   */
+  fetchMaxChars: 50_000,
   /** 入口：公开仓默认 npx（不泄露本机路径）；本机部署在用户层 patch 覆盖为
    *  python3 + mcp_server.py 绝对路径，或设 ARGO_SEARCH_PYTHON / ARGO_SEARCH_MCP_SERVER。 */
   searchCommand: process.env.ARGO_SEARCH_PYTHON || 'npx',
@@ -518,6 +542,146 @@ export async function persistReport(dir, question, text) {
   const file = join(dir, `${ts}-${slug}.md`)
   await writeFile(file, text, 'utf8')
   return file
+}
+
+/**
+ * web_fetch 失败分类（方案二的 provider 路径部分）：把 argo 侧失败归成模型
+ * 可行动的类别，而不是把 stderr 原文拍给模型。宿主 seam 侧对 provider 抛出的
+ * 错误已有结构化词表（WEB_*），我们不做官方 WebError（零官方依赖纪律），用
+ * message 文案带类别前缀 + err.code 供上层判别，类别与 argo CLI 内部
+ * classify 口径对齐（超时/被挡/空结果/通用）。
+ */
+export function classifyFetchError(err, url) {
+  const raw = String(err?.message ?? err ?? '')
+  const lower = raw.toLowerCase()
+  const prefix = (label, hint) => {
+    const e = new Error(`argo fetch ${label}: ${hint} (url=${url})`)
+    e.code = `ARGO_FETCH_${label.toUpperCase().replace(/-/g, '_')}`
+    return e
+  }
+  if (err?.code === 'WEB_ABORTED' || /abort/i.test(raw)) {
+    return prefix('aborted', 'cancelled by caller')
+  }
+  if (err?.code === 'ARGO_TIMEOUT' || /timed out|timeout/i.test(lower)) {
+    return prefix('timeout', 'the page took too long; try a more specific URL or retry')
+  }
+  if (/blocked|forbidden|403|robots|captcha|cloudflare|denied/i.test(lower)) {
+    return prefix('blocked', 'the source refused automated access; use a search result URL instead')
+  }
+  if (/no readable|no content|nothing extracted|no results|empty/i.test(lower)) {
+    return prefix('empty', 'no readable content was extracted from the page')
+  }
+  const e = new Error(`argo fetch failed: ${clip(raw, 300)} (url=${url})`)
+  e.code = 'ARGO_FETCH_FAILED'
+  return e
+}
+
+/**
+ * Map the argo_fetch payload to the web seam's fetch result shape.
+ *
+ * `payload` 是 mcp_handlers argo_fetch 分支的返回：`{success, url, content,
+ * title, length, truncated, ...}`（text 模式）。body 归 `text`——argo 产出
+ * 的已是 markdown 正文，宿主 web_fetch 对 text 类直接透传（不会二次转换），
+ * 与它对 html 类做 markdown 渲染是同质结果。成功即 200；非 2xx 在 argo 侧
+ * 已按失败处理（success=false），走 classifyFetchError，不进这里。
+ */
+export function mapArgoToWebFetch(payload, requestUrl, maxChars) {
+  const url = typeof payload?.url === 'string' && payload.url !== '' ? payload.url : requestUrl
+  const content = typeof payload?.content === 'string' ? payload.content : ''
+  // 双保险截断：MCP 侧已按 max_chars 裁过，这里按 fetchMaxChars 再兜一层
+  // （单发路径的 max_chars 由 resolveNativeSpawn 透传，两条路同源）。
+  const clipped = content.length > maxChars
+  return {
+    url,
+    statusCode: 200,
+    body: { kind: 'text', content: clipped ? content.slice(0, maxChars) : content },
+    truncated: Boolean(payload?.truncated) || clipped,
+  }
+}
+
+/**
+ * Run one argo_fetch through the shared argo stdio MCP connection, with a
+ * single-shot spawn fallback. Mirrors searchViaArgoMCP (pool + signal) and
+ * makeNativeTool (transport-failure-only fallback): tool-level errors and
+ * timeouts are not transport failures, so re-sending would repeat a call that
+ * already spent its engine time and quota.
+ */
+export async function fetchViaArgo(url, signal, options = {}, deps = {}) {
+  const command = options.command ?? DEFAULTS.searchCommand
+  const args = options.args ?? DEFAULTS.searchArgs
+  const timeoutMs = options.timeoutMs ?? DEFAULTS.fetchTimeoutMs
+  const maxChars = clamp(options.maxChars ?? DEFAULTS.fetchMaxChars,
+    DEFAULTS.fetchMaxChars, 500, 50_000)
+  const argsObj = { url, max_chars: maxChars }
+  const spawnRun = deps.run ?? runNativeCall
+
+  const acquireOptions = {
+    command,
+    args,
+    idleMs: options.idleMs ?? DEFAULTS.searchIdleMs,
+    max: options.max ?? DEFAULTS.searchConcurrency,
+    initMs: timeoutMs,
+    credentials: options.credentials,
+  }
+
+  let raw
+  try {
+    const conn = await acquireMcp(acquireOptions)
+    // 与 searchViaArgoMCP 同一套 abort 收尾：已 abort 则一次请求都不发
+    // （认领已同步拿走，必须显式归还）；abort 要 reject 而不只释放认领，
+    // 否则调用方的等待要等到响应或超时才结束，取消失去意义。
+    raw = await new Promise((resolve, reject) => {
+      const onAbort = () => reject(argoAborted())
+      if (signal?.aborted) {
+        conn.release()
+        reject(argoAborted())
+        return
+      }
+      if (signal !== undefined) signal.addEventListener('abort', onAbort, { once: true })
+      conn.request('tools/call', { name: 'argo_fetch', arguments: argsObj }, timeoutMs).then((value) => {
+        if (signal !== undefined) signal.removeEventListener('abort', onAbort)
+        if (value?.isError) {
+          const body = value?.content?.[0]?.text
+          reject(argoToolError(typeof body === 'string' && body !== ''
+            ? body
+            : `argo tool argo_fetch returned an error`))
+          return
+        }
+        const text = value?.content?.[0]?.text
+        resolve(typeof text === 'string' ? JSON.parse(text) : {})
+      }, (err) => {
+        if (signal !== undefined) signal.removeEventListener('abort', onAbort)
+        reject(err)
+      })
+    })
+  } catch (err) {
+    if (err?.code === 'ARGO_TOOL_ERROR' || err?.code === 'ARGO_TIMEOUT' || err?.code === 'WEB_ABORTED') {
+      throw classifyFetchError(err, url)
+    }
+    // 传输层故障（进程崩溃 / 入口不支持 stdio）→ 单发兜底，功能不丢。
+    try {
+      const spawnSpec = resolveNativeSpawn(
+        { searchCommand: command, searchArgs: args },
+        'argo_fetch',
+        JSON.stringify(argsObj),
+      )
+      const env = await resolveArgoEnv(activeConfig, options)
+      const stdout = await spawnRun(env !== undefined ? { ...spawnSpec, env } : spawnSpec, timeoutMs)
+      const parsed = JSON.parse(stdout)
+      if (parsed?.isError) {
+        const body = parsed?.content?.[0]?.text
+        throw argoToolError(typeof body === 'string' && body !== '' ? body : 'argo_fetch failed')
+      }
+      raw = JSON.parse(parsed?.content?.[0]?.text ?? '{}')
+    } catch (spawnErr) {
+      throw classifyFetchError(spawnErr, url)
+    }
+  }
+
+  if (raw?.success === false) {
+    throw classifyFetchError(new Error(String(raw?.error ?? 'fetch failed')), url)
+  }
+  return mapArgoToWebFetch(raw, url, maxChars)
 }
 
 /**
@@ -1426,6 +1590,26 @@ export function apply(ctx, providedConfig = {}) {
           max: config.searchConcurrency,
         }),
     })
+    // 原生 web_fetch seam：与 search 同一条入口、同一套凭证解析，fetch 走
+    // argo_fetch 链（HTTP 优先，遇 Cloudflare/JS 渲染自动升级）。宿主
+    // http provider 免 key 常驻可用，两个可用 provider 不 pin 会
+    // WEB_PROVIDER_AMBIGUOUS——启用即须在 profile patch 的 web 行配
+    // fetchProvider: argo（见 cordis.patch.yml 注释）。
+    if (typeof web.registerFetchProvider === 'function') {
+      web.registerFetchProvider({
+        id: asString(config.fetchProviderId, DEFAULTS.fetchProviderId),
+        available: () => config.fetchProviderEnabled !== false,
+        fetch: (request, signal) =>
+          fetchViaArgo(request.url, signal, {
+            command: config.searchCommand,
+            args: config.searchArgs,
+            timeoutMs: config.fetchTimeoutMs,
+            idleMs: config.searchIdleMs,
+            max: config.searchConcurrency,
+            maxChars: config.fetchMaxChars,
+          }),
+      })
+    }
   }
 
   // 原生一等工具：CLI 单发形态（不依赖 MCP 连接），MCP 注入缺失时的兜底；
