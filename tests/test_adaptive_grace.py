@@ -252,5 +252,128 @@ class TestWave1AdaptiveHedge(unittest.TestCase):
                          f"慢引擎的窗被改动了：{calls}")
 
 
+class TestSchemeARegressions(unittest.TestCase):
+    """方案 A 核心契约回归测试（状态契约 + 调度提速 + POST 连接池复用）。"""
+
+    def test_adaptive_grace_default_on(self):
+        fake = MagicMock()
+        fake.latency_percentile.return_value = 320.0
+        with patch.dict(os.environ, {}, clear=False), \
+                patch("adaptive.get_learner", return_value=fake):
+            os.environ.pop("ARGO_ADAPTIVE_GRACE", None)
+            self.assertEqual(engine_dispatch._adaptive_grace("fast_eng", 0.8), 0.32)
+
+    def test_skipped_outcomes_not_recorded_as_zero_ms_failures(self):
+        def fake(_q, eng, **_kw):
+            return _good(eng)
+
+        learner = MagicMock()
+        learner.latency_percentile.return_value = None
+        quota = MagicMock()
+        quota.remote_exhausted_marks.return_value = {
+            "exhausted_eng": {"until": time.time() + 3600, "reason": "quota"}
+        }
+        cache = SearchCache(db_path=":memory:")
+        decision = {
+            "engines_combo": ["exhausted_eng", "live_a", "live_b"],
+            "engines": ["exhausted_eng", "live_a", "live_b"],
+            "parallel": True,
+            "domain": "general",
+            "engine": "exhausted_eng",
+            "early_stop_min_results": 3,
+            "no_early_stop": False,
+        }
+        with patch("search.engine_search", side_effect=fake), \
+                patch("circuit_breaker.get_breaker", return_value=_AllowAllBreaker()), \
+                patch("quota.get_quota_manager", return_value=quota), \
+                patch("adaptive.get_learner", return_value=learner):
+            out = execute_search(
+                QUERY, decision, max_results=5, timeout=10, depth="fast",
+                cache=cache, skip_cache=True, mode="auto")
+        recorded_engines = [c.args[0] for c in learner.record.call_args_list]
+        self.assertNotIn("exhausted_eng", recorded_engines,
+                         f"skipped-quota-exhausted 不得记入 adaptive.db: {recorded_engines}")
+        self.assertTrue(out["results"])
+
+    def test_wave1_cumulative_sufficient_stops_before_wave2(self):
+        """Wave-1 双引擎各回 2 条（单源 <3，跨源合计 4 >=3）时即停，不启 Wave-2。"""
+        calls: list[str] = []
+
+        def fake(_q, eng, **_kw):
+            calls.append(eng)
+            if eng in ("w1_a", "w1_b"):
+                return _good(eng, n=2)
+            return _good(eng, n=3)
+
+        learner = MagicMock()
+        learner.latency_percentile.return_value = 300.0
+        quota = MagicMock()
+        quota.remote_exhausted_marks.return_value = {}
+        cache = SearchCache(db_path=":memory:")
+        decision = {
+            "engines_combo": ["w1_a", "w1_b", "w2_c"],
+            "engines": ["w1_a", "w1_b", "w2_c"],
+            "parallel": True,
+            "domain": "general",
+            "engine": "w1_a",
+            "early_stop_min_results": 3,
+            "no_early_stop": False,
+        }
+        with patch("search.engine_search", side_effect=fake), \
+                patch("circuit_breaker.get_breaker", return_value=_AllowAllBreaker()), \
+                patch("quota.get_quota_manager", return_value=quota), \
+                patch("adaptive.get_learner", return_value=learner):
+            out = execute_search(
+                QUERY, decision, max_results=5, timeout=10, depth="fast",
+                cache=cache, skip_cache=True, mode="auto")
+        self.assertNotIn("w2_c", calls, f"Wave-1 跨源累计达标后不应启动 Wave-2: {calls}")
+        self.assertTrue(out["early_stopped"])
+
+    def test_route_combo_filters_hard_down_engines(self):
+        import route_combo
+        quota = MagicMock()
+        quota.is_hard_down.side_effect = lambda e: e == "octen"
+        with patch("route_combo.get_quota_manager", return_value=quota), \
+                patch("route_combo._breaker_blocked", return_value=False):
+            filtered = route_combo.breaker_filter(
+                ["anysearch", "octen", "local_bing"],
+                {"anysearch", "octen", "local_bing"},
+                skip_aux=False,
+            )
+            self.assertEqual(filtered, ["anysearch", "local_bing"])
+            best, score, _ = route_combo.select_tfidf_best(
+                "test query", {"primary_lang": "en"}, {},
+                lambda _q, top_k=3: [("octen", 0.5, ""), ("anysearch", 0.4, "")],
+            )
+            self.assertEqual(best, "anysearch")
+            self.assertEqual(score, 0.4)
+
+    def test_post_http_engine_uses_http_client_post_by_default(self):
+        import engines_base
+        spec = {
+            "engine_id": "test_post_eng",
+            "method": "POST",
+            "url": "https://example.com/api/search",
+            "post_body": {"q": "{query}"},
+            "format": "json",
+            "output_map": {"items": "items", "item_title": "title", "item_url": "url"},
+        }
+        eng_fn = engines_base._build_http_engine(spec)
+        fake_resp = {
+            "status": 200,
+            "text": '{"items": [{"title": "T1", "url": "https://example.com/1"}]}',
+            "headers": {},
+            "url": "https://example.com/api/search",
+            "elapsed_ms": 12,
+        }
+        with patch.dict(os.environ, {"ARGO_ENGINE_HTTP_CLIENT": "1"}), \
+                patch("http_client.HttpClient.post", return_value=fake_resp) as mock_post:
+            res = eng_fn("hello", max_results=5)
+            self.assertEqual(len(res), 1)
+            self.assertEqual(res[0]["url"], "https://example.com/1")
+            mock_post.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()
+

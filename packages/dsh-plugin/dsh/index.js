@@ -538,6 +538,7 @@ export async function searchViaArgoMCP(query, maxResults = 5, signal, options = 
     idleMs: options.idleMs ?? DEFAULTS.searchIdleMs,
     max: options.max ?? DEFAULTS.searchConcurrency,
     initMs: timeoutMs,
+    credentials: options.credentials,
   })
   // 已 abort 的 signal 会在下面立刻返回、一次请求都不发——但认领已经在
   // acquireMcp 里同步拿走了，必须显式归还（详见 conn.release 的说明）。
@@ -1130,6 +1131,7 @@ export async function recomputeViaArgoMCP(spec, fileInputs, options = {}) {
     // （searchViaArgoMCP / nativeViaMcpPool）都传了 initMs，这条漏了——
     // 挂死后该连接 claims 已 +1、load() 永不为 0，池子再也选不中它。
     initMs: timeoutMs,
+    credentials: options.credentials,
   })
   // 超时内建在 conn.request：pending entry 同步清理（与 searchViaArgoMCP 同口径）。
   const result = await conn.request('tools/call', {
@@ -1262,6 +1264,7 @@ async function nativeViaMcpPool(config, kind, argsObj, timeoutMs) {
     idleMs: config.searchIdleMs ?? DEFAULTS.searchIdleMs,
     max: config.searchConcurrency ?? DEFAULTS.searchConcurrency,
     initMs: timeoutMs,
+    credentials: config.credentials,
   })
   const result = await conn.request('tools/call', { name: kind, arguments: argsObj }, timeoutMs)
   if (result?.isError) {

@@ -490,26 +490,26 @@ def _build_http_engine(spec: dict[str, Any]) -> Any:
                             body[k] = float(resolved)
                         except ValueError:
                             body[k] = resolved
-            # 与 GET 路径保持一致：过滤空/认证前缀残留头（未配置的 {ENV} 不发送，
-            # POST 型可选密钥引擎如 firecrawl 才能 keyless 直连）
-            resolved_headers = {
-                k: v for k, v in (
-                    (k, _resolve(v, query, n, **kwargs))
-                    for k, v in headers.items()
-                ) if _header_meaningful(v)
-            }
+            # 与 GET 路径保持一致：过滤空/认证前缀残留头；POST 默认走 HttpClient 连接池
+            resolved_headers = {k: v for k, v in ((k, _resolve(v, query, n, **kwargs))
+                                                  for k, v in headers.items()) if _header_meaningful(v)}
+            from engine_env import env_flag
             import urllib.request as _urllib_request
-            req = _urllib_request.Request(
-                url_template,
-                data=json.dumps(body).encode("utf-8"),
-                headers=resolved_headers,
-            )
-            try:
-                with http_open(req, timeout=to, engine=eng) as resp:
-                    raw = resp.read().decode("utf-8")
-            except Exception as e:
-                _get_logger().warning(f"HTTP 引擎失败: {e}")
-                return []
+            if env_flag("ARGO_ENGINE_HTTP_CLIENT") and getattr(_urllib_request.urlopen, "__module__", "") == "urllib.request":
+                from http_client import HttpClient
+                resp = HttpClient(timeout=to, max_retries=0, jitter=False).post(url_template, body=body, extra_headers=resolved_headers, engine=eng)
+                raw = (resp.get("text") or "") if resp.get("status") == 200 else ""
+                if not raw:
+                    _note_http_failure(eng, resp.get("status") or 0, resp.get("text") or resp.get("error", ""))
+                    return []
+            else:
+                req = _urllib_request.Request(url_template, data=json.dumps(body).encode("utf-8"), headers=resolved_headers)
+                try:
+                    with http_open(req, timeout=to, engine=eng) as resp:
+                        raw = resp.read().decode("utf-8")
+                except Exception as e:
+                    _get_logger().warning(f"HTTP 引擎失败: {e}")
+                    return []
             return _parse_http_payload(raw, fmt, eng, n, output_map, spec)
     return _engine
 

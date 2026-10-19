@@ -187,6 +187,14 @@ def build_refill_pool(engines_combo: list[str], mode: str,
     return pool
 
 
+def _hard_down_blocked(engine_id: str) -> bool:
+    """配额硬耗尽判定：已达到硬上限或运行时耗尽标记 → True（剔除）。"""
+    try:
+        return bool(get_quota_manager().is_hard_down(engine_id))
+    except Exception:
+        return False
+
+
 def backfill_after_breaker(combo: list[str], enabled: set[str],
                            features: dict | None = None,
                            query: str = "", skip_aux: bool = False,
@@ -215,7 +223,7 @@ def backfill_after_breaker(combo: list[str], enabled: set[str],
                 break
             if cand in combo or cand not in enabled:
                 continue
-            if _breaker_blocked(cand):
+            if _breaker_blocked(cand) or (not skip_aux and _hard_down_blocked(cand)):
                 continue
             if _filter_lang_bound_family(
                     [cand], features, _specs_snapshot(), query) != [cand]:
@@ -320,7 +328,7 @@ def select_tfidf_best(query: str,
         _ql = (features or {}).get("primary_lang") or ""
         if _ql and not lang_allows(cand, _ql, (specs or {}).get(cand)):
             continue
-        if engine_is_dead(cand):
+        if engine_is_dead(cand) or _hard_down_blocked(cand):
             continue
         tfidf_best = cand
         tfidf_best_score = score
@@ -835,8 +843,11 @@ def breaker_filter(combo: list[str], enabled: set[str],
     """
     combo = apply_lang_aux(combo, features, enabled, query, skip=skip_aux)
     combo = _filter_breaker_blocked(combo)
+    if not skip_aux and combo:
+        combo = [e for e in combo if not _hard_down_blocked(e)]
     if not combo:
-        combo = [e for e in empty if e in enabled] or ["anysearch"]
+        combo = ([e for e in empty if e in enabled and not _hard_down_blocked(e)]
+                 or [e for e in empty if e in enabled] or ["anysearch"])
     return combo
 
 

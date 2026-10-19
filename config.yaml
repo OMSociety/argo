@@ -656,6 +656,7 @@ domains:
   - match: '(?i)(雨|雪)'
     unless: '(?i)(图片|壁纸|照片|图库|素材|插画|头像|背景图|桌面|png|jpg|海报|摄影|写真|剧照|表情|雪花|雪景|雨景|wallpaper|photo|image|picture|illustration|poster)'
   - (?i)(날씨|기온|온도|예보|몇\s*도)
+  early_stop_min_results: 1
   primary: qweather
 - desc: 垂直结构化模态卡（统一语义识别：火车票/油价/贵金属/万年历/星座/手机/汽车/挂号/薪资等）
   engines_combo:

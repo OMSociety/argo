@@ -133,7 +133,7 @@ def _adaptive_grace(engine: str, base_grace_s: float) -> float:
     """
     try:
         from engine_env import env_flag
-        if not env_flag("ARGO_ADAPTIVE_GRACE", False):
+        if not env_flag("ARGO_ADAPTIVE_GRACE", True):
             return base_grace_s
     except Exception:
         return base_grace_s
@@ -657,7 +657,7 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
     _now = time.monotonic if t0_mono is not None else time.time
     _budget_base = t0_mono if t0_mono is not None else t0
     early_stopped = False
-    to_run = list(engines)
+    to_run = [e for e in engines if e not in _exhausted_marks] + [e for e in engines if e in _exhausted_marks]
     # deep 模式全量并行；fast/auto/budget 可渐进 early-stop
     allow_early = mode in ("fast", "auto", "budget") and depth != "deep"
 
@@ -900,11 +900,11 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
             grace = max(0.0, _deadline - _now())
 
         def _wave1_stop(eng: str, goods: list[dict[str, Any]]) -> bool:
-            """先合格者赢：判据看单个引擎自己的结果，不看跨引擎累计。"""
+            """先合格者赢（单引擎达标或 Wave-1 跨引擎累计达标即停，不启 Wave-2）。"""
             if no_early or not goods:
                 return False
-            return results_sufficient(goods, mode=mode, min_results=early_min,
-                                      query=query)
+            return (results_sufficient(goods, mode=mode, min_results=early_min, query=query)
+                    or cumulative_sufficient(raw_results, mode=mode, min_results=early_min, query=query))
 
         # 竞速窗口：grace 之后还剩 net_timeout+2 的观察窗（不越过总预算）。
         # 窗口按「从起步算起」折算，所以是 grace + 剩余额度——等价于原来的

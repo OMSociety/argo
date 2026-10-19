@@ -859,11 +859,11 @@ def route_query(query: str, engine_override: str = "auto",
     # 若过滤过狠导致空集，回退到 enabled 全集（避免完全不可用）
     if not enabled:
         enabled = set(get_engines().keys())
-
-    # 预算模式过滤可用引擎
-    quota_mgr = get_quota_manager()
+    quota_mgr = get_quota_manager()  # 预算过滤 + auto/deep 硬耗尽剔除（fail-open）
     if mode in ("fast", "budget"):
         enabled = {e for e in enabled if quota_mgr.is_available(e, mode=mode)}
+    else:
+        enabled = {e for e in enabled if not quota_mgr.is_hard_down(e)} or enabled
 
     # 正则硬规则优先（cheap）；fast + 实域命中时跳过 TF-IDF，省掉语义路由开销
     domains_cfg = get_domains(cfg)
