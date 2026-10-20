@@ -62,6 +62,60 @@ dsh plugin --profile web add "github:taxueseek/argo"
 
 Restart `dsh web` and it takes effect. Search and fetch become native first-class tools: no MCP connection, no standing context overhead. There is also one `wide_research` parallel researcher and 19 MCP tools you can enable on demand. See integration forms below.
 
+### Three invocation channels, one capability set
+
+The same argo retrieval core (same engines, same compression, same guards) opens three channels inside DSH. They degrade automatically by host capability and back each other up:
+
+| Channel | Default | What it does |
+|---------|---------|--------------|
+| **Native first-class tools** | On | `argo_search` / `argo_fetch` and friends register via `ctx.tools.register` and run as CLI single-shots (`--call`), reusing the exact engine and guard stack MCP uses — **no MCP connection, zero standing token overhead** |
+| **Native web seam** | On | Registers `argo` as both a search and a fetch provider, so the host's built-in `web_search` routes to argo's engine chain and `web_fetch` to argo's fetch chain (HTTP first, auto-escalating to an anti-detection browser on Cloudflare / JS-rendered pages) |
+| **MCP form** | On demand | The full 19-tool `mcp__argo__*` surface. Tool definitions are injected into context every round and survive compaction (measured ≈3.7K tokens/round for 19 tools), and the hot path is already covered by native tools and the web seam — so it is not mounted by default. Uncomment the `mcp-argo` line in the profile patch when you need the long-tail forensics tools |
+
+There is also one `wide_research`: it plans complementary tracks (`depends_on` staggers them, parallel by default) → bounded concurrent subagent evidence gathering → a source ledger (only http(s) URLs are recorded) → a synthesis report. Output carries `quality_gate_results` (`conclusion_cap`: low/medium/high); when `passed=false` the wording is downgraded and the ledger sources are verified before any conclusion. The worker evidence-tool allowlist writes both MCP and native tool names (allow semantics), so it works whether or not MCP is mounted: with MCP it uses the full surface, without it falls back to `argo_search` / `argo_fetch` and the host's `web_search` / `web_fetch`.
+
+For an everyday question use `argo_search`; for single-agent forensics use `argo_research`; for multi-perspective comparison with a citation ledger use `wide_research`. Workers can only call argo evidence tools by default and cannot call `argo_research` again (hard guard — user-level overrides do not work).
+
+### Built-in settings page: six sections, effective on save
+
+The plugin ships a browser-side settings page with two entries: the settings popup (`Cmd+,`) left-hand menu item "Argo", or Settings > Plugins > Argo (a summary card for the same panel — click to open).
+
+<p align="center">
+  <img src="assets/readme/settings-tools.png" width="100%" alt="Argo settings, Tools section: hot path has argo_search / argo_fetch on by default, 16 long-tail forensics tools toggle on demand, with per-call timeout and returned-text cap below">
+</p>
+
+<p align="center">
+  <img src="assets/readme/settings-keys.png" width="100%" alt="Argo settings, Keys section: set, update and clear common engine keys, showing configured/unconfigured plus source layer, never echoing plaintext, with a Forward checkbox per row">
+</p>
+
+| Section | What it controls |
+|---------|------------------|
+| **Access** | `web_search` / `web_fetch` seam toggles; engine entry command and args (npx or local `mcp_server.py`); search/fetch timeouts, body cap, idle connection reclamation, concurrent connections |
+| **Tools** | Toggles for the 18 native first-class tools (only `argo_search` / `argo_fetch` on by default); per-call timeout and returned-text cap |
+| **Engines** | argo's own behaviour switches (formerly env vars, curated allowlist of 28: cache / TF-IDF rerank / numeric cross-check / MinHash dedup / SERP guard, Jina / mobile UA / Parallel fetch layer, semantic evidence layer, hedge grace and tail width, engine enable list, proxy, local search roots and read allowlist, warmup / usage log / connection pool / assorted TTLs). Switch-type changes apply immediately; number / text / list types save as a group; unconfigured rows show argo's default and are marked "default". Authorisation switches (recompute, intranet URLs) deliberately stay out of the panel |
+| **Keys** | Set, update and clear common engine keys; shows "configured / unconfigured + source layer (credential store / startup env / .env) + read-only state", never echoing plaintext; each row has a Forward checkbox, equivalent to adding the reference name to `keyRefs` |
+| **Research** | worker / track / sources-per-track / token caps and report output directory |
+| **Advanced** | worker tool allow / deny lists, credential forward list |
+
+Saving takes effect immediately (all volatile config): the native tool set is registered and unregistered per the toggles, timeouts / concurrency / research caps are read on the next call; engine switches are written as `argoEnv` (one `KEY=VALUE` per line) into the argo subprocess env and apply to the next new connection (pooled old connections are reclaimed by `searchIdleMs`, default 60s). Structural fields (`toolName`, `provider`, `searchProviderId`, `fetchProviderId`) are not in the settings page — they still go through the profile patch and need a restart.
+
+**Key security**: keys are written to the DSH credential store (the same place as the Models page) — never into plugin config, never logged, never echoed. Credential resolution priority is **stored file layer > startup env > project .env > home .env**: saving in the panel (or the Models page) overrides older startup-env values, and the argo subprocess picks up the new key on the next new connection; Clear only deletes the credential-store value, so keys supplied by env vars or `.env` reappear. The settings page is only a write entry for the credential domain — reads are still performed by the host on every call.
+
+**DeepSeek official key, supplied natively**: argo's `deepseek_search` engine (the official `api.deepseek.com/v1/tools/search`, whose results carry authority levels / rerank scores / publish times) **shares one key with DSH's official search backend**. The plugin obtains it through DSH's native credential seam, so no manual configuration is needed: resolution is `ctx.get('credentials').resolve('DEEPSEEK_API_KEY')`, resolved per call — after rotating the key on the web Models page the next new connection uses it, with no plugin restart. The plugin never reads key files, never writes to disk, never logs; the key value reaches the argo subprocess env in memory only, and no output or error message contains it. On older hosts without a credentials service it silently skips: that engine is disabled for lack of a key, and the other 263 sources are unaffected.
+
+**The web seam pin is required reading** (a missing pin breaks `web_fetch`): the host `dsh-web` provider selection rule is "configured id wins; if none is configured and exactly one is available, pick it; **if more than one is available, fail with `WEB_PROVIDER_AMBIGUOUS`**". The web profile ships an official http fetch provider by default (keyless, always available), and this bundle registers another — so without a pin there are two available and **`web_fetch` breaks entirely** (same for `web_search` if the profile has another search provider). Any profile with the web seam enabled must therefore specify explicitly on the web service line:
+
+```yaml
+- id: web
+  config:
+    searchProvider: argo    # required when the search seam is enabled (it is by default)
+    fetchProvider: argo     # required when the fetch seam is enabled (it is by default)
+```
+
+`searchProviderEnabled: false` / `fetchProviderEnabled: false` turn the corresponding seam off entirely (the provider is still registered but not selectable, and the other is unaffected). On the engine side, anonymously usable engines such as Firecrawl work **keyless out of the box** (free-tier quota), engines with a configured key automatically upgrade to authenticated requests, and a missing key does not block routing.
+
+> Full configuration options, the Compatibility version table and uninstall steps are in [packages/dsh-plugin/README.md](packages/dsh-plugin/README.md).
+
 ## Core strengths
 
 **264 sources, 227 keyless and ready out of the box.** Runs without any API key; free and local engines fall back automatically. Keyed sources are usually better, and unkeyed ones are skipped automatically. One install covers every scenario.
@@ -114,7 +168,7 @@ Argo supports four integration forms; pick by scenario:
 | Form | Best for | Notes |
 |------|----------|-------|
 | **MCP Server** | Always-on agent attachment | 19 retrieval tools ready; one command injects Claude Code / Cursor / Windsurf / Codex / OpenCode / Cline, config backed up first |
-| **DSH plugin** | DeepSeek Harness users | One line `dsh plugin add`; search and fetch become native first-class tools, no MCP connection, no standing context overhead |
+| **DSH plugin** | DeepSeek Harness users | One line `dsh plugin add`; search and fetch become native first-class tools, no MCP connection, no standing context overhead; ships a six-section settings page effective on save |
 | **Skill files** | Claude Code / Grok Build / Kimi, etc. | Drop the skill package into the agent's skills directory; say "look this up" or "verify this" and it searches |
 | **npx on demand** | Quick trial | `npx -y github:taxueseek/argo`, no install, good for temporarily attaching MCP to any client |
 
@@ -347,6 +401,9 @@ python3 scripts/search.py --list-engines
 | Query operators | `site:` / `-site:` / `-term` / `-"phrase"` / `"phrase"` / `lang:` / `after:` / `before:` stripped from routing and retrieval (details in references/usage.md) | write directly in the query |
 | Trust signals | `authority_level` discrete grade (0-4, >=3 highly authoritative) + `summary` agent-grade digest (backfilled after verification) | result fields, visible via `--fields agent` |
 | Social / sentiment | Weibo / Xiaohongshu / Bilibili / Reddit / X … | `argo_social_search` |
+| DSH native tools | once installed as a DSH plugin, `argo_search` / `argo_fetch` and friends become first-class host tools running as CLI single-shots with zero standing token overhead | call directly after `dsh plugin add` |
+| DSH web seam | the host's built-in `web_search` / `web_fetch` route to argo's engine and fetch chains (HTTP first, auto-escalating to a browser on Cloudflare / JS-rendered pages) | registered by default by the plugin; pin `searchProvider` / `fetchProvider` in the profile |
+| DSH settings page | six sections — Access / Tools / Engines / Keys / Research / Advanced — effective on save; keys go to the host credential store and are never echoed | settings popup `Cmd+,` → left menu "Argo" |
 
 ### Budget modes
 
@@ -361,9 +418,13 @@ python3 scripts/search.py --list-engines
 
 What Argo does, in one sentence: it sends each question to the right sources by domain and language, ranks what comes back by credibility, and hands the agent material it can sort and verify. Search, fetch, evidence checking and local file search share one pipeline, the 19 MCP tools map one-to-one onto CLI commands, so nothing is missing whichever form you install. A few standalone commands round it out: argo tweet packs an X post, argo auth handles login state, argo job aggregates job listings. The full catalog, with cost, key and status per source, sits in docs/ENGINE_CATALOG.md: **264 sources (227 usable with no key), 95 domains**.
 
-The last four releases each fixed one class of problems.
+Installed as a DSH plugin, these capabilities become native host tools: the hot-path search and fetch are on by default, the long-tail forensics tools toggle on in the settings page, and argo's own 28 behaviour switches (cache, rerank, dedup, guard, proxy, TTLs and the rest) moved out of environment variables and into the panel. Keys go into the host credential store, are never echoed, and every change takes effect on save.
+
+The last few releases each fixed one class of problems.
 
 v2.9.7 fixed three long-standing ones. When an AI inside a DSH host asked to read a URL, the host used its own fetcher, so short-link redirects and JS challenge pages often failed outright while argo's fetch chain sat unused; this release wires the host's reads through argo, and those pages go from failing to succeeding, with static pages unchanged. The routing candidate pool used to hold 18 explicit-only engines, and if one was ever auto-selected the only paid engine would quietly bill you; the pool is clean now, and using them requires saying so. Every engine success used to take a file lock and rewrite breaker state on disk; healthy engines now cost zero file I/O, and multi-engine accounting commits in one transaction. The license also moved from MIT to Apache-2.0, which sits easier with commercial users.
+
+After that the DSH plugin gained another layer: the settings page grew from five sections to six, the new "Engines" section brings argo's behaviour switches into the panel (they used to be env-var only), the keys page now shows whether each key comes from the credential store, the startup environment or `.env`, and tool toggles, timeouts, concurrency and research caps all apply on save. Cancellation now reaches the connection-establishment stage too — when the AI stops mid-flight, an argo subprocess that is still being spawned is killed immediately instead of waiting out its timeout.
 
 v2.9.6 handled query operators and the transport layer. A query like site:github.com foo used to have its operator treated as a plain word, or parsed but never applied; a contract layer now strips operators before routing and caching, applies site: as a real filter, and folds it into the cache key, so two searches don't bleed into each other. On transport, every POST used to re-pay the TLS handshake, 320 to 561 ms of it; with connections pooled, a resident MCP process saves that on every query. This release also added the official DeepSeek search engine, billed per call and kept out of the everyday combos.
 
@@ -574,6 +635,13 @@ argo/
 ---
 
 ## Recent updates
+
+### Unreleased (DSH plugin): settings page gains an "Engines" section + cancellation reaches connection establishment
+
+- **Sixth settings section "Engines"**: argo's 28 behaviour switches moved out of environment variables and into the panel (cache / TF-IDF rerank / numeric cross-check / MinHash dedup / SERP guard, Jina / mobile UA / Parallel fetch layer, semantic evidence layer, hedge grace and tail width, engine enable list, proxy, local search roots and read allowlist, warmup / usage log / connection pool / assorted TTLs). Applied via the new volatile config `argoEnv` (one `KEY=VALUE` per line) into the argo subprocess env; names go through the `ARGO_ENV_SPECS` allowlist, and anything outside it fails loudly at apply time so a typo cannot silently do nothing. Switch-type changes apply immediately; number / text / list types save as a group; unconfigured rows show argo's default and are marked "default". Authorisation switches (recompute, intranet URLs) deliberately stay out of the panel
+- **Key source layer is now visible**: shows "configured / unconfigured + source layer (credential store / startup env / project .env / home .env) + read-only state", with non-file layers noting they will be overwritten on save; `DEEPSEEK_API_KEY` is marked as shared with the host's `web_search`; `fetchMaxChars` is truncated to the argo tool schema cap of 50000 on save, removing the "displayed value ≠ effective value" mismatch
+- **Cancellation reaches connection establishment**: `acquireMcp` now honours cancellation while the connection is being established — abort kills the subprocess and settles with `WEB_ABORTED` instead of waiting out the timeout; cancellation also flows through the single-shot fallback
+- **Fixes**: evidence dedup no longer swallows case; older hosts without `effect` no longer crash activation; `saveKey` / `setForward` / `toggleTool` read a live snapshot, fixing a race that dropped updates on rapid consecutive actions; `describe` responses are guarded against reordering, only the latest request's response is accepted
 
 ### v2.9.7: Architecture consolidation — DSH web_fetch seam + explicit_only contract + unified state contracts (License: Apache-2.0)
 

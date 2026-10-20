@@ -62,6 +62,60 @@ dsh plugin --profile web add "github:taxueseek/argo"
 
 Tras instalarlo, reinicia `dsh web` y queda activo. La búsqueda y el fetch pasan a ser herramientas nativas de primera clase: no dependen de una conexión MCP ni ocupan contexto permanente. Además hay 1 `wide_research` de investigación en paralelo y 19 herramientas MCP que se activan bajo demanda. Las formas de integrarlo están más abajo.
 
+### Tres canales de invocación, un mismo conjunto de capacidades
+
+El mismo núcleo de recuperación de argo (mismos motores, misma compresión, mismas guardas) abre tres canales dentro de DSH. Degradan automáticamente según la capacidad del host y se respaldan entre sí:
+
+| Canal | Por defecto | Qué hace |
+|-------|-------------|----------|
+| **Herramientas nativas de primera clase** | Activado | `argo_search` / `argo_fetch` y demás se registran con `ctx.tools.register` y se ejecutan como disparos únicos de CLI (`--call`), reutilizando la pila de motores y guardas exacta que usa MCP — **sin conexión MCP y con coste de tokens residentes cero** |
+| **Web seam nativo** | Activado | Registra `argo` como proveedor tanto de búsqueda como de fetch, de modo que el `web_search` integrado del host se enruta a la cadena de motores de argo y el `web_fetch` a su cadena de fetch (HTTP primero, con escalado automático a un navegador anti-detección en páginas con Cloudflare / renderizado JS) |
+| **Forma MCP** | Bajo demanda | La superficie completa de 19 herramientas `mcp__argo__*`. Las definiciones de herramientas se inyectan en el contexto en cada ronda y sobreviven a la compactación (≈3.7K tokens/ronda medidos para 19 herramientas), y la ruta caliente ya está cubierta por las herramientas nativas y el web seam — por eso no se monta por defecto. Descomenta la línea `mcp-argo` del profile patch cuando necesites las herramientas de forense de cola larga |
+
+Hay además un `wide_research`: planifica pistas complementarias (`depends_on` las escalona, en paralelo por defecto) → recolección de evidencia con subagentes concurrentes acotados → un libro de fuentes (solo se registran URLs http(s)) → un informe de síntesis. La salida lleva `quality_gate_results` (`conclusion_cap`: low/medium/high); cuando `passed=false` se rebaja el tono y se verifican las fuentes del libro antes de cualquier conclusión. La lista de permitidos de herramientas de evidencia del worker escribe tanto nombres MCP como nativos (semántica allow), así que funciona con o sin MCP montado: con MCP usa la superficie completa, sin él cae a `argo_search` / `argo_fetch` y al `web_search` / `web_fetch` del host.
+
+Para una pregunta cotidiana usa `argo_search`; para forense con un solo agente usa `argo_research`; para comparación multiperspectiva con libro de citas usa `wide_research`. Los workers solo pueden llamar a herramientas de evidencia de argo por defecto y no pueden volver a llamar a `argo_research` (protección dura: las anulaciones de usuario no funcionan).
+
+### Página de ajustes integrada: seis secciones, efectiva al guardar
+
+El plugin incluye una página de ajustes del lado del navegador con dos entradas: el elemento "Argo" del menú izquierdo del popup de ajustes (`Cmd+,`), o Ajustes > Plugins > Argo (una tarjeta de resumen del mismo panel: clic para abrir).
+
+<p align="center">
+  <img src="assets/readme/settings-tools.png" width="100%" alt="Ajustes de Argo, sección Herramientas: la ruta caliente trae argo_search / argo_fetch activos por defecto, 16 herramientas de forense de cola larga se activan bajo demanda, con el tiempo de espera por llamada y el límite de texto devuelto debajo">
+</p>
+
+<p align="center">
+  <img src="assets/readme/settings-keys.png" width="100%" alt="Ajustes de Argo, sección Claves: definir, actualizar y borrar claves de motores habituales, mostrando configurada/sin configurar más la capa de origen, sin mostrar el texto plano, con una casilla Reenviar por fila">
+</p>
+
+| Sección | Qué controla |
+|---------|--------------|
+| **Acceso** | Interruptores del web seam `web_search` / `web_fetch`; comando y argumentos de entrada del motor (npx o `mcp_server.py` local); tiempos de espera de búsqueda/fetch, límite de cuerpo, recuperación de conexiones inactivas, conexiones concurrentes |
+| **Herramientas** | Casillas para las 18 herramientas nativas de primera clase (por defecto solo `argo_search` / `argo_fetch`); tiempo de espera por llamada y límite de texto devuelto |
+| **Motores** | Los interruptores de comportamiento del propio argo (antes variables de entorno, lista curada de 28: caché / reordenación TF-IDF / verificación cruzada numérica / deduplicación MinHash / guardia SERP, Jina / UA móvil / capa de fetch Parallel, capa de evidencia semántica, gracia de cobertura y anchura de cola, lista de motores activos, proxy, raíces de búsqueda local y lista de lectura permitida, calentamiento / registro de uso / pool de conexiones / TTL varios). Los de tipo interruptor se aplican al instante; los de número / texto / lista se guardan en grupo; las filas sin configurar muestran el valor por defecto de argo y se marcan como "default". Los interruptores de autorización (recompute, URLs intranet) quedan deliberadamente fuera del panel |
+| **Claves** | Definir, actualizar y borrar claves de motores habituales; muestra "configurada / sin configurar + capa de origen (almacén de credenciales / entorno de arranque / .env) + estado de solo lectura", sin mostrar el texto plano; cada fila tiene una casilla Reenviar, equivalente a añadir el nombre de referencia a `keyRefs` |
+| **Investigación** | límites de worker / pistas / fuentes por pista / tokens y directorio de salida de informes |
+| **Avanzado** | listas allow / deny de herramientas del worker, lista de reenvío de credenciales |
+
+Guardar surte efecto de inmediato (todo es configuración volátil): el conjunto de herramientas nativas se registra y se retira según las casillas; los tiempos de espera, la concurrencia y los límites de investigación se leen en la siguiente llamada; los interruptores de motores se escriben como `argoEnv` (un `KEY=VALUE` por línea) en el entorno del subproceso de argo y se aplican a la siguiente conexión nueva (las conexiones antiguas del pool se recuperan con `searchIdleMs`, 60 s por defecto). Los campos estructurales (`toolName`, `provider`, `searchProviderId`, `fetchProviderId`) no están en la página de ajustes: siguen yendo por el profile patch y necesitan reinicio.
+
+**Seguridad de claves**: las claves se escriben en el almacén de credenciales de DSH (el mismo sitio que la página de Modelos) — nunca en la configuración del plugin, nunca en registros, nunca se muestran. La prioridad de resolución de credenciales es **capa de archivo almacenado > entorno de arranque > .env del proyecto > .env del hogar**: guardar en el panel (o en la página de Modelos) sobrescribe los valores antiguos del entorno de arranque, y el subproceso de argo toma la clave nueva en la siguiente conexión nueva; Borrar solo elimina el valor del almacén de credenciales, así que las claves aportadas por variables de entorno o `.env` reaparecen. La página de ajustes es solo una entrada de escritura para el dominio de credenciales: las lecturas las sigue haciendo el host en cada llamada.
+
+**Clave oficial de DeepSeek, suministrada de forma nativa**: el motor `deepseek_search` de argo (el `api.deepseek.com/v1/tools/search` oficial, cuyos resultados traen niveles de autoridad / puntuaciones de rerank / fechas de publicación) **comparte una sola clave con el backend de búsqueda oficial de DSH**. El plugin la obtiene mediante el credential seam nativo de DSH, así que no hace falta configuración manual: la resolución es `ctx.get('credentials').resolve('DEEPSEEK_API_KEY')`, resuelta en cada llamada — tras rotar la clave en la página de Modelos web, la siguiente conexión nueva la usa, sin reiniciar el plugin. El plugin nunca lee archivos de claves, nunca escribe en disco, nunca registra; el valor de la clave llega al entorno del subproceso de argo solo en memoria, y ningún mensaje de salida o de error lo contiene. En hosts antiguos sin servicio de credenciales lo omite en silencio: ese motor se desactiva por falta de clave, y las otras 263 fuentes no se ven afectadas.
+
+**El pin del web seam es lectura obligatoria** (un pin ausente rompe `web_fetch`): la regla de selección de proveedor del host `dsh-web` es "gana el id configurado; si no hay ninguno configurado y exactamente uno está disponible, se elige; **si hay más de uno disponible, falla con `WEB_PROVIDER_AMBIGUOUS`**". El perfil web trae un proveedor http fetch oficial por defecto (sin clave, siempre disponible), y este bundle registra otro — así que sin pin hay dos disponibles y **`web_fetch` se rompe por completo** (igual con `web_search` si el perfil tiene otro proveedor de búsqueda). Cualquier perfil con el web seam activado debe especificarlo de forma explícita en la línea del servicio web:
+
+```yaml
+- id: web
+  config:
+    searchProvider: argo    # obligatorio cuando el search seam está activado (lo está por defecto)
+    fetchProvider: argo     # obligatorio cuando el fetch seam está activado (lo está por defecto)
+```
+
+`searchProviderEnabled: false` / `fetchProviderEnabled: false` desactivan el web seam correspondiente por completo (el proveedor sigue registrado pero no seleccionable, y el otro no se ve afectado). En el lado de los motores, los motores de uso anónimo como Firecrawl funcionan **sin clave desde el primer momento** (cuota de capa gratuita), los motores con clave configurada se actualizan automáticamente a peticiones autenticadas, y una clave ausente no bloquea el enrutamiento.
+
+> Las opciones de configuración completas, la tabla de versiones de Compatibility y los pasos de desinstalación están en [packages/dsh-plugin/README.md](packages/dsh-plugin/README.md).
+
 ## Ventajas principales
 
 **264 fuentes, 227 disponibles sin clave desde el primer momento.** Funciona sin configurar ninguna clave API: los motores gratuitos y locales actúan como red de seguridad. Las fuentes con clave suelen ofrecer mejor calidad; si no hay clave, se omiten. Una instalación y cubres todos los escenarios.
@@ -114,7 +168,7 @@ Argo admite cuatro formas de integración; elige según tu caso:
 | Forma | Ideal para | Descripción |
 |-------|------------|-------------|
 | **MCP Server** | Agente montado de forma permanente | 19 herramientas de búsqueda siempre disponibles; un comando las inyecta en Claude Code / Cursor / Windsurf / Codex / OpenCode / Cline, con copia de seguridad automática antes de escribir la configuración |
-| **Plugin DSH** | Usuarios de DeepSeek Harness | Se instala con una línea de `dsh plugin add`; búsqueda y fetch pasan a ser herramientas nativas de primera clase, sin conexión MCP y sin coste de contexto permanente |
+| **Plugin DSH** | Usuarios de DeepSeek Harness | Se instala con una línea de `dsh plugin add`; búsqueda y fetch pasan a ser herramientas nativas de primera clase, sin conexión MCP y sin coste de contexto permanente; incluye una página de ajustes de seis secciones efectiva al guardar |
 | **Archivo Skill** | Claude Code / Grok Build / Kimi, etc. | El paquete de habilidades va al directorio de skills del agente; cuando dices «búscame esto» o «verifícalo», él busca solo |
 | **npx al paso** | Probar rápido | `npx -y github:taxueseek/argo`, sin instalar; ideal para montar el MCP temporalmente en cualquier cliente |
 
@@ -389,6 +443,9 @@ python3 scripts/search.py --list-engines
 | Operadores de consulta | `site:` / `-site:` / `-término` / `-"frase"` / `"frase"` / `lang:` / `after:` / `before:` extraídos de ruta y recuperación (detalles en references/usage.md) | se escriben directo en la consulta |
 | Señales de confianza | `authority_level` grado discreto (0-4, >=3 muy autoritativo) + `summary` resumen para Agent (se rellena tras verificar) | campos del resultado, visibles con `--fields agent` |
 | Social / sentimiento | Weibo / Xiaohongshu / Bilibili / Reddit / X … | `argo_social_search` |
+| Herramientas nativas DSH | al instalarlo como plugin DSH, `argo_search` / `argo_fetch` y demás pasan a ser herramientas de primera clase del host, ejecutadas como disparos únicos de CLI con coste de tokens residentes cero | llamar directo tras `dsh plugin add` |
+| Web seam DSH | el `web_search` / `web_fetch` integrado del host se enrutan a las cadenas de motores y de fetch de argo (HTTP primero, con ascenso automático a navegador en páginas con Cloudflare / renderizado JS) | registrado por defecto por el plugin; fija `searchProvider` / `fetchProvider` en el perfil |
+| Página de ajustes DSH | seis secciones — Acceso / Herramientas / Motores / Claves / Investigación / Avanzado — efectiva al guardar; las claves van al almacén de credenciales del host y nunca se muestran | popup de ajustes `Cmd+,` → menú izquierdo "Argo" |
 
 ### Modos de presupuesto
 
@@ -403,9 +460,13 @@ python3 scripts/search.py --list-engines
 
 Lo que hace Argo, en una frase: manda cada pregunta a las fuentes adecuadas según dominio e idioma, ordena lo que vuelve por credibilidad y devuelve al agente material que puede ordenar y verificar. Búsqueda, captura, verificación de evidencia y búsqueda de archivos locales comparten una sola tubería, 19 herramientas MCP se corresponden una a una con los comandos CLI, así que ninguna capacidad falta en la forma que instales. Algunos comandos sueltos completan el conjunto: argo tweet empaqueta un post de X, argo auth gestiona el estado de sesión y argo job agrega ofertas de empleo. El catálogo completo, con coste, clave y estado de cada fuente, está en docs/ENGINE_CATALOG.md: 264 fuentes, 227 sin clave, 95 dominios.
 
-Las cuatro últimas versiones arreglaron cada una una clase de problemas.
+Instalado como plugin DSH, estas capacidades se convierten en herramientas nativas del host: la búsqueda y el fetch de la ruta caliente vienen activos por defecto, las herramientas de forense de cola larga se activan en la página de ajustes y los 28 interruptores de comportamiento del propio argo (caché, reordenación, deduplicación, guardia, proxy, TTL y demás) salieron de las variables de entorno para entrar en el panel. Las claves van al almacén de credenciales del host, nunca se muestran y todo cambio surte efecto al guardar.
+
+Las últimas versiones arreglaron cada una una clase de problemas.
 
 v2.9.7 arregló tres problemas antiguos. Cuando una IA dentro de un huésped DSH pedía leer una URL, el huésped usaba su propio capturador, así que redirecciones de enlaces cortos y páginas de desafío JS fallaban de forma estructural mientras la cadena de fetch de argo se quedaba sin uso; esta versión pasa las lecturas del huésped por argo, y esas páginas van de fallar a funcionar, sin cambios en las páginas estáticas. El pool de candidatos de enrutado contenía 18 motores de solo-uso-explícito, y si alguno se auto-seleccionaba el único motor de pago te facturaba en silencio; el pool está limpio ya, y usarlos requiere decirlo. Cada éxito de motor tomaba antes un bloqueo de fichero y reescribía el estado del breaker en disco; los motores sanos ahora cuestan cero E/S de ficheros y la contabilidad multi-motor se confirma en una sola transacción. La licencia también pasó de MIT a Apache-2.0, más cómoda para uso comercial.
+
+Después de eso, el plugin DSH ganó otra capa: la página de ajustes pasó de cinco secciones a seis, la nueva sección «Motores» trae los interruptores de comportamiento de argo al panel (antes solo eran variables de entorno), la página de claves muestra ahora si cada clave viene del almacén de credenciales, del entorno de arranque o de `.env`, y los interruptores de herramientas, los tiempos de espera, la concurrencia y los límites de investigación se aplican todos al guardar. La cancelación también llegó a la etapa de establecimiento de la conexión: cuando la IA se detiene a mitad de camino, un subproceso de argo que aún se está creando se mata de inmediato en lugar de esperar a que expire su tiempo de espera.
 
 v2.9.6 se ocupó de los operadores de consulta y la capa de transporte. Una consulta como site:github.com algo trataba antes su operador como una palabra normal, o lo analizaba sin aplicarlo nunca; una capa de contrato quita ahora los operadores antes de enrutar y cachear, aplica site: como filtro real y lo mete en la clave de caché, así dos búsquedas no se contaminan. En transporte, cada POST repagaba el saludo TLS, de 320 a 561 ms; con conexiones agrupadas, un proceso MCP residente lo ahorra en cada consulta. Esta versión también sumó el motor oficial de DeepSeek, facturado por llamada y fuera de los combos cotidianos.
 
@@ -616,6 +677,13 @@ argo/
 ---
 
 ## Actualizaciones recientes
+
+### Sin publicar (plugin DSH): la página de ajustes gana una sección «Motores» + la cancelación llega al establecimiento de la conexión
+
+- **Sexta sección de ajustes «Motores»**: los 28 interruptores de comportamiento de argo salieron de las variables de entorno para entrar en el panel (caché / reordenación TF-IDF / verificación cruzada numérica / deduplicación MinHash / guardia SERP, Jina / UA móvil / capa de fetch Parallel, capa de evidencia semántica, gracia de cobertura y anchura de cola, lista de motores activos, proxy, raíces de búsqueda local y lista de lectura permitida, calentamiento / registro de uso / pool de conexiones / TTL varios). Se aplican mediante la nueva configuración volátil `argoEnv` (un `KEY=VALUE` por línea) en el entorno del subproceso de argo; los nombres pasan por la lista `ARGO_ENV_SPECS` y cualquier cosa fuera de ella falla en voz alta al aplicar, para que un error tipográfico no quede en silencio sin efecto. Los de tipo interruptor se aplican al instante; los de número / texto / lista se guardan en grupo; las filas sin configurar muestran el valor por defecto de argo y se marcan como "default". Los interruptores de autorización (recompute, URLs intranet) quedan deliberadamente fuera del panel
+- **La capa de origen de las claves ya es visible**: muestra "configurada / sin configurar + capa de origen (almacén de credenciales / entorno de arranque / .env del proyecto / .env del hogar) + estado de solo lectura", y las capas que no son de fichero avisan de que se sobrescribirán al guardar; `DEEPSEEK_API_KEY` se marca como compartida con el `web_search` del host; `fetchMaxChars` se trunca al límite del esquema de la herramienta de argo (50000) al guardar, eliminando la discrepancia entre «valor mostrado» y «valor efectivo»
+- **La cancelación llega al establecimiento de la conexión**: `acquireMcp` respeta ahora la cancelación mientras se establece la conexión — al abortar mata el subproceso y cierra con `WEB_ABORTED` en lugar de esperar al timeout; la cancelación también fluye por el camino de disparo único
+- **Correcciones**: la deduplicación de evidencia ya no traga mayúsculas y minúsculas; los hosts antiguos sin `effect` ya no rompen la activación; `saveKey` / `setForward` / `toggleTool` leen una instantánea en vivo, corrigiendo una carrera que perdía actualizaciones en acciones consecutivas rápidas; las respuestas de `describe` se protegen contra reordenaciones y solo se acepta la de la petición más reciente
 
 ### v2.9.7: Consolidación de arquitectura — seam web_fetch DSH + contrato explicit_only + contratos de estado unificados (License: Apache-2.0)
 
