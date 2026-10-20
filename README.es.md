@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/readme/hero.svg" width="100%" alt="Argo: búsqueda unificada y verificación de evidencia para agentes de IA">
+  <img src="assets/readme/hero.svg" width="100%" alt="Argo: búsqueda e investigación profunda para agentes, 264 fuentes de búsqueda, enrutamiento por dominio e idioma y evidencia absorbible como salida">
 </p>
 
 <p align="center">
@@ -31,6 +31,95 @@
 
 > **Este repositorio es parte del conjunto de plugins DeepSeek Harness de taxueseek** ([dsh-files](https://github.com/taxueseek/dsh-files) 39★). Serie de habilidades del mismo autor: [session-digger](https://github.com/taxueseek/session-digger) 29★ · [taxue-invest](https://github.com/taxueseek/taxue-invest) 21★ · [taxueskills](https://github.com/taxueseek/taxueskills) 23★ · [taxue-creative-style](https://github.com/taxueseek/taxue-creative-style) 12★
 
+# Argo: búsqueda e investigación profunda para agentes
+
+## Qué es
+
+**Argo es una herramienta de búsqueda e investigación profunda que vive dentro del agente, y también puede obtener información de las páginas web relevantes. Detrás tiene 264 fuentes de búsqueda que cubren 95 dominios de negocio, además de búsqueda básica sobre archivos locales. Entre los proyectos de búsqueda de código abierto, su capacidad de búsqueda es muy potente.**
+
+Permite configurar claves API para mejorar la calidad de búsqueda (las fuentes con clave suelen dar mejores resultados; si falta la clave, se omiten automáticamente), y también cuenta con motores gratuitos y locales como red de seguridad automática. Cubre 18 idiomas, entre ellos chino, inglés, japonés y coreano, y da soporte a escenarios verticales como finanzas, academia, cine, deportes, código y macroeconomía.
+
+## Sub-habilidades
+
+Las capacidades de Argo se organizan en cuatro sub-habilidades, y cada una es un pipeline independiente que se puede usar por separado:
+
+| Sub-habilidad | Capacidad |
+|---------------|-----------|
+| **local-search** | Búsqueda de archivos locales + agregador local de coste cero (32 motores locales). Busca símbolos de código, nombres de archivo, texto completo de documentos y estructura de archivos. Puede fusionarse con los resultados web: con un interruptor, los aciertos locales se unen a la misma búsqueda |
+| **local-seek** | Búsqueda semántica local (BM25 + vectores híbridos) sobre notas, memoria y bases de conocimiento. Tres niveles progresivos: primero ubica el archivo, luego revisa el contexto y al final lee en detalle el pasaje |
+| **ego-search** | Búsqueda profesional con sesión iniciada. Para contenido que exige login, como Zhihu, Xiaohongshu o cuentas de WeChat, usa un navegador real con la sesión activa. Desactivado por defecto; se activa cuando hace falta |
+| **js-run** | Ejecuta JS de páginas web sin navegador. Corre scripts de página del tipo «detección de entorno + cálculo puro» sin abrir un navegador; P50 de contexto por ejecución: ~1 ms |
+
+Las cuatro sub-habilidades cubren la cadena completa, desde buscar en la máquina hasta buscar en toda la web y detrás de muros de login. En la mayoría de casos basta con local-search + búsqueda en red; para escenarios especiales se activan ego-search y js-run.
+
+## Plugin DSH
+
+Argo también es un plugin de DeepSeek Harness: se instala con una sola línea.
+
+```bash
+dsh plugin --profile web add "github:taxueseek/argo"
+```
+
+Tras instalarlo, reinicia `dsh web` y queda activo. La búsqueda y el fetch pasan a ser herramientas nativas de primera clase: no dependen de una conexión MCP ni ocupan contexto permanente. Además hay 1 `wide_research` de investigación en paralelo y 19 herramientas MCP que se activan bajo demanda. Las formas de integrarlo están más abajo.
+
+## Ventajas principales
+
+**264 fuentes, 227 disponibles sin clave desde el primer momento.** Funciona sin configurar ninguna clave API: los motores gratuitos y locales actúan como red de seguridad. Las fuentes con clave suelen ofrecer mejor calidad; si no hay clave, se omiten. Una instalación y cubres todos los escenarios.
+
+**Búsqueda local y búsqueda web en una sola pieza.** Es una capacidad que solo tiene Argo. La búsqueda de archivos locales se apoya en las herramientas que los desarrolladores usan a diario, como rg y mdfind, y busca símbolos de código, nombres de archivo, texto completo de documentos y estructura de archivos. Con un interruptor, los aciertos locales se integran en la misma búsqueda web, marcados como archivos de la máquina. Cuando escribes y recuerdas que hace medio año anotaste algo pero no dónde, esto es más rápido que navegar carpetas.
+
+**Caché de dos capas, consultas calientes en ~10 ms.** El contenido que no cambia tanto (enciclopedia, datos históricos) entra en caché tras la primera consulta; después, la misma consulta se resuelve al instante sin volver a recorrer la API. Ahorra dinero y tiempo.
+
+**Multilingüe + escenarios verticales.** Probado en 18 idiomas: en chino, inglés y japonés se llega a fuentes primarias locales. Para papers, bibliotecas académicas; para cine, bases de datos de títulos; para código, comunidades de preguntas y respuestas; para mercados, fuentes financieras. Solo las preguntas genéricas van a búsqueda general.
+
+## Instalar y usar
+
+Funciona sin configuración. Tres formas de instalarlo, elige la que te acomode:
+
+**Si quieres que tu asistente de IA sepa buscar por su cuenta**, instala el paquete de habilidades en su directorio de skills. Cuando le digas «búscame esto» o «verifícalo», irá a buscar solo.
+
+**Si solo quieres probarlo**, un comando npx y listo, sin instalar nada.
+
+**Si quieres que el asistente lo tenga siempre disponible**, conéctalo por MCP y tendrás 19 herramientas de búsqueda a mano. También hay un comando de inyección en un paso que configura automáticamente Claude Code, Cursor y Windsurf; Codex, OpenCode y Cline están en la misma lista. Antes de escribir la configuración hace una copia de seguridad, así que puedes revertir cuando quieras.
+
+```bash
+# Opción 1: script de instalación (recomendado para uso local a largo plazo)
+curl -fsSL https://raw.githubusercontent.com/taxueseek/argo/main/scripts/install.sh | bash
+
+# Opción 2: npx al paso (recomendado para montar el agente rápido)
+npx -y github:taxueseek/argo
+
+# Opción 3: git clone (desarrollo / modificar el código)
+git clone https://github.com/taxueseek/argo.git
+```
+
+Una prueba rápida tras instalar:
+
+```bash
+argo search "python asyncio error handling"
+```
+
+Lo que devuelve son preguntas de la API oficial de StackOverflow ordenadas por puntuación de la comunidad y marcadas con el estado de respuesta aceptada, no un montón de granjas SEO.
+
+Si quieres ver cuántas fuentes tienes disponibles en tu máquina ahora mismo, un comando las lista:
+
+```bash
+argo search --list-engines
+```
+
+## Formas de integración
+
+Argo admite cuatro formas de integración; elige según tu caso:
+
+| Forma | Ideal para | Descripción |
+|-------|------------|-------------|
+| **MCP Server** | Agente montado de forma permanente | 19 herramientas de búsqueda siempre disponibles; un comando las inyecta en Claude Code / Cursor / Windsurf / Codex / OpenCode / Cline, con copia de seguridad automática antes de escribir la configuración |
+| **Plugin DSH** | Usuarios de DeepSeek Harness | Se instala con una línea de `dsh plugin add`; búsqueda y fetch pasan a ser herramientas nativas de primera clase, sin conexión MCP y sin coste de contexto permanente |
+| **Archivo Skill** | Claude Code / Grok Build / Kimi, etc. | El paquete de habilidades va al directorio de skills del agente; cuando dices «búscame esto» o «verifícalo», él busca solo |
+| **npx al paso** | Probar rápido | `npx -y github:taxueseek/argo`, sin instalar; ideal para montar el MCP temporalmente en cualquier cliente |
+
+Las cuatro formas comparten el mismo código Python por debajo; la CLI y las herramientas MCP se corresponden una a una, así que elijas la que elijas no pierdes capacidades.
+
 ## Por qué supera a la búsqueda del modelo, la búsqueda IA y el metasearch
 
 > En corto: las tres primeras ayudan a **personas** a encontrar información. Argo ayuda a **agentes** a buscar y verificar en un mismo pipeline. La diferencia no es la interfaz, es el entregable: página de resumen o lista de enlaces para humanos frente a evidencia ordenable, re-verificable y que no hincha el contexto.
@@ -57,35 +146,10 @@
 1. **De enlaces a evidencia.** Los agentes necesitan material estructurado, verificable y compacto — Argo devuelve JSON con desglose de credibilidad.
 2. **El contexto es el primer coste.** Argo perfil agente: ~3,7KB por llamada, con presupuestos de bytes fijados por gates.
 3. **Los sitios preparan contenido para IA.** llms.txt y `.md` se extienden — la cadena de fetch los sondea en el nivel 0, con lector r.jina.ai como respaldo.
-4. **El ecosistema libre basta.** APIs abiertas de gobiernos/academia/estándares/seguridad + motores sin clave cubren la mayoría de dominios (221 sin clave).
+4. **El ecosistema libre basta.** APIs abiertas de gobiernos/academia/estándares/seguridad + motores sin clave cubren la mayoría de dominios (227 sin clave).
 5. **Calidad medible.** Pisos golden de ranking, gates de ablación de fusión y controles negativos de enrutamiento.
 
-> v2.9.3 lo implementa todo: 264 fuentes, 94 dominios, 229 sin clave.
-
----
-
-## Qué es
-
-**Argo es infraestructura de búsqueda multilingüe para agentes de IA.**
-
-La recuperación real nunca es «un idioma + un cuadro de búsqueda»: alguien pregunta por cotizaciones de acciones A, alguien más por el Mundial, alguien busca anime en japonés, alguien quiere el director de una película en IMDb. La premisa de Argo es simple: **enrutar por dominio, idioma e intención** hacia las fuentes adecuadas, en lugar de siempre raspado genérico de títulos web. La búsqueda en la red y la de archivos locales funcionan juntas.
-
-> Fase actual (desde v2.9.7): el proyecto pasó de la optimización de rendimiento puntual a la optimización de arquitectura — cierre de contratos, contratos de estado unificados, puertas y cadenas de evidencia — y sobre esa base mantiene actualizaciones incrementales: cada versión es recomputable y reversible.
-
-> El resultado no es una «lista de enlaces», sino **candidatos de evidencia + desglose de credibilidad**. Un buen enrutamiento es lo que hace que la evidencia se sostenga.
-
-### frente a «envolver otra API de búsqueda»
-
-| Enfoque habitual | Argo |
-|-----------------|------|
-| Atado a un motor y una clave | Multi-motor con enrutamiento automático; gratis primero, con presupuesto |
-| Toda consulta es búsqueda web genérica | **Fuentes verticales primero**: mercados, cine, deportes, macro, química… resultados en forma de respuesta |
-| Optimizado solo para chino/inglés | **Detección de idioma + parámetros de locale + fallback interlingüístico** |
-| Resumir snippets y listo | Selección × densidad de evidencia × frescura × consenso multi-fuente |
-| Un motor caído tumba la cadena | Cortacircuitos, caché negativa, recuperación por etapas (sin contaminación vertical) |
-| Red en cada consulta | Caché de dos capas (memoria + SQLite); consultas calientes ~10 ms |
-| Misma ruta lenta para diario e investigación | **Menos motores en el día a día; más abiertos en investigación profunda** |
-| JSON largo agota el contexto del agente | Respuestas MCP compactas; snippets controlables |
+> v2.9.3 lo implementa todo: 264 fuentes, 95 dominios, 227 sin clave.
 
 ---
 
@@ -354,7 +418,7 @@ El detalle por versión está en «Actualizaciones recientes»; las notas de cad
 
 ## Motores y enrutamiento
 
-La config tiene ahora unos **259** fuentes y **93** dominios (ver `config.yaml` y `--list-engines`).
+La config tiene ahora **264** fuentes (**227** sin clave) y **95** dominios (ver `config.yaml` y `--list-engines`).
 
 ### Directos y verticales (extracto)
 
