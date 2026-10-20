@@ -1,3 +1,13 @@
+# 【已停用·留档】本文件原为 engines/specs/osv.yaml。7ca2f22 移除
+# OSV/CISA KEV 引擎代码（规避启发式杀毒误报）后，声明文件成了孤儿：加载器照常
+# 读入，但 _BUILDERS 里没有对应 builder，每次启动固定刷一行「未知引擎类型」
+# warning（对把 stderr 当错误日志采集的调用方是误报级噪音）。故加 _ 前缀改名，
+# _load_external_engine_specs 跳过 _ 前缀文件，公开仓恢复干净启动。
+# 本机仍可用：builder 由 scripts/local_engines.py（gitignored，不随公开仓提交）
+# 注册，引擎元数据已完整并入该文件的 _LOCAL_ENGINE_SPECS。
+# 公开仓若重新接回：拷回 engines/specs/ 并去掉下划线，同时提供 builder。
+# ─── 以下为原始声明，未改动 ───
+
 # OSV.dev — 开源软件漏洞库（免 key、免注册，跨生态聚合）
 #
 # 补的盲区：**「这个包有没有已知漏洞」**。这是结构化事实而非网页检索问题——

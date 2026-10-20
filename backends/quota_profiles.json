@@ -200,16 +200,6 @@
     "cost_tier": "free",
     "priority": 50
   },
-  "cisa_kev": {
-    "label": "CISA KEV 在野利用漏洞",
-    "qps": 1,
-    "limit": null,
-    "period": "second",
-    "cost_per_call": 0.0,
-    "cost_unit": "free",
-    "cost_tier": "free",
-    "priority": 47
-  },
   "clawhub": {
     "label": "ClawHub 技能目录",
     "qps": 2,
@@ -1699,16 +1689,6 @@
     "cost_unit": "free",
     "cost_tier": "free",
     "priority": 31
-  },
-  "osv": {
-    "label": "OSV 开源漏洞库",
-    "qps": 2,
-    "limit": null,
-    "period": "second",
-    "cost_per_call": 0.0,
-    "cost_unit": "free",
-    "cost_tier": "free",
-    "priority": 44
   },
   "parallel": {
     "label": "Parallel搜索",

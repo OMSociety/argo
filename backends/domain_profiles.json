@@ -2285,12 +2285,6 @@
     "boost_keywords": {},
     "boost_combos": {}
   },
-  "cisa_kev": {
-    "label": "CISA KEV 在野利用漏洞",
-    "documents": [],
-    "boost_keywords": {},
-    "boost_combos": {}
-  },
   "federal_register": {
     "label": "Federal Register 联邦公报",
     "documents": [],
@@ -2299,12 +2293,6 @@
   },
   "opencitations": {
     "label": "OpenCitations 引用图谱",
-    "documents": [],
-    "boost_keywords": {},
-    "boost_combos": {}
-  },
-  "osv": {
-    "label": "OSV 开源漏洞库",
     "documents": [],
     "boost_keywords": {},
     "boost_combos": {}

@@ -25,7 +25,7 @@
   <img alt="license" src="https://img.shields.io/badge/license-Apache_2.0-blue">
   <img alt="python" src="https://img.shields.io/badge/python-3.9+-green">
   <img alt="version" src="https://img.shields.io/badge/version-2.9.7-informational">
-  <img alt="engines" src="https://img.shields.io/badge/engines-266-orange">
+  <img alt="engines" src="https://img.shields.io/badge/engines-264-orange">
   <img alt="mcp" src="https://img.shields.io/badge/MCP-19%20tools-purple">
 </p>
 
@@ -295,7 +295,7 @@ python3 scripts/search.py --list-engines
 
 ### Rough capability set (v2.9.7)
 
-What Argo does, in one sentence: it sends each question to the right sources by domain and language, ranks what comes back by credibility, and hands the agent material it can sort and verify. Search, fetch, evidence checking and local file search share one pipeline, the 19 MCP tools map one-to-one onto CLI commands, so nothing is missing whichever form you install. A few standalone commands round it out: argo tweet packs an X post, argo auth handles login state, argo job aggregates job listings. The full catalog, with cost, key and status per source, sits in docs/ENGINE_CATALOG.md: **266 sources (229 usable with no key), 95 domains**.
+What Argo does, in one sentence: it sends each question to the right sources by domain and language, ranks what comes back by credibility, and hands the agent material it can sort and verify. Search, fetch, evidence checking and local file search share one pipeline, the 19 MCP tools map one-to-one onto CLI commands, so nothing is missing whichever form you install. A few standalone commands round it out: argo tweet packs an X post, argo auth handles login state, argo job aggregates job listings. The full catalog, with cost, key and status per source, sits in docs/ENGINE_CATALOG.md: **264 sources (227 usable with no key), 95 domains**.
 
 The last four releases each fixed one class of problems.
 
@@ -312,7 +312,7 @@ Per-version detail lives in "Recent updates"; release notes for each version are
 
 ## Engines & routing
 
-Config currently has **266** sources (**229** usable with no key) and **95** domains (see `config.yaml` and `--list-engines`).
+Config currently has **264** sources (**227** usable with no key) and **95** domains (see `config.yaml` and `--list-engines`).
 
 ### Direct & vertical (excerpt)
 
