@@ -18,6 +18,26 @@ dsh plugin --profile web add "github:taxueseek/argo#main&path:packages/dsh-plugi
 
 日常一问用 `argo_search`；单代理取证用 `argo_research`；多视角对比、要引用账本用 `wide_research`。worker 默认只能调 argo 取证工具，不会再调 `argo_research`（硬保护，用户层放行也无效）。
 
+## 设置界面
+
+插件自带浏览器端设置页，两个入口：
+
+- 设置弹窗（Cmd+,）左侧一级菜单「Argo」
+- 设置 > 插件 > Argo（同一面板的摘要卡片，点开即用）
+
+六个分区：
+
+- **接入**：`web_search` / `web_fetch` seam 开关；引擎入口命令与参数（npx 或本机 `mcp_server.py`）；搜索/抓取超时、正文上限、连接空闲回收、并发连接数
+- **工具**：18 个原生一等工具的勾选（默认只开 `argo_search` / `argo_fetch`）；单次调用超时与返回文本上限
+- **引擎**：argo 本体的行为开关（原环境变量，curated 白名单 28 个：缓存 / TF-IDF 重排 / 数值交叉校验 / MinHash 去重 / SERP 守卫、Jina / 移动端 UA / Parallel 抓取层、语义证据层、对冲宽限与尾宽、引擎启停名单、代理、本机检索根与读取白名单、预热 / 使用日志 / 连接池 / 各类 TTL）。开关类即时生效，数字 / 文本 / 名单类分组保存；未配置行显示 argo 默认态并标注「默认」。授权类开关（可复算执行、内网 URL）刻意不进面板
+- **密钥**：常用引擎 key 的填写、更新、清除；显示「已配置 / 未配置 + 来源层（凭证库 / 启动环境 / .env）+ 只读态」，明文不回显；每行可勾选「转发」，等价于把引用名加进 `keyRefs`
+- **研究**：worker / 轨道 / 每轨信源 / token 上限与报告落盘目录
+- **高级**：worker 工具 allow / deny 名单、凭证转发名单
+
+保存即生效（全部为 volatile 配置）：原生工具集合按勾选增删注册，超时、并发、研究上限在下一次调用时读取；引擎开关写成 `argoEnv`（一行一个 `KEY=VALUE`）随 argo 子进程 env 进入，对下一次新建连接生效（池内旧连接按 `searchIdleMs` 回收，默认 60s）。结构性字段（`toolName`、`provider`、`searchProviderId`、`fetchProviderId`）不在设置页，仍走 profile patch，改后需重启。
+
+密钥写入 DSH 凭证库（与 Models 页同一处），不写进插件配置、不打日志。凭证服务优先级为**存储文件层 > 启动环境 > 项目 .env > 家目录 .env**：在面板（或 Models 页）保存即覆盖启动环境里的旧值，argo 子进程下一跳新连接用新 key；「清除」只删凭证库里的值，环境变量或 .env 提供的 key 会重新露出。设置页只是凭证域的写入口，读取仍由宿主在每次调用时完成。
+
 ## web seam 的 pin 必读（漏配会打挂 web_fetch）
 
 宿主 `dsh-web` 的 provider 选择规则：配置 id 优先；都没有且恰好一个可用则选它；**多个可用直接报 `WEB_PROVIDER_AMBIGUOUS`**。web profile 默认挂着官方 http fetch provider（免 key、永远可用），本 bundle 再注册一个就是两个可用——**不 pin 的话 `web_fetch` 整个挂掉**（`web_search` 同理，若 profile 里另有搜索 provider）。故启用 web seam 的 profile 必须在 web 服务行显式指定：
@@ -46,10 +66,11 @@ argo 的 `deepseek_search` 引擎（官方 `api.deepseek.com/v1/tools/search`，
 ```
 
 - 解析路径：`ctx.get('credentials').resolve('DEEPSEEK_API_KEY')`，逐次解析——在 web Models 页轮换 key 后，下一跳新连接即生效，无需重启插件（池内连接最长存活 `searchIdleMs`，默认 60s）
-- 层级语义与官方后端一致：启动环境变量 > 调用目录 `.env` > `$DSH_HOME/.env` > 凭证服务管理的 `.credentials.yaml`（web Models 页写入的那把）
+- 层级语义与官方后端一致：**凭证服务管理的 `.credentials.yaml`（web Models 页或设置页写入的那把）> 启动环境变量 > 调用目录 `.env` > `$DSH_HOME/.env`**——存储值胜出，所以面板轮换 key 后 argo 子进程拿到的是新值，不是启动时的旧值
 - 安全：插件不读 key 文件、不落盘、不打日志；key 值只经内存进入 argo 子进程 env，任何输出与错误信息都不含它
 - 旧宿主无 credentials 服务时静默跳过：argo 侧该引擎按缺 key 停用，其余 265 个源不受影响
 - `keyRefs: []` 可整体关闭转发；后续要转发别的宿主凭证（如 `ARGO_EXA_API_KEY`），把引用名加进数组即可，entry 必须是 POSIX 标识符（apply 期 loud fail）
+- `argoEnv`（设置页「引擎」分区写入）：argo 行为开关，一行一个 `KEY=VALUE`，名字限 curated 白名单（index.js 的 `ARGO_ENV_SPECS`，28 个；白名单外 apply 期 loud fail，防拼错静默失效）；授权位与路径 / 状态类变量刻意不收。与 `keyRefs` 的分工：`keyRefs` 管密钥（凭证库），`argoEnv` 管行为开关（插件配置），两者都不落明文
 
 ## 依赖
 
@@ -62,7 +83,7 @@ argo 的 `deepseek_search` 引擎（官方 `api.deepseek.com/v1/tools/search`，
 
 | argo-dsh | DSH Harness | 说明 |
 |----------|-------------|------|
-| 2.9.7（当前） | 0.2.1-rc.2（当前，运行中） | 双栈入口 `startActivation({provider, label, request, signal, delivery})`；rc.2 移除 `toolFilter` 启动期字段后由插件内 tool guard 阻止 worker 嵌套调用 `wide_research`；`wide_research` 端到端实测通过（planner → 2 worker → synthesis，passed=true / 14 sources） |
+| 2.9.7（当前） | 0.2.1-rc.2（当前，运行中） | 自带设置页（接入 / 工具 / API 密钥 / 研究 / 高级）；双栈入口 `startActivation({provider, label, request, signal, delivery})`；rc.2 移除 `toolFilter` 启动期字段后由插件内 tool guard 阻止 worker 嵌套调用 `wide_research`；`wide_research` 端到端实测通过（planner → 2 worker → synthesis，passed=true / 14 sources） |
 | 2.9.7（当前） | 0.2.1-alpha.1（实测，兼容） | 旧宿主走 `start(provider, request)` 分支，`toolFilter` 启动期字段仍认；该分支由插件单测覆盖，未在 alpha.x 上重跑端到端 |
 | 2.9.2 | 0.2.1-alpha.1（实测） | 上一轮适配验证基线；rc.2 的新入口与 tool guard 自 2.9.4 起进入 |
 

@@ -4,7 +4,9 @@
  * 本 bundle 默认不挂 argo MCP：搜索/抓取高频路径走原生工具与 web seam
  * （CLI 单发，同引擎同守卫，零常驻 token 开销）；MCP 19 工具全量面按需
  * 在 profile patch 中挂载。Workers 不调用 argo_research，避免嵌套扇出。
- * No @deepseek-ai/* imports: public ctx.tools / ctx.subagents / ctx.web only.
+ * 只依赖公开服务 ctx.tools / ctx.subagents / ctx.web / ctx.settings；唯一
+ * 的 @deepseek-ai/* 引用是可选的 schemastery（设置表单 schema，导入失败
+ * 时插件照常加载，只是没有设置页）。
  *
  * 三形态接入（互为冗余，同一搜索能力，按宿主能力自动降级）：
  *   1. mcp__argo__*：profile 按需挂载的 stdio MCP，完整工具面（默认关）
@@ -28,6 +30,20 @@ import { fileURLToPath } from 'node:url'
 // 单发表）外全部 18 个工具都可经 nativeTools 配置按需启用为原生一等工具
 // （默认只注册 search/fetch，零常驻 token 开销）。
 import { NATIVE_TOOLS as NATIVE_TOOL_SPECS } from './native-tools.mjs'
+
+/**
+ * Schemastery 是可选依赖：装进 DSH profile 后由宿主依赖树提供，仓内单测
+ * 没有 node_modules。导入失败时 Config 保持 undefined，宿主按「无 schema」
+ * 处理——插件其余功能照常，只是设置页不会出现。不为了一个设置表单把
+ * 插件变成不可加载。
+ */
+let Schema
+try {
+  const schemastery = await import('@deepseek-ai/schemastery')
+  Schema = schemastery.default ?? schemastery.Schema ?? schemastery
+} catch {
+  Schema = undefined
+}
 
 /**
  * 本插件版本：从自己的 package.json 读，**不写死字面量**。
@@ -170,10 +186,206 @@ const DEFAULTS = Object.freeze({
    * 取用——不读 key 文件、不落盘、不打日志。空数组关闭转发。
    */
   keyRefs: ['DEEPSEEK_API_KEY'],
+  /**
+   * argo 引擎开关（一行一个 KEY=VALUE，随子进程 env 进入 argo）。这是
+   * 「argo 本体可配项」进面板的唯一入口：面板「引擎开关」分区只写这里，
+   * 名字走 ARGO_ENV_SPECS 白名单（拼错 loud fail，不搞静默失效）；值只经
+   * 内存进子进程 env，不打日志。与 keyRefs 的分工：keyRefs 管密钥（凭证库），
+   * argoEnv 管行为开关（插件配置），两者都不落明文。
+   */
+  argoEnv: [],
 })
+
+/**
+ * 面板可露出的 argo 环境变量开关（curated 白名单）。
+ *
+ * 选录标准：日常会开合的行为开关，语义单一、默认值在 argo 侧稳定；授权位
+ * （ARGO_ALLOW_RECOMPUTE / ARGO_ALLOW_PRIVATE_URLS，argo 要求 expand=False
+ * + strict=True）与路径/状态类内部变量（ARGO_STATE_DIR / ARGO_HOME /
+ * ARGO_DAEMON 等）刻意不收——前者不该一键放行，后者改了会动摇凭证 seam 的
+ * 解析前提。每个名字都在 argo 仓 scripts/ 有读取点，由
+ * tests/test_dsh_plugin_env_gate.py 对拍，防白名单漂移成 Fiction。
+ *
+ * kind：bool=开关（值 0/1，invert=true 时语义反转，如 NO_CACHE 的「关缓存」），
+ * num=数字，str=字符串，list=名单（逗号或路径分隔符分隔，照 argo 原语义）。
+ * def=argo 侧默认值（仅面板展示用，缺省即不写该行、由 argo 自己决定）。
+ */
+export const ARGO_ENV_SPECS = Object.freeze([
+  { name: 'ARGO_NO_CACHE', kind: 'bool', invert: true, group: 'cache', def: false, zh: '关闭搜索结果缓存', en: 'Disable result cache', hintZh: 'argo 默认缓存 1 小时；调试期关掉缓存看实时结果', hintEn: 'argo caches results for 1h by default; turn off to see live results' },
+  { name: 'ARGO_TFIDF_RERANK', kind: 'bool', group: 'cache', def: true, zh: 'TF-IDF 重排', en: 'TF-IDF rerank', hintZh: '多引擎结果融合前的相关性重排，默认开', hintEn: 'Relevance rerank before fusion, on by default' },
+  { name: 'ARGO_NUMBER_CROSSCHECK', kind: 'bool', group: 'cache', def: true, zh: '数值交叉校验', en: 'Number cross-check', hintZh: '对查询里的数值主张做跨源核对，默认开', hintEn: 'Cross-check numeric claims across sources, on by default' },
+  { name: 'ARGO_MINHASH_DEDUPE', kind: 'bool', group: 'cache', def: true, zh: 'MinHash 去重', en: 'MinHash dedupe', hintZh: '近重复结果合并，默认开', hintEn: 'Merge near-duplicate results, on by default' },
+  { name: 'ARGO_MINHASH_THRESHOLD', kind: 'num', group: 'cache', def: 0.85, min: 0.5, max: 1, step: 0.05, zh: '去重阈值', en: 'Dedupe threshold', hintZh: '越高越严（越多判为不同），默认 0.85', hintEn: 'Higher = stricter, default 0.85' },
+  { name: 'ARGO_SERP_GUARD', kind: 'bool', group: 'cache', def: true, zh: 'SERP 守卫', en: 'SERP guard', hintZh: '拦截壳页/风控页混入结果，默认开；误杀时先关它复现', hintEn: 'Keep shell/blocked pages out of results, on by default' },
+  { name: 'ARGO_FETCH_JINA', kind: 'bool', group: 'fetch', def: true, zh: 'Jina 阅读器抓取', en: 'Jina reader fetch', hintZh: 'r.jina.ai 正文提取，默认开', hintEn: 'r.jina.ai text extraction, on by default' },
+  { name: 'ARGO_FETCH_MOBILE', kind: 'bool', group: 'fetch', def: true, zh: '移动端 UA 抓取', en: 'Mobile UA fetch', hintZh: '按 host 记忆移动端身份，默认开', hintEn: 'Per-host mobile identity, on by default' },
+  { name: 'ARGO_FETCH_PARALLEL', kind: 'bool', group: 'fetch', def: true, zh: 'Parallel 免费渲染抓取', en: 'Parallel free render fetch', hintZh: 'keyless 云端渲染兜底，默认开', hintEn: 'Keyless cloud render fallback, on by default' },
+  { name: 'ARGO_FETCH_DEADLINE_S', kind: 'num', group: 'fetch', def: 60, min: 5, max: 300, step: 5, zh: '抓取总截止（秒）', en: 'Fetch deadline (s)', hintZh: '单次抓取全链路墙钟上限，默认 60', hintEn: 'Wall-clock cap per fetch, default 60' },
+  { name: 'ARGO_SEMANTIC_EVIDENCE', kind: 'bool', group: 'semantic', def: false, zh: '语义证据层', en: 'Semantic evidence', hintZh: '显式核验链路的零样本判定，默认关；开启后多一次外呼', hintEn: 'Zero-shot support check on the verify path, off by default' },
+  { name: 'ARGO_ADAPTIVE_GRACE', kind: 'bool', group: 'semantic', def: true, zh: '对冲宽限自适应', en: 'Adaptive hedge grace', hintZh: '按引擎历史 p75 收窄对冲等待窗，默认开', hintEn: 'Narrow hedge window by engine p75, on by default' },
+  { name: 'ARGO_ADAPTIVE_TAIL', kind: 'bool', group: 'semantic', def: false, zh: '分层尾宽', en: 'Layered straggler tail', hintZh: '尾宽按未回来引擎分层取值，默认关', hintEn: 'Per-engine layered tail width, off by default' },
+  { name: 'ARGO_STRAGGLER_GRACE_S', kind: 'num', group: 'semantic', def: 1.5, min: 0, max: 30, step: 0.5, zh: '掉队宽限（秒）', en: 'Straggler grace (s)', hintZh: '已有引擎交付后还等多久，默认 1.5；0 关闭', hintEn: 'Wait after first delivery, default 1.5; 0 disables' },
+  { name: 'ARGO_SERIAL_STAGGER_S', kind: 'num', group: 'semantic', def: 0.8, min: 0, max: 30, step: 0.5, zh: '串行起步间隔（秒）', en: 'Serial stagger (s)', hintZh: '首引擎超时前补发备选源的提前量，默认 0.8；0 最激进', hintEn: 'Lead before firing a backup source, default 0.8; 0 = fire together' },
+  { name: 'ARGO_ENABLE_ENGINES', kind: 'list', group: 'engines', zh: '额外启用引擎', en: 'Extra enabled engines', hintZh: '逗号分隔；叠加在 config.yaml 启用集之上', hintEn: 'Comma-separated; adds to the config.yaml enabled set' },
+  { name: 'ARGO_DISABLE_ENGINES', kind: 'list', group: 'engines', zh: '停用引擎', en: 'Disabled engines', hintZh: '逗号分隔；优先级高于启用集，调试单引擎时用', hintEn: 'Comma-separated; wins over the enabled set' },
+  { name: 'ARGO_PROXY', kind: 'str', group: 'net', zh: 'argo 全局代理', en: 'argo global proxy', hintZh: 'http:// 代理 URL，或 direct 强制直连；留空走环境变量', hintEn: 'http:// proxy URL, or direct; empty falls back to env' },
+  { name: 'ARGO_GDELT_PROXY', kind: 'str', group: 'net', zh: 'GDELT 代理', en: 'GDELT proxy', hintZh: 'GDELT 按出口 IP 限流，经本地代理更稳；留空自动直连', hintEn: 'GDELT rate-limits by egress IP; empty = direct' },
+  { name: 'ARGO_LOCAL_SEEK_ROOTS', kind: 'list', group: 'local', zh: '本机检索根目录', en: 'Local seek roots', hintZh: '路径分隔符分隔；seek.py 的候选安装根，默认用打包位置', hintEn: 'Path-separated roots for seek.py; default uses the bundled copy' },
+  { name: 'ARGO_LOCAL_SEEK_PATH', kind: 'str', group: 'local', zh: 'seek.py 绝对路径', en: 'seek.py path', hintZh: '显式指定 seek.py，优先于根目录候选', hintEn: 'Explicit seek.py, wins over root candidates' },
+  { name: 'ARGO_LOCAL_READ_DIRS', kind: 'list', group: 'local', zh: '本机读取白名单', en: 'Local read allowlist', hintZh: '逗号分隔；不配置则 local_read 一律不放行', hintEn: 'Comma-separated; empty means local_read allows nothing' },
+  { name: 'ARGO_TEXT_LEXICON', kind: 'str', group: 'local', zh: '词表 JSON 路径', en: 'Lexicon JSON path', hintZh: '文本处理词表覆盖，默认用打包词表', hintEn: 'Text lexicon override; default uses the bundled one' },
+  { name: 'ARGO_NO_PREWARM', kind: 'bool', invert: true, group: 'misc', def: false, zh: '关闭连接预热', en: 'Disable prewarm', hintZh: 'MCP 握手后预热引擎注册表，默认开', hintEn: 'Prewarm the engine registry after handshake, on by default' },
+  { name: 'ARGO_USAGE_LOG', kind: 'bool', group: 'misc', def: true, zh: '使用日志', en: 'Usage log', hintZh: 'argo 侧 JSONL 使用账本，默认开', hintEn: 'argo JSONL usage ledger, on by default' },
+  { name: 'ARGO_ENGINE_HTTP_CLIENT', kind: 'bool', group: 'misc', def: true, zh: 'HttpClient 连接池', en: 'HttpClient pool', hintZh: '引擎 HTTP 走连接池，默认开；=0 回退 urllib（诊断用）', hintEn: 'Pooled engine HTTP, on by default; =0 falls back to urllib' },
+  { name: 'ARGO_ADMISSION_TTL_S', kind: 'num', group: 'misc', def: 1, min: 0, max: 60, step: 0.5, zh: '准入记忆 TTL（秒）', en: 'Admission memo TTL (s)', hintZh: '引擎准入状态记忆时长，默认 1；0 每次现查', hintEn: 'Admission memo window, default 1; 0 = always fresh' },
+  { name: 'ARGO_CONFIG_STAMP_TTL_S', kind: 'num', group: 'misc', def: 1, min: 0, max: 60, step: 0.5, zh: '配置戳记忆 TTL（秒）', en: 'Config stamp memo TTL (s)', hintZh: '外部引擎扫描记忆时长，默认 1；0 每次现扫', hintEn: 'External engine scan memo window, default 1; 0 = always rescan' },
+])
+
+const ARGO_ENV_NAMES = new Set(ARGO_ENV_SPECS.map(spec => spec.name))
+const ARGO_ENV_BY_NAME = new Map(ARGO_ENV_SPECS.map(spec => [spec.name, spec]))
+
+/** argoEnv 行解析：KEY=VALUE（值可含 =）。坏行返回 null，由调用方 loud fail。 */
+function parseArgoEnvLine(line) {
+  const eq = line.indexOf('=')
+  if (eq <= 0) return null
+  const name = line.slice(0, eq).trim()
+  const value = line.slice(eq + 1)
+  if (!CREDENTIAL_REF_PATTERN.test(name)) return null
+  return { name, value }
+}
+
+/** argoEnv 生效集合：白名单内、形状合法的行 → env 覆盖表。坏行在上面的 apply 已拦。 */
+export function argoEnvOverlay(config = activeConfig) {
+  const overlay = {}
+  for (const entry of asStringArray(config?.argoEnv, 64)) {
+    const parsed = parseArgoEnvLine(entry)
+    if (parsed === null || !ARGO_ENV_NAMES.has(parsed.name)) continue
+    overlay[parsed.name] = parsed.value
+  }
+  return overlay
+}
 
 const text = (value) => [{ type: 'text', text: value }]
 const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value)
+
+// --- 实时配置视图 + 设置表单 schema ---
+//
+// schemastery 的 `.volatile()` 字段在宿主解析后的 config 里不是普通值，而是
+// `{ get(), [cosmokit.volatile.write] }` 引用；loader 在设置页写入时原地更新
+// 这个引用，再发 `loader/volatile-update`。所以插件里必须每次经 `.get()` 读，
+// 不能 `{...config}` 快照——快照会把写入前的值固化，设置页看起来保存成功、
+// 行为却不变。
+//
+// liveConfig() 把引用解成当前值，并给直接调用 apply(ctx, {...}) 的单测补上
+// DEFAULTS 回落。所有既有 `config.xxx` 读法因此保持不变且天然实时。
+const VOLATILE_WRITE = Symbol.for('cosmokit.volatile.write')
+const isVolatileRef = (value) =>
+  typeof value === 'object' && value !== null && VOLATILE_WRITE in value && typeof value.get === 'function'
+
+function liveConfig(provided) {
+  const base = isObject(provided) ? provided : {}
+  return new Proxy(base, {
+    get(target, key) {
+      const raw = Reflect.get(target, key)
+      const value = isVolatileRef(raw) ? raw.get() : raw
+      return value === undefined && key in DEFAULTS ? DEFAULTS[key] : value
+    },
+    has(target, key) {
+      return Reflect.has(target, key) || key in DEFAULTS
+    },
+  })
+}
+
+const NATIVE_TOOL_NAMES = Object.keys(NATIVE_TOOL_SPECS)
+
+/**
+ * 设置页 schema。字段分两类：
+ * - volatile：设置页可改、保存即生效（原生工具集合由 apply 内的 reconcile
+ *   增删注册，其余字段在调用点实时读取）；
+ * - 非 volatile：结构性部署参数（工具名、子代理 provider、provider id），
+ *   只能在 profile patch 里改，设置页不展示也不允许写。
+ *
+ * Config 只在 schemastery 可用时导出；不可用时宿主按无 schema 处理。
+ */
+export const Config = Schema === undefined ? undefined : Schema.object({
+  toolName: Schema.string().default(DEFAULTS.toolName)
+    .description('研究工具名（结构性设置，改动需重启）'),
+  provider: Schema.string().default(DEFAULTS.provider)
+    .description('wide_research 使用的子代理 provider（结构性设置，改动需重启）'),
+  searchProviderId: Schema.string().default(DEFAULTS.searchProviderId)
+    .description('web_search provider id（结构性设置；改动需同步 web 行 searchProvider）'),
+  fetchProviderId: Schema.string().default(DEFAULTS.fetchProviderId)
+    .description('web_fetch provider id（结构性设置；改动需同步 web 行 fetchProvider）'),
+  nativeTools: Schema.array(Schema.union(NATIVE_TOOL_NAMES)).default([...DEFAULTS.nativeTools])
+    .description('注册为原生一等工具的 argo 工具名；空数组关闭。默认 argo_search / argo_fetch')
+    .volatile(),
+  nativeTimeoutMs: Schema.number().default(DEFAULTS.nativeTimeoutMs)
+    .description('原生工具单次进程超时（毫秒）')
+    .volatile(),
+  nativeMaxChars: Schema.number().default(DEFAULTS.nativeMaxChars)
+    .description('原生工具返回文本上限（字符）')
+    .volatile(),
+  searchProviderEnabled: Schema.boolean().default(DEFAULTS.searchProviderEnabled)
+    .description('宿主 web_search 走 argo provider')
+    .volatile(),
+  fetchProviderEnabled: Schema.boolean().default(DEFAULTS.fetchProviderEnabled)
+    .description('宿主 web_fetch 走 argo provider（启用需在 web 行 pin fetchProvider: argo）')
+    .volatile(),
+  searchCommand: Schema.string().default(DEFAULTS.searchCommand)
+    .description('argo MCP 入口命令（npx 或本机 python3）')
+    .volatile(),
+  searchArgs: Schema.array(Schema.string()).default([...DEFAULTS.searchArgs])
+    .description('argo MCP 入口参数，一行一个')
+    .volatile(),
+  searchTimeoutMs: Schema.number().default(DEFAULTS.searchTimeoutMs)
+    .description('单次搜索超时（毫秒）')
+    .volatile(),
+  searchIdleMs: Schema.number().default(DEFAULTS.searchIdleMs)
+    .description('常驻 MCP 连接空闲回收（毫秒，0=不回收）')
+    .volatile(),
+  searchConcurrency: Schema.number().default(DEFAULTS.searchConcurrency)
+    .description('MCP 连接池上限（并发搜索度）')
+    .volatile(),
+  fetchTimeoutMs: Schema.number().default(DEFAULTS.fetchTimeoutMs)
+    .description('web_fetch seam 单次预算（毫秒）')
+    .volatile(),
+  fetchMaxChars: Schema.number().default(DEFAULTS.fetchMaxChars)
+    .description('web_fetch seam 正文上限（字符）')
+    .volatile(),
+  defaultWorkers: Schema.number().default(DEFAULTS.defaultWorkers)
+    .description('wide_research 默认并发 worker 数')
+    .volatile(),
+  maxWorkers: Schema.number().default(DEFAULTS.maxWorkers)
+    .description('wide_research 并发 worker 上限')
+    .volatile(),
+  maxTracks: Schema.number().default(DEFAULTS.maxTracks)
+    .description('wide_research 研究轨道上限')
+    .volatile(),
+  maxSourcesPerTrack: Schema.number().default(DEFAULTS.maxSourcesPerTrack)
+    .description('每条轨道最多保留的信源数')
+    .volatile(),
+  workerMaxTokens: Schema.number().default(DEFAULTS.workerMaxTokens)
+    .description('单个 worker 的输出 token 上限')
+    .volatile(),
+  synthesisMaxTokens: Schema.number().default(DEFAULTS.synthesisMaxTokens)
+    .description('综合阶段输出 token 上限')
+    .volatile(),
+  reportDir: Schema.string().default(DEFAULTS.reportDir)
+    .description('研究报告落盘目录')
+    .volatile(),
+  childToolAllow: Schema.array(Schema.string()).default([...DEFAULTS.childToolAllow])
+    .description('worker 可见工具白名单（allow 语义）')
+    .volatile(),
+  childToolDeny: Schema.array(Schema.string()).default([...DEFAULTS.childToolDeny])
+    .description('worker 工具拒绝名单')
+    .volatile(),
+  keyRefs: Schema.array(Schema.string()).default([...DEFAULTS.keyRefs])
+    .description('转发进 argo 子进程的宿主凭证引用名（环境变量名）')
+    .volatile(),
+  argoEnv: Schema.array(Schema.string()).default([...DEFAULTS.argoEnv])
+    .description('argo 引擎开关（一行一个 KEY=VALUE，名字限 ARGO_ENV_SPECS 白名单）')
+    .volatile(),
+})
 
 // --- DSH credentials seam：argo 子进程的宿主密钥（原生机制） ---
 //
@@ -208,25 +420,33 @@ let hostCredentials = undefined
 let activeConfig = DEFAULTS
 
 /**
- * 解析要转发进 argo 子进程的宿主密钥，返回完整 env；无增量时返回 undefined，
- * 让 spawn 走默认继承，不为「没有密钥可转」多包一层对象。
+ * 组装 argo 子进程 env：argoEnv 引擎开关 + keyRefs 宿主密钥。返回完整 env；
+ * 两层都没有增量时返回 undefined，让 spawn 走默认继承。
  *
- * 进程环境已显式导出的引用不覆盖（启动环境层优先级最高，与凭证服务的层级
- * 语义一致）；单个引用解析失败只跳过它自己——搜索不阻断，argo 侧该引擎
- * 按缺 key 停用，其余源不受影响。
+ * 密钥层的优先级与凭证服务契约对齐：**存储文件层胜出**（dsh-credentials-local
+ * 的 resolve：file > 启动环境 > 项目 .env > 家目录 .env）。曾经这里有一句
+ * 「process.env 已有同名变量就跳过解析」，等于让启动环境反压存储文件——用户在
+ * 面板（或 Models 页）轮换 key 后，宿主自己的后端立刻用上新 key，argo 子进程
+ * 却抱着启动时的旧值不放，且池内连接回收后重建的 env 还是旧的（env 来自
+ * process.env 而非凭证服务）。现在逐次 resolve、用解析结果覆盖：轮换 key 对
+ * argo 下一跳新连接即生效。解析失败或服务缺席（旧宿主）时该引用跳过，argo
+ * 侧按缺 key 停用，不阻断搜索。
+ *
+ * argoEnv 与 keyRefs 不重叠（前者白名单只收行为开关），同键时密钥层后写胜出。
  */
 export async function resolveArgoEnv(config = activeConfig, options = {}) {
+  const overlay = argoEnvOverlay(config)
   const refs = asStringArray(config?.keyRefs, 20)
-  if (refs.length === 0) return undefined
-  const provider = options.credentials ?? config?.credentials ?? hostCredentials
-  if (provider === undefined) return undefined
-  const overlay = {}
-  for (const ref of refs) {
-    if (typeof process.env[ref] === 'string' && process.env[ref] !== '') continue
-    try {
-      const resolved = await provider.resolve(ref)
-      if (typeof resolved?.value === 'string' && resolved.value !== '') overlay[ref] = resolved.value
-    } catch { /* 解析失败：跳过该引用，不阻断搜索 */ }
+  if (refs.length > 0) {
+    const provider = options.credentials ?? config?.credentials ?? hostCredentials
+    if (provider !== undefined) {
+      for (const ref of refs) {
+        try {
+          const resolved = await provider.resolve(ref)
+          if (typeof resolved?.value === 'string' && resolved.value !== '') overlay[ref] = resolved.value
+        } catch { /* 解析失败：跳过该引用，不阻断搜索 */ }
+      }
+    }
   }
   return Object.keys(overlay).length > 0 ? { ...process.env, ...overlay } : undefined
 }
@@ -1460,7 +1680,11 @@ export function makeNativeTool(config, kind, deps = {}) {
   // 只注入单发 runner（单测/定制）时直接走单发、保持确定性；生产环境两条都在，
   // 优先复用常驻连接，连接异常再回退单发。
   const forceSpawn = deps.run !== undefined && deps.mcpCall === undefined
-  const nativeTimeoutMs = config.nativeTimeoutMs ?? DEFAULTS.nativeTimeoutMs
+  /** 每次调用读取当前配置：设置页改超时后下一次调用即生效。 */
+  const currentTimeout = () => {
+    const value = Number(config.nativeTimeoutMs)
+    return Number.isFinite(value) && value > 0 ? value : DEFAULTS.nativeTimeoutMs
+  }
   return {
     name: kind,
     description: spec.description,
@@ -1484,9 +1708,10 @@ export function makeNativeTool(config, kind, deps = {}) {
     async execute(args) {
       const argsObj = pickArgs(args, spec.allowed)
       const payload = JSON.stringify(argsObj)
+      const timeoutMs = currentTimeout()
       if (!forceSpawn) {
         try {
-          return { stdout: await mcpCall(config, kind, argsObj, nativeTimeoutMs) }
+          return { stdout: await mcpCall(config, kind, argsObj, timeoutMs) }
         } catch (err) {
           // 这两类错误都表示「调用确实到达了服务器、并且已经跑完」，重发只会
           // 把同一次注定失败（或注定很慢）的调用再跑一遍：
@@ -1501,14 +1726,14 @@ export function makeNativeTool(config, kind, deps = {}) {
       // 宿主密钥随单发进程 env 进入 argo（与 MCP 池同一条解析路径）；无增量
       // 时不改 spec 形状，单测与定制 runner 不受影响。
       const env = await resolveArgoEnv(config)
-      const stdout = await spawnRun(env !== undefined ? { ...spawnSpec, env } : spawnSpec, nativeTimeoutMs)
+      const stdout = await spawnRun(env !== undefined ? { ...spawnSpec, env } : spawnSpec, timeoutMs)
       return { stdout }
     },
   }
 }
 
 export function apply(ctx, providedConfig = {}) {
-  const config = { ...DEFAULTS, ...(isObject(providedConfig) ? providedConfig : {}) }
+  const config = liveConfig(providedConfig)
   const toolName = asString(config.toolName, DEFAULTS.toolName)
   const providerName = asString(config.provider, DEFAULTS.provider)
 
@@ -1534,6 +1759,21 @@ export function apply(ctx, providedConfig = {}) {
   for (const ref of asStringArray(config.keyRefs, 20)) {
     if (!CREDENTIAL_REF_PATTERN.test(ref)) {
       throw new Error(`argo-dsh: keyRefs entry "${ref}" must be a POSIX-style identifier (e.g. DEEPSEEK_API_KEY)`)
+    }
+  }
+
+  // argoEnv 同理 loud fail：名字必须在 ARGO_ENV_SPECS 白名单内。白名单的
+  // 意义在于「拼错不静默」——argo 的 env_flag 对未知名字一概无视，写错的开关
+  // 会以「配了不生效」的形态躺到排查期；而授权位（ALLOW_RECOMPUTE 等）与
+  // 状态路径类变量刻意不在表内，防的是面板一键放行受限动作。错误信息列出
+  // 全部合法名字，用户层 patch 写错时一次就能改对。
+  for (const entry of asStringArray(config.argoEnv, 64)) {
+    const parsed = parseArgoEnvLine(entry)
+    if (parsed === null) {
+      throw new Error(`argo-dsh: argoEnv entry "${entry}" must be KEY=VALUE with a POSIX-style key`)
+    }
+    if (!ARGO_ENV_NAMES.has(parsed.name)) {
+      throw new Error(`argo-dsh: argoEnv key "${parsed.name}" is not a known argo switch. Known: ${[...ARGO_ENV_NAMES].join(', ')}`)
     }
   }
 
@@ -1567,8 +1807,9 @@ export function apply(ctx, providedConfig = {}) {
   }
   if (typeof ctx.tools?.guard === 'function') {
     ctx.tools.guard((exec) => {
-      if (exec?.name === toolName && exec?.agent && childIds.has(exec.agent.id)) {
-        return `${toolName} is not available inside a research worker`
+      const liveToolName = asString(config.toolName, DEFAULTS.toolName)
+      if (exec?.name === liveToolName && exec?.agent && childIds.has(exec.agent.id)) {
+        return `${liveToolName} is not available inside a research worker`
       }
       return undefined
     })
@@ -1576,19 +1817,24 @@ export function apply(ctx, providedConfig = {}) {
 
   // 原生 web_search seam：'web' 是可选服务，不入 inject；headless 无 web
   // 服务时此处跳过注册，wide_research 核心功能不受影响。
+  //
+  // 入口命令/参数/超时都在调用点读 config（liveConfig 已解 volatile 引用）：
+  // 设置页保存后下一跳即生效，不需要重新注册 provider。
   const web = ctx.get?.('web') ?? ctx.web
   if (web && typeof web.registerSearchProvider === 'function') {
     web.registerSearchProvider({
       id: asString(config.searchProviderId, DEFAULTS.searchProviderId),
       available: () => config.searchProviderEnabled !== false,
-      search: (request, signal) =>
-        searchViaArgoMCP(request.query, request.maxResults, signal, {
-          command: config.searchCommand,
-          args: config.searchArgs,
+      search: (request, signal) => {
+        const entry = resolveEntry(config)
+        return searchViaArgoMCP(request.query, request.maxResults, signal, {
+          command: entry.command,
+          args: entry.args,
           timeoutMs: config.searchTimeoutMs,
           idleMs: config.searchIdleMs,
           max: config.searchConcurrency,
-        }),
+        })
+      },
     })
     // 原生 web_fetch seam：与 search 同一条入口、同一套凭证解析，fetch 走
     // argo_fetch 链（HTTP 优先，遇 Cloudflare/JS 渲染自动升级）。宿主
@@ -1599,31 +1845,50 @@ export function apply(ctx, providedConfig = {}) {
       web.registerFetchProvider({
         id: asString(config.fetchProviderId, DEFAULTS.fetchProviderId),
         available: () => config.fetchProviderEnabled !== false,
-        fetch: (request, signal) =>
-          fetchViaArgo(request.url, signal, {
-            command: config.searchCommand,
-            args: config.searchArgs,
+        fetch: (request, signal) => {
+          const entry = resolveEntry(config)
+          return fetchViaArgo(request.url, signal, {
+            command: entry.command,
+            args: entry.args,
             timeoutMs: config.fetchTimeoutMs,
             idleMs: config.searchIdleMs,
             max: config.searchConcurrency,
             maxChars: config.fetchMaxChars,
-          }),
+          })
+        },
       })
     }
   }
 
   // 原生一等工具：CLI 单发形态（不依赖 MCP 连接），MCP 注入缺失时的兜底；
   // 未知工具名在 makeNativeTool 内 loud fail。
-  for (const kind of nativeTools) {
-    ctx.tools.register(makeNativeTool(config, kind))
+  //
+  // nativeTools 是设置页唯一的结构性字段（工具注册不能就地改），所以在
+  // `loader/volatile-update` 里按当前配置增删注册。其余字段都在调用点实时
+  // 读取，不触发重注册。
+  const nativeRegistrations = new Map()
+  const syncNativeTools = () => {
+    const desired = asStringArray(config.nativeTools, 20)
+    for (const [kind, dispose] of nativeRegistrations) {
+      if (desired.includes(kind)) continue
+      try { dispose?.() } catch { /* 已随 fiber 释放 */ }
+      nativeRegistrations.delete(kind)
+    }
+    for (const kind of desired) {
+      if (nativeRegistrations.has(kind)) continue
+      nativeRegistrations.set(kind, ctx.tools.register(makeNativeTool(config, kind)))
+    }
   }
-  const defaultWorkers = clamp(config.defaultWorkers, DEFAULTS.defaultWorkers, 1, 9)
-  const maxWorkers = clamp(config.maxWorkers, DEFAULTS.maxWorkers, 1, 9)
-  const maxTracks = clamp(config.maxTracks, DEFAULTS.maxTracks, 2, 9)
-  const maxSourcesPerTrack = clamp(config.maxSourcesPerTrack, DEFAULTS.maxSourcesPerTrack, 1, 10)
-  const workerMaxTokens = clamp(config.workerMaxTokens, DEFAULTS.workerMaxTokens, 512, 16_000)
-  const synthesisMaxTokens = clamp(config.synthesisMaxTokens, DEFAULTS.synthesisMaxTokens, 512, 24_000)
-  const { allow: childToolAllow, deny: childToolDeny } = buildChildToolFilters(config, toolName)
+  syncNativeTools()
+  if (typeof ctx.on === 'function') {
+    ctx.effect(() => ctx.on('loader/volatile-update', syncNativeTools))
+  }
+  ctx.effect(() => () => {
+    for (const dispose of nativeRegistrations.values()) {
+      try { dispose?.() } catch { /* 已随 fiber 释放 */ }
+    }
+    nativeRegistrations.clear()
+  })
 
   ctx.tools.register({
     name: toolName,
@@ -1638,7 +1903,7 @@ export function apply(ctx, providedConfig = {}) {
         file_inputs: { type: 'string', description: '本地一手数据文件 JSON 数组（白名单制）：[{"path":"~/data/company.xlsx","role":"原始数据"}]。登记血缘（sha256/路径），内容不入账；供 recompute 重算。' },
         recompute: { type: 'string', description: '可复算契约 JSON 对象：{"script":"...","expect":"0.23左右","budget":{"timeout_s":30,"max_mem_mb":512}}。在编排器侧受限执行，验证重算数值。' },
         include_local: { type: 'boolean', description: 'worker 搜索时并入本机文件命中（argo_search include_local，默认 false）。', default: false },
-        max_workers: { type: 'number', description: `Requested concurrent workers. Defaults to ${defaultWorkers}; capped at ${maxWorkers}.` },
+        max_workers: { type: 'number', description: 'Requested concurrent workers. Defaults to the configured default and is capped by the configured maximum.' },
         response_language: { type: 'string', description: 'Language for the final report. Defaults to the question language.' },
       },
       required: ['question'],
@@ -1676,6 +1941,17 @@ export function apply(ctx, providedConfig = {}) {
       if (!providerSupportsStructured(provider)) {
         throw new Error(`wide_research requires provider "${providerName}" to support outputSchema and depthLimit`)
       }
+
+      // 每个研究任务开始时读一次当前配置：设置页改并发/上限/工具白名单后，
+      // 下一次研究即生效（不要求重启）。
+      const liveToolName = asString(config.toolName, DEFAULTS.toolName)
+      const defaultWorkers = clamp(config.defaultWorkers, DEFAULTS.defaultWorkers, 1, 9)
+      const maxWorkers = clamp(config.maxWorkers, DEFAULTS.maxWorkers, 1, 9)
+      const maxTracks = clamp(config.maxTracks, DEFAULTS.maxTracks, 2, 9)
+      const maxSourcesPerTrack = clamp(config.maxSourcesPerTrack, DEFAULTS.maxSourcesPerTrack, 1, 10)
+      const workerMaxTokens = clamp(config.workerMaxTokens, DEFAULTS.workerMaxTokens, 512, 16_000)
+      const synthesisMaxTokens = clamp(config.synthesisMaxTokens, DEFAULTS.synthesisMaxTokens, 512, 24_000)
+      const { allow: childToolAllow, deny: childToolDeny } = buildChildToolFilters(config, liveToolName)
 
       const question = clip(asString(args.question), 4_000)
       if (!question) throw new Error('wide_research question must not be empty')
@@ -1873,8 +2149,27 @@ export function apply(ctx, providedConfig = {}) {
       text: () => `Use ${toolName} for broad factual research that needs independent source checks, contrasting viewpoints, or a citation-ready evidence ledger. State a bounded question and scope. Do not use it for simple answers, personal-data collection, speculative brainstorming, or irreversible actions. Treat the report as evidence synthesis, inspect key sources for high-stakes decisions, and disclose uncertainty.`,
     })
   }
+
+  // 本包自带 client 设置页（dsh/client.js）：关掉宿主按 schema 生成的自动
+  // 表单，否则同一个 namespace 会在设置里出现两份。
+  //
+  // 拿 settings 服务只能惰性 + 静默：cordis 的 ctx 是 Proxy，未 inject 就
+  // 访问 ctx.settings 会**直接抛** `cannot get property "settings" without
+  // inject`（可选链救不了 getter 抛错），整个 entry 激活失败——argo 工具与
+  // 设置页一起消失。ctx.inject(['settings'], cb) 也不行：子 fiber 在本插件
+  // apply 期对 settings 服务仍是 inactive，cb 里 child.settings 一样抛。
+  // 旧宿主没有 settings 服务或没有 configure API 时静默跳过：最坏是设置里
+  // 多一份自动表单，功能不受影响。
+  try {
+    ctx.effect(() => {
+      const settings = typeof ctx.get === 'function' ? ctx.get('settings') : undefined
+      if (!settings || typeof settings.configure !== 'function') return undefined
+      return settings.configure({ auto: false }, ctx.fiber)
+    })
+  } catch { /* 旧宿主无 ctx.effect / settings 服务：保留自动表单，不阻断插件 */ }
+
   // 测试用可见句柄：DSH 忽略 apply 返回值。
-  return { childIds }
+  return { childIds, syncNativeTools }
 }
 
 // Exported for unit tests; DSH loads the bundle through apply() only.

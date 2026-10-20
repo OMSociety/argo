@@ -375,16 +375,26 @@ function makeCtx() {
   const fetchProviders = []
   const guards = []
   const ctx = {
-    tools: { register: (t) => registered.push(t), guard: (g) => guards.push(g) },
+    tools: {
+      register: (t) => {
+        registered.push(t)
+        // 与宿主一致：注册返回 disposer，供 nativeTools 热更新时撤销。
+        return () => {
+          const index = registered.indexOf(t)
+          if (index >= 0) registered.splice(index, 1)
+        }
+      },
+      guard: (g) => guards.push(g),
+    },
     subagents: { getProvider: () => null, list: () => [] },
-    effect() {},
+    // 与 cordis 一致：effect 回调同步执行并返回 disposer（mock 忽略返回值）。
+    effect: (cb) => cb(),
     get: (svc) => svc === 'web' ? {
       registerSearchProvider: (p) => providers.push(p),
       registerFetchProvider: (p) => fetchProviders.push(p),
     } : null,
   }
-  return { ctx, registered, providers, fetchProviders, guards }
-}
+  return { ctx, registered, providers, fetchProviders, guards }}
 
 test('providerSupportsStructured: rc.2 capabilities no longer include toolFilter', () => {
   assert.equal(providerSupportsStructured({
@@ -534,6 +544,61 @@ test('apply: unknown native tool name fails loudly', () => {
   const { ctx } = makeCtx()
   assert.throws(() => apply(ctx, { nativeTools: ['argo_nope'] }), /unknown native tool/)
 })
+
+test('apply: disables the auto-form lazily and never reads ctx.settings directly', () => {
+  // cordis 的 ctx 是 Proxy：未 inject 就访问 ctx.settings 会抛
+  // `cannot get property "settings" without inject`（可选链救不了 getter
+  // 抛错）。回归 2026-10-20 的启动崩溃：上一轮用 ctx.inject(['settings'],
+  // cb) 取服务，子 fiber 在本插件 apply 期对 settings 仍 inactive，cb 里
+  // child.settings 一样抛，整个 entry 激活失败。现在改为 effect 内惰性
+  // ctx.get('settings')（get 对未提供/未激活服务返回 undefined，不抛）。
+  const throwing = makeCtx().ctx
+  Object.defineProperty(throwing, 'settings', {
+    get() { throw new Error('cannot get property "settings" without inject') },
+  })
+  assert.doesNotThrow(() => apply(throwing, {}), 'apply 不得因 settings 不可用而抛')
+
+  // settings 服务可用时应经 ctx.get 拿到并 configure({auto:false})
+  const { ctx } = makeCtx()
+  let configured = 0
+  ctx.get = (name) => (name === 'settings' ? { configure: () => { configured += 1 } } : undefined)
+  apply(ctx, {})
+  assert.equal(configured, 1, '应经 ctx.get 取到 settings 并关闭自动表单')
+
+  // configure 抛错（旧宿主 API 不兼容）时静默跳过，不阻断插件
+  const { ctx: ctx2 } = makeCtx()
+  ctx2.get = (name) => (name === 'settings' ? { configure: () => { throw new Error('nope') } } : undefined)
+  assert.doesNotThrow(() => apply(ctx2, {}))
+})
+
+test('apply: nativeTools follows a live settings update without remounting', () => {
+  const { ctx, registered } = makeCtx()
+  const config = { nativeTools: ['argo_search'] }
+  const handle = apply(ctx, config)
+  assert.deepEqual(registered.map(t => t.name).sort(), ['argo_search', 'wide_research'])
+
+  config.nativeTools = ['argo_fetch']
+  handle.syncNativeTools()
+  assert.deepEqual(registered.map(t => t.name).sort(), ['argo_fetch', 'wide_research'],
+    '旧工具应撤销、新工具应注册、wide_research 保留')
+})
+
+test('apply: volatile refs are unwrapped and stay live after apply', () => {
+  const VOLATILE_WRITE = Symbol.for('cosmokit.volatile.write')
+  let enabled = true
+  const ref = () => ({
+    get: () => enabled,
+    [VOLATILE_WRITE]: (next) => { enabled = next },
+  })
+  const { ctx, providers, fetchProviders } = makeCtx()
+  apply(ctx, { searchProviderEnabled: ref(), fetchProviderEnabled: ref() })
+  assert.equal(providers[0].available(), true, 'volatile 引用必须解成当前值')
+  assert.equal(fetchProviders[0].available(), true)
+
+  enabled = false
+  assert.equal(providers[0].available(), false, '引用更新后 provider 立即可见新值')
+  assert.equal(fetchProviders[0].available(), false)
+})
 test('resolveArgoEnv: resolves host credential refs into the child env', async () => {
   const fake = {
     resolve: async (ref) => (ref === 'DEEPSEEK_API_KEY' ? { value: 'sk-host', source: 'file' } : undefined),
@@ -543,11 +608,28 @@ test('resolveArgoEnv: resolves host credential refs into the child env', async (
   assert.equal(env.PATH, process.env.PATH, '整份 env 继承，不是只带密钥的裸对象')
 })
 
-test('resolveArgoEnv: an explicitly exported process env wins over the service', async () => {
+test('resolveArgoEnv: the credential service wins over the process env (file layer)', async () => {
+  // 凭证服务契约：存储文件层 > 启动环境 > .env。用户经面板/Models 页轮换 key
+  // 后，argo 子进程必须拿到新值，不能抱着启动时的旧值不放。
   const saved = process.env.DEEPSEEK_API_KEY
   process.env.DEEPSEEK_API_KEY = 'sk-env'
   try {
     const fake = { resolve: async () => ({ value: 'sk-file', source: 'file' }) }
+    const env = await resolveArgoEnv({ keyRefs: ['DEEPSEEK_API_KEY'] }, { credentials: fake })
+    assert.equal(env.DEEPSEEK_API_KEY, 'sk-file')
+  } finally {
+    if (saved === undefined) delete process.env.DEEPSEEK_API_KEY
+    else process.env.DEEPSEEK_API_KEY = saved
+  }
+})
+
+test('resolveArgoEnv: an unconfigured ref falls through to the inherited process env', async () => {
+  // 服务在场但该引用哪层都没有值：跳过它，spawn 继承 process.env（旧宿主/
+  // 未配置场景的保底路径）。
+  const saved = process.env.DEEPSEEK_API_KEY
+  process.env.DEEPSEEK_API_KEY = 'sk-env'
+  try {
+    const fake = { resolve: async () => undefined }
     assert.equal(await resolveArgoEnv({ keyRefs: ['DEEPSEEK_API_KEY'] }, { credentials: fake }), undefined)
   } finally {
     if (saved === undefined) delete process.env.DEEPSEEK_API_KEY
