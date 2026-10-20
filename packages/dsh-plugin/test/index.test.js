@@ -1285,3 +1285,54 @@ test('fetch: abort during the single-shot fallback is classified as aborted, not
   const elapsed = Date.now() - started
   assert.ok(elapsed < 1500, `取消后应立即返回，实际 ${elapsed}ms`)
 })
+
+test('pool: abort during connection establishment kills the child promptly', async () => {
+  // acquireMcp 此前不收 signal：取消发生在连接建立阶段时，调用方只能干等
+  // initMs 或子进程退出（/bin/sleep 场景实测 3009ms 全花在池路）。initialize
+  // 握手对 sleep 永不回包，abort 必须让 initializeWithSignal 关掉连接并
+  // 以 WEB_ABORTED 收摊，而不是等 30s 握手预算。
+  stubEnv()
+  const controller = new AbortController()
+  const started = Date.now()
+  const p = nativeViaMcpPool(
+    { searchCommand: '/bin/sleep', searchArgs: ['30'], searchIdleMs: 0, searchConcurrency: 1, searchTimeoutMs: 30_000 },
+    'argo_search',
+    {},
+    30_000,
+    controller.signal,
+  )
+  await new Promise((r) => setTimeout(r, 80))
+  controller.abort()
+  await assert.rejects(p, (err) => {
+    assert.equal(err.code, 'WEB_ABORTED', '连接建立阶段取消要归到 aborted 类')
+    return true
+  })
+  const elapsed = Date.now() - started
+  assert.ok(elapsed < 2000, `abort 后应立即返回，实际 ${elapsed}ms`)
+})
+
+test('pool: already-aborted signal never spawns a connection', async () => {
+  // 已取消就不起进程：spawn 之后再拒绝只是白起一个 python（与 runNativeCall
+  // 的已取消分支同一口径）。用 marker 文件断言子进程确实没被创建——spawnCount
+  // 只数 STUB_SERVER 桩，数不到这里的任意 command。
+  stubEnv()
+  const dir = mkdtempSync(join(tmpdir(), 'argo-dsh-nospawn-'))
+  const marker = join(dir, 'spawned')
+  const script = `require('fs').writeFileSync(${JSON.stringify(marker)}, '1'); setInterval(() => {}, 1000)`
+  const controller = new AbortController()
+  controller.abort()
+  await assert.rejects(
+    () => nativeViaMcpPool(
+      { searchCommand: process.execPath, searchArgs: ['-e', script], searchIdleMs: 0, searchConcurrency: 1, searchTimeoutMs: 30_000 },
+      'argo_search',
+      {},
+      30_000,
+      controller.signal,
+    ),
+    (err) => {
+      assert.equal(err.code, 'WEB_ABORTED')
+      return true
+    },
+  )
+  assert.equal(existsSync(marker), false, '已取消的调用不得 spawn 子进程')
+})

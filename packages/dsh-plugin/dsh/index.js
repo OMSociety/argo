@@ -708,12 +708,42 @@ function createMcpConnection(options) {
 }
 
 /**
+ * 在连接建立（spawn + initialize 握手）期间认取消。
+ *
+ * 此前 acquireMcp 不收 signal：取消发生在连接建立阶段时，调用方只能干等
+ * initMs 或子进程退出（实测 /bin/sleep 3 场景 3009ms 全花在池路）。这里把
+ * abort 接到 initialize 上：abort 一到就 close 掉这条半成品连接（杀子进程、
+ * 摘出池），并以 WEB_ABORTED 收摊。已取消则根本不起进程。
+ */
+function initializeWithSignal(conn, initMs, signal) {
+  if (signal?.aborted) {
+    conn.close()
+    return Promise.reject(argoAborted())
+  }
+  if (signal === undefined) return conn.initialize(initMs)
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      conn.close()
+      reject(argoAborted())
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    conn.initialize(initMs).then(
+      (value) => { signal.removeEventListener('abort', onAbort); resolve(value) },
+      (err) => { signal.removeEventListener('abort', onAbort); reject(err) },
+    )
+  })
+}
+
+/**
  * 取一条连接供本次调用独占使用（并发度 = 同时认领的连接数）。
  *
  * 顺序调用恒为 1 条连接（不增加常驻进程）；并发抢占时按需补开到 `max`，
  * 达到上限后最闲的一条排队（该连接上请求链自然串行）。
+ *
+ * `signal` 可选：连接建立阶段认取消（见 initializeWithSignal），避免取消时
+ * 干等握手预算或子进程退出。
  */
-async function acquireMcp(options) {
+async function acquireMcp(options, signal) {
   const max = Math.max(1, Number(options.max) || DEFAULTS.searchConcurrency)
   // 握手预算：调用方那次调用的超时。握手不做完，调用方的超时根本没机会生效。
   const initMs = Math.max(0, Number(options.initMs) || 0)
@@ -721,7 +751,7 @@ async function acquireMcp(options) {
   if (idle !== undefined) {
     idle.claim()
     try {
-      await idle.initialize(initMs)
+      await initializeWithSignal(idle, initMs, signal)
       return idle
     } catch (err) {
       // 连接已坏：摘掉它再走下面的新开分支，不把失败留给调用方
@@ -741,7 +771,7 @@ async function acquireMcp(options) {
     mcpPool.push(conn)
     conn.claim()
     try {
-      await conn.initialize(initMs)
+      await initializeWithSignal(conn, initMs, signal)
     } catch (err) {
       dropFromPool(conn)
       conn.close()
@@ -752,7 +782,7 @@ async function acquireMcp(options) {
   const least = mcpPool.reduce((a, b) => (a.load() <= b.load() ? a : b))
   least.claim()
   try {
-    await least.initialize(initMs)
+    await initializeWithSignal(least, initMs, signal)
   } catch (err) {
     // 与上面两条分支同一套收尾：摘掉 + 关掉。少了它，失败的连接既留在池里
     // 占着认领位（load() 永不为 0），又不在 disposeSharedMcp 的遍历范围外
@@ -863,7 +893,7 @@ export async function fetchViaArgo(url, signal, options = {}, deps = {}) {
 
   let raw
   try {
-    const conn = await acquireMcp(acquireOptions)
+    const conn = await acquireMcp(acquireOptions, signal)
     // 与 searchViaArgoMCP 同一套 abort 收尾：已 abort 则一次请求都不发
     // （认领已同步拿走，必须显式归还）；abort 要 reject 而不只释放认领，
     // 否则调用方的等待要等到响应或超时才结束，取消失去意义。
@@ -942,7 +972,7 @@ export async function searchViaArgoMCP(query, maxResults = 5, signal, options = 
     max: options.max ?? DEFAULTS.searchConcurrency,
     initMs: timeoutMs,
     credentials: options.credentials,
-  })
+  }, signal)
   // 已 abort 的 signal 会在下面立刻返回、一次请求都不发——但认领已经在
   // acquireMcp 里同步拿走了，必须显式归还（详见 conn.release 的说明）。
   const result = await new Promise((resolve, reject) => {
@@ -1536,7 +1566,7 @@ function buildLocalSources(fileInputs) {
  * Run one argo_recompute through the shared argo stdio MCP connection.
  * Mirrors searchViaArgoMCP: serialized via the connection request chain.
  */
-export async function recomputeViaArgoMCP(spec, fileInputs, options = {}) {
+export async function recomputeViaArgoMCP(spec, fileInputs, options = {}, signal) {
   const command = options.command ?? DEFAULTS.searchCommand
   const args = options.args ?? DEFAULTS.searchArgs
   const timeoutMs = options.timeoutMs ?? DEFAULTS.searchTimeoutMs
@@ -1551,7 +1581,7 @@ export async function recomputeViaArgoMCP(spec, fileInputs, options = {}) {
     // 挂死后该连接 claims 已 +1、load() 永不为 0，池子再也选不中它。
     initMs: timeoutMs,
     credentials: options.credentials,
-  })
+  }, signal)
   // 超时内建在 conn.request：pending entry 同步清理（与 searchViaArgoMCP 同口径）。
   const result = await conn.request('tools/call', {
     name: 'argo_recompute',
@@ -1574,12 +1604,12 @@ export async function recomputeViaArgoMCP(spec, fileInputs, options = {}) {
 }
 
 /** 编排器侧：执行 recompute 契约，返回可入账的 recomputed_values 数组。 */
-async function runRecomputeForResearch(spec, fileInputs, options) {
+async function runRecomputeForResearch(spec, fileInputs, options, signal) {
   const script = asString(spec.script).trim()
   if (!script) {
     return [{ ok: false, skipped_reason: 'recompute.script is empty' }]
   }
-  const payload = await recomputeViaArgoMCP(spec, fileInputs, options)
+  const payload = await recomputeViaArgoMCP(spec, fileInputs, options, signal)
   return [{
     ref: '[R1]',
     ok: payload.ok === true,
@@ -1712,7 +1742,7 @@ function resolveEntry(config) {
 // （冷启动 + 重新加载配置/引擎表的开销在高频调用下很可观）；并发时由池分配
 // 独立连接，不再互相排队。返回与单发形态一致的 MCP 信封 JSON 字符串，
 // 让 makeNativeTool 的 render 无需区分两条路径。
-async function nativeViaMcpPool(config, kind, argsObj, timeoutMs) {
+async function nativeViaMcpPool(config, kind, argsObj, timeoutMs, signal) {
   const { command, args } = resolveEntry(config)
   const conn = await acquireMcp({
     command,
@@ -1721,7 +1751,7 @@ async function nativeViaMcpPool(config, kind, argsObj, timeoutMs) {
     max: config.searchConcurrency ?? DEFAULTS.searchConcurrency,
     initMs: timeoutMs,
     credentials: config.credentials,
-  })
+  }, signal)
   const result = await conn.request('tools/call', { name: kind, arguments: argsObj }, timeoutMs)
   if (result?.isError) {
     const body = result?.content?.[0]?.text
@@ -1784,13 +1814,14 @@ export function makeNativeTool(config, kind, deps = {}) {
         return text(clip(body, currentMaxChars()))
       },
     },
-    async execute(args) {
+    async execute(args, exec) {
       const argsObj = pickArgs(args, spec.allowed)
       const payload = JSON.stringify(argsObj)
       const timeoutMs = currentTimeout()
+      const signal = exec?.signal
       if (!forceSpawn) {
         try {
-          return { stdout: await mcpCall(config, kind, argsObj, timeoutMs) }
+          return { stdout: await mcpCall(config, kind, argsObj, timeoutMs, signal) }
         } catch (err) {
           // 这两类错误都表示「调用确实到达了服务器、并且已经跑完」，重发只会
           // 把同一次注定失败（或注定很慢）的调用再跑一遍：
@@ -1805,7 +1836,7 @@ export function makeNativeTool(config, kind, deps = {}) {
       // 宿主密钥随单发进程 env 进入 argo（与 MCP 池同一条解析路径）；无增量
       // 时不改 spec 形状，单测与定制 runner 不受影响。
       const env = await resolveArgoEnv(config)
-      const stdout = await spawnRun(env !== undefined ? { ...spawnSpec, env } : spawnSpec, timeoutMs)
+      const stdout = await spawnRun(env !== undefined ? { ...spawnSpec, env } : spawnSpec, timeoutMs, signal)
       return { stdout }
     },
   }
@@ -2061,7 +2092,7 @@ export function apply(ctx, providedConfig = {}) {
           timeoutMs: config.searchTimeoutMs,
           idleMs: config.searchIdleMs,
           max: config.searchConcurrency,
-        })
+        }, exec.signal)
       }
 
       const planPrompt = [
