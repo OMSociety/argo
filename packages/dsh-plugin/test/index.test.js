@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { normalizeTracks, stageTracks, evaluateGates, normalizeSource, mapArgoToWebResult, buildLocalSources, parseJsonArray, parseJsonObject, extractValues, resolveNativeSpawn, resolveArgoEnv, makeNativeTool, buildChildToolFilters, apply, nativeViaMcpPool, disposeSharedMcp, startStructured, providerSupportsStructured, fetchViaArgo, mapArgoToWebFetch, classifyFetchError } from '../dsh/index.js'
+import { normalizeTracks, stageTracks, evaluateGates, normalizeSource, normalizeSourceUrl, mapArgoToWebResult, buildLocalSources, parseJsonArray, parseJsonObject, extractValues, resolveNativeSpawn, resolveArgoEnv, makeNativeTool, buildChildToolFilters, apply, nativeViaMcpPool, disposeSharedMcp, startStructured, providerSupportsStructured, fetchViaArgo, mapArgoToWebFetch, classifyFetchError, runNativeCall, searchViaArgoMCP } from '../dsh/index.js'
 import { NATIVE_TOOLS } from '../dsh/native-tools.mjs'
 
 test('mapArgoToWebResult maps compact argo payload to web sources', () => {
@@ -521,6 +521,26 @@ test('apply: old host without registerFetchProvider does not break search regist
   apply(ctx, {})
   assert.equal(providers.length, 1, 'search seam 不受宿主缺 fetch seam 影响')
   assert.equal(registered.filter(t => t.name === 'argo_fetch').length, 1, '原生 argo_fetch 工具仍在')
+})
+
+test('apply: old host without ctx.effect does not block activation', () => {
+  // 7022fa2 修过同一类病（可选宿主服务缺席被当成必需，整个 entry 激活失败，
+  // argo 工具与设置页一起消失），并在设置块留了「旧宿主无 ctx.effect」的
+  // try/catch。但 apply 里另有两处**无条件** ctx.effect 先炸，那句容忍从未
+  // 兑现——实测裸 ctx 下 apply 直接抛 "ctx.effect is not a function"。
+  // 这条钉住：缺 effect 只丢卸载清理，不丢功能、不激活失败。
+  const registered = []
+  const ctx = {
+    tools: { register: (t) => registered.push(t.name), guard: () => {} },
+    subagents: { getProvider: () => null, list: () => [] },
+    get: (svc) => svc === 'web' ? { registerSearchProvider: () => {}, registerFetchProvider: () => {} } : null,
+    // 注意：没有 effect、没有 on、没有 fiber
+  }
+  let threw = null
+  try { apply(ctx, { nativeTools: ['argo_search'] }) } catch (e) { threw = e }
+  assert.equal(threw, null, `旧宿主缺 ctx.effect 不该阻断激活：${threw && threw.message}`)
+  assert.ok(registered.includes('argo_search'), '原生工具仍要注册')
+  assert.ok(registered.includes('wide_research'), '研究工具仍要注册')
 })
 
 test('apply: fetchProviderId override changes the registered id', () => {
@@ -1052,4 +1072,216 @@ test('fetch: an already-aborted signal sends no request and releases the claim',
   })
   assert.match(result.body.content, /^stub fetched body \(max_chars=50000\)$/)
   assert.equal(spawnCount(), 1, 'abort 后认领应已归还，不该为此多开连接')
+})
+
+// ── 2026-10-20 审查轮次补测 ───────────────────────────────────────────────
+// 六处改动各钉一条不变式。放在文件末尾，与上面的池/兜底测试共用 stubEnv /
+// spawnCount / afterEach 收尾。
+
+test('pool: pooled reuse does not re-resolve host credentials', async () => {
+  // env 只被 createMcpConnection 消费。解析放在 acquireMcp 开头时，每次池化
+  // 复用都白付一次 credentials.resolve + 一次无用 await；凭证服务在场
+  // （desktop profile）这是每次搜索都要付的。
+  //
+  // 增量断言而非绝对次数：acquireMcp 走 resolveArgoEnv(activeConfig, options)，
+  // keyRefs 读的是**模块级** activeConfig（由 apply() 设置），不是这里传给
+  // makeNativeTool 的 config——那条对解析次数完全无效，只有 credentials 经
+  // nativeViaMcpPool 传下去有效。生产里两者是同一个对象（apply 内
+  // syncNativeTools 闭包共享 config），直接构造工具时才分叉。所以这里只钉
+  // 「池化复用不新增解析」这个方向，条数交给 activeConfig 的当前状态。
+  let resolveCalls = 0
+  const counting = { resolve: async () => { resolveCalls += 1; return { value: 'sk-host', source: 'file' } } }
+  stubEnv()
+  const tool = makeNativeTool(
+    {
+      searchCommand: process.execPath,
+      searchArgs: [STUB_SERVER],
+      credentials: counting,
+      searchConcurrency: 3,
+    },
+    'argo_search',
+    { mcpCall: nativeViaMcpPool },
+  )
+  await tool.execute({ query: 'a' })
+  const baseline = resolveCalls
+  assert.ok(baseline >= 1, '第一次调用至少该解析一次（新连接要 env）')
+  await tool.execute({ query: 'b' })
+  await tool.execute({ query: 'c' })
+  assert.equal(resolveCalls, baseline, `池化复用不得再解析凭证，实际从 ${baseline} 涨到 ${resolveCalls}`)
+  assert.equal(spawnCount(), 1, '三次顺序调用仍只该有一条常驻连接')
+})
+
+test('pool: a new connection after idle recycle re-resolves credentials', async () => {
+  // 反方向的不变式：连接被回收后新建时必须重新解析，轮换 key 才对下一跳生效。
+  // 少这一条，「不重复解析」会被误做成「只解析一次」。同样是增量口径，理由
+  // 见上一条对 activeConfig 的说明。
+  let resolveCalls = 0
+  const counting = { resolve: async () => { resolveCalls += 1; return { value: 'sk-host', source: 'file' } } }
+  stubEnv()
+  const tool = makeNativeTool(
+    {
+      searchCommand: process.execPath,
+      searchArgs: [STUB_SERVER],
+      credentials: counting,
+      searchConcurrency: 1,
+    },
+    'argo_search',
+    { mcpCall: nativeViaMcpPool },
+  )
+  await tool.execute({ query: 'a' })
+  const baseline = resolveCalls
+  disposeSharedMcp()
+  await tool.execute({ query: 'b' })
+  assert.equal(resolveCalls, baseline + 1, `回收后新建连接应再解析一次，实际从 ${baseline} 到 ${resolveCalls}`)
+  assert.equal(spawnCount(), 2)
+})
+
+test('normalizeSourceUrl: case-distinct paths and queries stay distinct', () => {
+  // 整串 toLowerCase 曾把 /About?doc=Ab12 与 /about?doc=ab12 归成一个键，
+  // 第二个来源在 evidence ledger 里被 seenUrls 静默丢掉。
+  assert.notEqual(
+    normalizeSourceUrl('https://ex.com/About?doc=Ab12'),
+    normalizeSourceUrl('https://ex.com/about?doc=ab12'),
+    'path/query 大小写不同是两个页面，不能并成一个去重键',
+  )
+})
+
+test('normalizeSourceUrl: host is still normalized and tracking params still stripped', () => {
+  // 反向不变量：去掉整串小写不能顺手丢掉原有的归一能力。URL.prototype.toString()
+  // 本身就把 scheme/host 转小写并抹掉默认端口。
+  assert.equal(normalizeSourceUrl('https://EX.com:443/A'), normalizeSourceUrl('https://ex.com/A'))
+  assert.equal(
+    normalizeSourceUrl('https://ex.com/a?utm_source=x&fbclid=y&id=1'),
+    normalizeSourceUrl('https://ex.com/a?id=1'),
+  )
+  assert.equal(normalizeSourceUrl('https://ex.com/a#frag'), normalizeSourceUrl('https://ex.com/a'))
+  assert.equal(normalizeSourceUrl('https://ex.com/a/'), normalizeSourceUrl('https://ex.com/a'))
+  // ?id=1 与 ?id=2 仍是不同页面（原有口径不能被削弱）
+  assert.notEqual(normalizeSourceUrl('https://ex.com/a?id=1'), normalizeSourceUrl('https://ex.com/a?id=2'))
+  // 百分号编码的 hex 大小写要归一（RFC 3986：%2F 与 %2f 同一个八位组），
+  // 否则同一页面按不同编码各记一笔、虚增 sourceCount
+  assert.equal(normalizeSourceUrl('https://ex.com/a%2Fb'), normalizeSourceUrl('https://ex.com/a%2fb'))
+  // 但编码里的大写hex不能反过来污染字面量大小写
+  assert.notEqual(normalizeSourceUrl('https://ex.com/Ab'), normalizeSourceUrl('https://ex.com/aB'))
+})
+
+test('makeNativeTool: a non-positive nativeMaxChars falls back to the default cap', () => {
+  // clip(body, 0) 会返回一个孤零零的「…」，整个工具输出变成省略号。
+  // schema 没有 min，profile patch 可以直接写 0。
+  const tool = makeNativeTool(
+    { searchCommand: process.execPath, searchArgs: [STUB_SERVER], nativeMaxChars: 0 },
+    'argo_search',
+    { run: async () => JSON.stringify({ content: [{ type: 'text', text: 'x'.repeat(30_000) }] }) },
+  )
+  const rendered = tool.output.render({}, { stdout: JSON.stringify({ content: [{ type: 'text', text: 'x'.repeat(30_000) }] }) })
+  const text0 = rendered[0].text
+  assert.equal(text0.length, 24_000, `非正数应回退默认 24000，实际 ${text0.length}`)
+  assert.ok(text0.endsWith('…'), '回退后仍应按默认上限截断')
+
+  const negative = makeNativeTool(
+    { searchCommand: process.execPath, searchArgs: [STUB_SERVER], nativeMaxChars: -5 },
+    'argo_search',
+    { run: async () => '{}' },
+  )
+  const rendered2 = negative.output.render({}, { stdout: JSON.stringify({ content: [{ type: 'text', text: 'y'.repeat(30_000) }] }) })
+  assert.equal(rendered2[0].text.length, 24_000, '负数同样回退默认值')
+})
+
+test('runNativeCall: an abort during the single-shot path kills the child and rejects', async () => {
+  // 兜底路径此前没有 signal 形参：abort 之后这一发仍跑满 timeoutMs，且最终
+  // resolve 出结果。用一个真睡 3s 的命令证明「取消即收摊」。
+  const controller = new AbortController()
+  const started = Date.now()
+  setTimeout(() => controller.abort(), 60)
+  await assert.rejects(
+    () => runNativeCall({ command: '/bin/sleep', args: ['3'] }, 25_000, controller.signal),
+    (err) => err.code === 'WEB_ABORTED',
+  )
+  const elapsed = Date.now() - started
+  assert.ok(elapsed < 1500, `abort 后应立即收摊，实际等了 ${elapsed}ms`)
+})
+
+test('runNativeCall: an already-aborted signal spawns nothing', async () => {
+  stubEnv()
+  const controller = new AbortController()
+  controller.abort()
+  await assert.rejects(
+    () => runNativeCall({ command: process.execPath, args: [STUB_SERVER] }, 5000, controller.signal),
+    (err) => err.code === 'WEB_ABORTED',
+  )
+  assert.equal(spawnCount(), 0, '已取消就不该起进程')
+})
+
+test('fetch: the single-shot fallback receives the caller signal', async () => {
+  // 透传证明：兜底分支必须把 signal 交给 runner，否则 abort 在兜底路径上失效。
+  const seen = []
+  await fetchViaArgo('https://stub.example/page', undefined, {
+    command: process.execPath,
+    args: [join(STUB_DIR, 'does-not-exist.js')],
+    timeoutMs: 5000,
+    idleMs: 0,
+    max: 1,
+  }, {
+    run: async (spec, timeoutMs, signal) => {
+      seen.push({ spec, timeoutMs, signal })
+      return JSON.stringify({ content: [{ type: 'text', text: JSON.stringify({
+        success: true, url: 'https://spawn.example/final', content: 'body', truncated: false,
+      }) }] })
+    },
+  })
+  assert.equal(seen.length, 1)
+  assert.equal(seen[0].signal, undefined, '调用方没给 signal 时透传 undefined，不改变 spec 形状')
+
+  const controller = new AbortController()
+  await fetchViaArgo('https://stub.example/page', controller.signal, {
+    command: process.execPath,
+    args: [join(STUB_DIR, 'does-not-exist.js')],
+    timeoutMs: 5000,
+    idleMs: 0,
+    max: 1,
+  }, {
+    run: async (spec, timeoutMs, signal) => {
+      assert.equal(signal, controller.signal, '调用方给了 signal 时必须原样透传')
+      return JSON.stringify({ content: [{ type: 'text', text: JSON.stringify({
+        success: true, url: 'https://spawn.example/final', content: 'body', truncated: false,
+      }) }] })
+    },
+  })
+})
+
+test('fetch: abort during the single-shot fallback is classified as aborted, not failed', async () => {
+  // 池路用一个起不来的入口快速失败（node 对不存在的脚本立刻退 1），兜底委托
+  // **真实** runNativeCall 跑一个真睡 3s 的进程。abort 在 60ms 时到达：修好
+  // 后 runNativeCall 看到 signal.aborted 直接拒绝、不起进程；改前兜底不收
+  // signal，这一发要跑满 3s 且最终 resolve 出结果。
+  //
+  // fallbackCalls 是必需的：池路自身失败只要 34-38ms，abort 设在 60ms，余量
+  // 只有 20ms 出头。机器一慢，池路的 onAbort 先 reject，同样得到
+  // ARGO_FETCH_ABORTED、同样 elapsed < 1500——测试全绿而兜底一次都没进。
+  // 没有这条计数，这个失败是静默的。
+  let fallbackCalls = 0
+  const controller = new AbortController()
+  setTimeout(() => controller.abort(), 60)
+  const started = Date.now()
+  await assert.rejects(
+    () => fetchViaArgo('https://stub.example/page', controller.signal, {
+      command: process.execPath,
+      args: [join(STUB_DIR, 'does-not-exist.js')],
+      timeoutMs: 25_000,
+      idleMs: 0,
+      max: 1,
+    }, {
+      run: (spec, timeoutMs, signal) => {
+        fallbackCalls += 1
+        return runNativeCall({ command: '/bin/sleep', args: ['3'] }, timeoutMs, signal)
+      },
+    }),
+    (err) => {
+      assert.equal(err.code, 'ARGO_FETCH_ABORTED', '取消要归到 aborted 类，不能变成失败类')
+      return true
+    },
+  )
+  assert.equal(fallbackCalls, 1, '这条测试必须真的走到单发兜底，否则测的是池路')
+  const elapsed = Date.now() - started
+  assert.ok(elapsed < 1500, `取消后应立即返回，实际 ${elapsed}ms`)
 })

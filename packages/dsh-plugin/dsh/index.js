@@ -412,6 +412,17 @@ function readHostCredentials(ctx) {
   }
 }
 
+/**
+ * ctx.effect 的可选形态：官方约定用它持有插件实例级清理，但旧宿主可能没有。
+ * 缺位时静默跳过（丢的只是卸载清理，不是功能）；裸调用会让整个 entry 激活
+ * 失败——argo 工具与设置页一起消失，那正是 7022fa2 修过的同一类病：把可选
+ * 宿主服务当成必需。返回宿主给的 dispose（有的话），调用方一般不需要。
+ */
+function runEffect(ctx, fn) {
+  if (typeof ctx?.effect !== 'function') return undefined
+  return ctx.effect(fn)
+}
+
 // 模块级持有：MCP 连接池（acquireMcp）没有 config 形参，其三个调用方
 // （searchViaArgoMCP / recomputeViaArgoMCP / nativeViaMcpPool）统一经模块
 // 状态取用；显式传入的 options.credentials / config.credentials 优先
@@ -556,6 +567,11 @@ function createMcpConnection(options) {
     disposed = true
     if (idleTimer !== null) clearTimeout(idleTimer)
     if (proc !== null) {
+      // 只发 SIGTERM，不先 proc.stdin.end()：实测 end() 之后紧接 kill()，信号
+      // 总是抢先（桩的 stdin 'end' 处理器来不及跑，marker 不写），EOF 自杀路径
+      // 形同虚设；要让它生效得在 end() 与 kill() 之间插延时，那是拿回收速度
+      // 换一个没有实测收益的干净退出。python 默认 SIGTERM 处理就是立即终止，
+      // 不需要宽限期。
       try { proc.kill() } catch { /* already gone */ }
       proc = null
     }
@@ -701,11 +717,6 @@ async function acquireMcp(options) {
   const max = Math.max(1, Number(options.max) || DEFAULTS.searchConcurrency)
   // 握手预算：调用方那次调用的超时。握手不做完，调用方的超时根本没机会生效。
   const initMs = Math.max(0, Number(options.initMs) || 0)
-  // 宿主密钥（credentials 服务逐次解析）在开新连接前随 options 带上，spawn
-  // 时进入 argo 子进程 env；复用池内连接用其创建时点的 env，空闲回收
-  // （searchIdleMs，默认 60s）后下一跳自然刷新到新 key。
-  const env = await resolveArgoEnv(activeConfig, options)
-  const connOptions = { ...options, env }
   const idle = mcpPool.find(entry => entry.load() === 0)
   if (idle !== undefined) {
     idle.claim()
@@ -720,7 +731,13 @@ async function acquireMcp(options) {
     }
   }
   if (mcpPool.length < max) {
-    const conn = createMcpConnection(connOptions)
+    // 宿主密钥（credentials 服务逐次解析）只在**开新连接**前解析：env 仅被
+    // createMcpConnection 消费，复用池内连接用其创建时点的 env，空闲回收
+    // （searchIdleMs，默认 60s）后下一跳自然刷新到新 key。把解析提到池查找
+    // 之前，等于让每次池化调用都白付一次 resolve 加一次无用 await——凭证
+    // 服务在场时（desktop profile）这是每次搜索都要付的纯浪费。
+    // resolveArgoEnv 内部对 resolve 失败逐项 try/catch，不会 reject。
+    const conn = createMcpConnection({ ...options, env: await resolveArgoEnv(activeConfig, options) })
     mcpPool.push(conn)
     conn.claim()
     try {
@@ -886,7 +903,9 @@ export async function fetchViaArgo(url, signal, options = {}, deps = {}) {
         JSON.stringify(argsObj),
       )
       const env = await resolveArgoEnv(activeConfig, options)
-      const stdout = await spawnRun(env !== undefined ? { ...spawnSpec, env } : spawnSpec, timeoutMs)
+      // signal 一并下去：兜底路径也要认取消，否则 abort 之后这一发仍要跑满
+      // timeoutMs（fetchTimeoutMs 默认 25s），且最终 resolve 出结果。
+      const stdout = await spawnRun(env !== undefined ? { ...spawnSpec, env } : spawnSpec, timeoutMs, signal)
       const parsed = JSON.parse(stdout)
       if (parsed?.isError) {
         const body = parsed?.content?.[0]?.text
@@ -1243,6 +1262,17 @@ function normalizeSource(value) {
  * query 重复入账、虚增 sourceCount（进而影响门禁阈值）。只剔除公认的跟踪键，
  * 其余 query 原样保留——?id=1 与 ?id=2 是不同页面，一律剥掉 query 会把不同
  * 来源并成一个、反而丢证据。
+ *
+ * **不做整串小写**：`URL.prototype.toString()` 本身就把 scheme 与 host 归一成
+ * 小写（顺带抹掉默认端口），再 `toLowerCase()` 一遍对 host 是冗余、对 path 与
+ * query 却有害——大小写敏感的服务器上 `/About?doc=Ab12` 与 `/about?doc=ab12`
+ * 是两个页面，旧写法把它们归成一个键，第二个来源在 evidence ledger 里被
+ * `seenUrls.has → continue` 静默丢掉。catch 分支与主分支保持同一口径（都不
+ * 小写），否则同一输入会因可否解析而得到不同去重键。
+ *
+ * 百分号编码的 hex 大小写**要**归一（RFC 3986：%2F 与 %2f 同一个八位组），
+ * 否则同一页面按不同编码各记一笔、虚增 sourceCount。主分支做；catch 分支不
+ * 做（没有解析结果可改），那类 URL 本就少见，记在案即可。
  */
 function normalizeSourceUrl(raw) {
   const url = String(raw)
@@ -1252,11 +1282,16 @@ function normalizeSourceUrl(raw) {
     for (const key of [...parsed.searchParams.keys()]) {
       if (/^(utm_.+|fbclid|gclid|spm)$/i.test(key)) parsed.searchParams.delete(key)
     }
-    let out = parsed.toString().toLowerCase()
+    let out = parsed.toString()
+    // 百分号编码的 hex 大小写不敏感（RFC 3986）：%2F 与 %2f 是同一个八位组。
+    // 不归一会让同一页面按不同编码各记一笔、虚增 sourceCount（与「丢证据」
+    // 相反的另一个方向）。只归一编码本身，不动 path/query 字面量的大小写——
+    // 那在大小写敏感的服务器上是不同页面。
+    out = out.replace(/%[0-9a-f]{2}/g, (encoded) => encoded.toUpperCase())
     if (out.endsWith('/')) out = out.slice(0, -1)
     return out
   } catch {
-    return url.toLowerCase().replace(/#.*$/, '').replace(/\/$/, '')
+    return url.replace(/#.*$/, '').replace(/\/$/, '')
   }
 }
 
@@ -1604,22 +1639,59 @@ function nativeErrorText(stdout, stderr) {
   return stderr.trim() !== '' ? stderr : stdout
 }
 
-function runNativeCall({ command, args, env }, timeoutMs) {
+/**
+ * 单发执行一次 argo 原生工具调用。
+ *
+ * `signal` 可选（调用方取消）。宿主取消（用户打断、工具预算到期）必须**同步**
+ * 收摊，不能等子进程自己跑完：此前这条路径没有 signal 形参，fetchViaArgo 的
+ * 单发兜底于是在 abort 之后继续跑满 timeoutMs（实测 3s 的 stub 仍跑满 3010ms，
+ * 生产最坏 fetchTimeoutMs 25s），并且最终 resolve——宿主拿到一个早已被取消的
+ * 调用的结果。abort 用 WEB_ABORTED code（与 argoAborted() 同惯例），让上层
+ * classifyFetchError 归到 aborted 类而不是失败类。
+ */
+function runNativeCall({ command, args, env }, timeoutMs, signal) {
   return new Promise((resolve, reject) => {
+    // 已取消就不起进程：spawn 之后再拒绝只是白起一个 python。
+    // 真值判断而非 `!== undefined`：调用方传 null 表示「没有 signal」，
+    // 用 undefined 比较会让 null 走进 `null.aborted` 抛 TypeError，再被上层
+    // classifyFetchError 的错误文案匹配成「调用方取消」——一次崩溃冒充取消。
+    if (signal && signal.aborted) {
+      reject(argoAborted())
+      return
+    }
     const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], env: env ?? process.env })
     let stdout = ''
     let stderr = ''
-    const timer = setTimeout(() => {
-      child.kill('SIGKILL')
-      reject(new Error(`argo native call timed out after ${timeoutMs}ms`))
+    let settled = false
+    let timer = null
+    let detachAbort = null
+    // 四条出口（abort / error / close / timeout）只有一个能定结局。abort 之后
+    // close 仍会带着被杀的退出码到达，不设闸门会把一次已取消的调用改判成失败。
+    const settle = (fn, value) => {
+      if (settled) return
+      settled = true
+      if (timer !== null) clearTimeout(timer)
+      if (detachAbort !== null) detachAbort()
+      fn(value)
+    }
+    const onAbort = () => {
+      try { child.kill('SIGKILL') } catch { /* already gone */ }
+      settle(reject, argoAborted())
+    }
+    if (signal) {
+      signal.addEventListener('abort', onAbort, { once: true })
+      detachAbort = () => signal.removeEventListener('abort', onAbort)
+    }
+    timer = setTimeout(() => {
+      try { child.kill('SIGKILL') } catch { /* already gone */ }
+      settle(reject, new Error(`argo native call timed out after ${timeoutMs}ms`))
     }, timeoutMs)
     child.stdout.on('data', (chunk) => { stdout += chunk })
     child.stderr.on('data', (chunk) => { stderr += chunk })
-    child.on('error', (err) => { clearTimeout(timer); reject(err) })
+    child.on('error', (err) => settle(reject, err))
     child.on('close', (code) => {
-      clearTimeout(timer)
-      if (code === 0) { resolve(stdout); return }
-      reject(new Error(`argo native call exited ${code}: ${clip(nativeErrorText(stdout, stderr), 500)}`))
+      if (code === 0) { settle(resolve, stdout); return }
+      settle(reject, new Error(`argo native call exited ${code}: ${clip(nativeErrorText(stdout, stderr), 500)}`))
     })
   })
 }
@@ -1685,6 +1757,13 @@ export function makeNativeTool(config, kind, deps = {}) {
     const value = Number(config.nativeTimeoutMs)
     return Number.isFinite(value) && value > 0 ? value : DEFAULTS.nativeTimeoutMs
   }
+  // nativeMaxChars 同一口径：schema 没有设 min（面板有 min=500），profile patch
+  // 可以直接写 0 或负数——clip(body, 0) 会返回一个孤零零的「…」，整个工具输出
+  // 变成省略号。非正数一律回退默认值，别让一次手滑的配置吃掉全部返回内容。
+  const currentMaxChars = () => {
+    const value = Number(config.nativeMaxChars)
+    return Number.isFinite(value) && value > 0 ? value : DEFAULTS.nativeMaxChars
+  }
   return {
     name: kind,
     description: spec.description,
@@ -1702,7 +1781,7 @@ export function makeNativeTool(config, kind, deps = {}) {
         } catch {
           body = value.stdout
         }
-        return text(clip(body, config.nativeMaxChars ?? 24_000))
+        return text(clip(body, currentMaxChars()))
       },
     },
     async execute(args) {
@@ -1786,7 +1865,11 @@ export function apply(ctx, providedConfig = {}) {
   // 共享 MCP 连接随本插件实例生命周期回收（官方 ctx.effect 清理约定；
   // 不写则 HMR/卸载时子进程泄漏）。凭证服务引用与 config 快照同周期清理，
   // 不留给下一个插件实例。
-  ctx.effect(() => () => {
+  //
+  // runEffect 而非裸 ctx.effect：旧宿主没有这个服务时直接调用会让整个 entry
+  // 激活失败——argo 工具与设置页一起消失，正是 7022fa2 修过的同一类病
+  // （可选宿主服务缺席被当成必需）。缺位只丢卸载清理，不丢功能。
+  runEffect(ctx, () => () => {
     disposeSharedMcp()
     hostCredentials = undefined
     activeConfig = DEFAULTS
@@ -1881,9 +1964,9 @@ export function apply(ctx, providedConfig = {}) {
   }
   syncNativeTools()
   if (typeof ctx.on === 'function') {
-    ctx.effect(() => ctx.on('loader/volatile-update', syncNativeTools))
+    runEffect(ctx, () => ctx.on('loader/volatile-update', syncNativeTools))
   }
-  ctx.effect(() => () => {
+  runEffect(ctx, () => () => {
     for (const dispose of nativeRegistrations.values()) {
       try { dispose?.() } catch { /* 已随 fiber 释放 */ }
     }
@@ -2173,4 +2256,4 @@ export function apply(ctx, providedConfig = {}) {
 }
 
 // Exported for unit tests; DSH loads the bundle through apply() only.
-export { normalizeTracks, stageTracks, evaluateGates, normalizeSource, buildLocalSources, parseJsonArray, parseJsonObject, extractValues, nativeViaMcpPool }
+export { normalizeTracks, stageTracks, evaluateGates, normalizeSource, normalizeSourceUrl, buildLocalSources, parseJsonArray, parseJsonObject, extractValues, nativeViaMcpPool, runNativeCall }

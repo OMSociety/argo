@@ -721,7 +721,10 @@ window.__ModuleLoader__.load({
 
       // ── argoEnv 引擎开关：KEY=VALUE 行 ↔ 控件 ──
       // argoEnv 行集合是单一真源：每次写入都基于实时快照读-改-写，只碰白名单
-      // 内的名字，未知名原样保留（理论上 apply 期已 loud fail，这里兜底）。
+      // 内的名字。白名单外的行**被清掉**，不是原样保留——apply 期对白名单外
+      // 名字是 loud fail（整个插件加载失败），直接写 profile patch 写错的开关
+      // 会让人卡在「改不回来」；这里任何一次面板写入都顺手清毒，是最容易碰到
+      // 的恢复入口。
       const envMap = () => {
         const map = {};
         for (const entry of asArray(liveValue().argoEnv)) {

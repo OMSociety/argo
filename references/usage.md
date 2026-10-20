@@ -587,7 +587,7 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 
 | 变量 | 作用 | 默认/备注 |
 |------|------|----------|
-| `ARGO_ADAPTIVE_GRACE` | 对冲宽限窗按主引擎历史 P75 自适应收窄（只缩不放） | 默认关；=1 开启（v2 冻结 A/B 未证实收益，保留作实验臂） |
+| `ARGO_ADAPTIVE_GRACE` | 对冲宽限窗按主引擎历史 P75 自适应收窄（只缩不放） | 默认开；=0 关闭（回固定 base 窗，作消融对照）。v2 冻结期 A/B 曾判未证实收益，c52b7d4 起转默认启用 |
 | `ARGO_GENERAL_FALLBACK_LEGACY` | 通用兜底链退回旧顺序（anysearch → local_bing，不含 octen） | 默认关；=1 开启。2026-10-17 交错 A/B：octen 第二顺位在 anysearch 抖动窗口把 p90 3273→1614ms、max 6266→1928ms、错误 9→0，健康窗口中位无差 |
 | `ARGO_ADAPTIVE_TAIL` | 尾宽按 backup 引擎历史 P75 分层（快源等满/慢源早收工） | 默认关；=1 开启（2026-10-16 三轮交错 A/B 未证实收益，对拍记录在本机 docs-local/调度对拍_尾宽分层与并发_2026-10-16.md，属本地归档不随发布件分发） |
 | `ARGO_ADMISSION_TTL_S` | 行为阈值/预算调参 | 默认经实测校准，勿轻动 |

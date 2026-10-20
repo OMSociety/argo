@@ -133,9 +133,9 @@ def _adaptive_grace(engine: str, base_grace_s: float) -> float:
       样本不足 5 条或快照过时（STALE_AFTER_SECONDS）→ 不收窄，回到 base。
     - 任何异常（学习库损坏/被锁/缺模块）一律 fail-open 回 base，观测层不阻断
       调度主路径（同 file_lock / 熔断器的契约）。
-    - `ARGO_ADAPTIVE_GRACE=1` 整体开启（**默认关**——v2 冻结状态
-      A/B 未证实收益：hedge 率与引擎调度逐位不变，p90/max 略差
-      且统计不显著；开启即实验臂 / 消融对照）。
+    - `ARGO_ADAPTIVE_GRACE=0` 整体关闭（回固定 base 窗）。**默认开**：v2 冻结期
+      的 A/B 曾判未证实收益，c52b7d4 起转默认启用——「只缩不放」对慢引擎逐位
+      无行为变化，收益只落在快引擎的救场提前量上。要退回去设 =0，别改这里默认值。
     """
     try:
         from engine_env import env_flag

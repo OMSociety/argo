@@ -14,8 +14,9 @@ redskill 236ms 等 1.5s 几乎必到（耐心有回报），anysearch P75 2.6s �
   P75 > 1.5·base → 0.4·base（下限 0.3s）慢源：大概率白等，早收工
 fail-open 契约：开关关 / 无数据 / 学习器异常 → 原样返回 base（逐位旧行为）。
 
-默认关（ARGO_ADAPTIVE_TAIL=1 开启）：与 ARGO_ADAPTIVE_GRACE 的冻结同构，
-调度改动的收益必须由交错 A/B 证明后才转默认开。
+默认关（ARGO_ADAPTIVE_TAIL=1 开启）：理由是**本开关自己的** A/B 未证实收益，
+调度改动的收益必须由交错 A/B 证明后才转默认开。别与 ARGO_ADAPTIVE_GRACE 的
+现状混为一谈——那个 2026-10-19（c52b7d4）已转默认开，两者 A/B 结论不同。
 
 ## 集成侧锁的东西
 
