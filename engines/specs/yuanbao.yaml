@@ -63,11 +63,15 @@ label: 腾讯元宝搜索
 family: web_general
 priority: 55
 # 上游有 RequestLimitExceeded，但公开文档未给具体 QPS；保守取 2，避免撞限流。
-# qps 的限频窗口是固定的 60 秒（quota.get_current_rpm），与下面的 period 无关。
+# 限频与下面的 period 无关：qps 检查走硬编码 60 秒窗口（quota.py:585 的
+# `now - t < 60`），全仓没有限频器读 period。
 qps: 2
-# 额度重置周期：month → 30 天（quota._period_elapsed）。**这是额度周期，
-# 不是限频周期**——写成 second/minute 只表示「本地按秒/分算限频」，不代表
-# 远端额度周期（见 quota.py:124 的注释）。
+# period 是**额度语义**，今天只影响两处 + 一处展示：
+#   1. 本地额度重置跨度：quota._period_elapsed（month → 30 天，否则 1 天）
+#   2. 远端耗尽冷却窗：quota._PERIOD_SECONDS（month → 30 天；表里查不到的值
+#      ——含 second/minute——落 86400，且「过短一律按 24h 保守处理」）
+#   3. ENGINE_CATALOG 的「频率上限」列展示
+# 本引擎限额是月度，故两处都应为 30 天 = month。
 period: month
 # 月度调用额度。体验额度为 2000 次/月，本机账号为 6000 次/月，按实际填。
 limit: 6000
