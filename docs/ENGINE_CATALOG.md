@@ -6,12 +6,12 @@
 
 ## 一、总量与口径
 
-- **收录 271 个源**（config.yaml + `engines/specs/*.yaml` 声明合并后的总数）
+- **收录 272 个源**（config.yaml + `engines/specs/*.yaml` 声明合并后的总数）
 - **开箱可用 235 个**：不需要你配任何密钥或装额外工具，自动路由就会用上
-- **需自备密钥 21 个**：`bocha`、`bocha_ai`、`byted`、`deepseek_search`、`em_miaoxiang`、`keenable`、`octen`、`parallel`、`qweather`、`seltz`、`tavily`、`tinyfish`、`tinyfish_news`、`tinyfish_paper`、`unpaywall`、`weread`、`you`、`zhihu`、`zhihu_global`、`zhihu_hot`、`zhihu_user`（没配也不影响搜索，路由会跳过）
+- **需自备密钥 22 个**：`bocha`、`bocha_ai`、`byted`、`deepseek_search`、`em_miaoxiang`、`keenable`、`octen`、`parallel`、`qweather`、`seltz`、`tavily`、`tinyfish`、`tinyfish_news`、`tinyfish_paper`、`unpaywall`、`weread`、`you`、`yuanbao`、`zhihu`、`zhihu_global`、`zhihu_hot`、`zhihu_user`（没配也不影响搜索，路由会跳过）
 - **需装后端工具 3 个**：`reddit`、`twitter`、`xiaohongshu`（装好并登录后即可用）
 - **已停用 12 个**：`brave`、`digup`、`europeana`、`felo`、`jikan`、`local_goodreads`、`metaso`、`nbs_stats`、`realtime_index`、`searxng`、`soilgrids`、`wolframalpha`
-- **显式专用 16 个**：`bing_rss`、`datagov_uk`、`deepseek_search`、`doi`、`ecosia`、`gdelt`、`opencitations`、`qwant`、`tineye`、`tinyfish`、`tinyfish_news`、`tinyfish_paper`、`twitter_syndication`、`unpaywall`、`x_trending`、`zbmath`（设计上不进自动路由，按 `--engine` 或交接提示调用）
+- **显式专用 17 个**：`bing_rss`、`datagov_uk`、`deepseek_search`、`doi`、`ecosia`、`gdelt`、`opencitations`、`qwant`、`tineye`、`tinyfish`、`tinyfish_news`、`tinyfish_paper`、`twitter_syndication`、`unpaywall`、`x_trending`、`yuanbao`、`zbmath`（设计上不进自动路由，按 `--engine` 或交接提示调用）
 
 自己核一遍（口径不同，别混用）：
 
@@ -27,7 +27,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 ## 二、费用与密钥：哪些白用、哪些要钱
 
 - **免费档 257 个**（含已停用）：无需密钥，或只需免费注册的密钥；其中 13 个要自备密钥（免费额度）：em_miaoxiang、keenable、qweather、searxng、tinyfish、tinyfish_news、tinyfish_paper、unpaywall、weread、wolframalpha、zhihu、zhihu_hot、zhihu_user
-- **计费档 14 个**（下表逐个列出，档位取自各源自己的 `cost_tier` 声明）
+- **计费档 15 个**（下表逐个列出，档位取自各源自己的 `cost_tier` 声明）
 
 | 引擎 | 档位 | 是否进自动路由 | 需自备密钥 |
 |---|---|---|---|
@@ -44,6 +44,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 | `seltz` | 按调用计费 | 是 | SELTZ_API_KEY |
 | `tavily` | 按调用计费 | 是 | ARGO_TAVILY_API_KEY |
 | `you` | 按调用计费 | 是 | YDC_API_KEY |
+| `yuanbao` | 按调用计费 | 否，仅显式调用 | ARGO_YUANBAO_API_KEY |
 | `zhihu_global` | 按调用计费 | 是 | ARGO_ZHIHU_ACCESS_SECRET |
 
 **结论**：付费档里有 1 个进了自动路由（felo），用之前先确认额度；低价/按量计费的源有 12 个在自动路由路径上，多数带免费额度或已配密钥。额度记在本地配额表（`backends/quota_profiles.json` 的 limit / period，用量存在本机状态库），用尽后该源在语义路由里被降权；本地表统计的是 argo 自己的调用，若同一密钥还被别的工具用，实际额度以服务商侧为准。想彻底避开计费源，用 `--engine` 显式指定免费源，或走 `--mode budget`。
@@ -77,7 +78,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 
 状态含义：**可直接用** = 自动路由会用上；**需自配密钥 / 需装后端工具** = 配好后即可用；**被上游封锁** = 源站当前拒绝；**已停用** = 配置层面关闭。
 
-### 全网搜索（37）
+### 全网搜索（38）
 
 | 引擎 | 状态 | 费用 | 频率上限 | 需自备密钥 | 什么时候用到 | 说明 |
 |---|---|---|---|---|---|---|
@@ -117,6 +118,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 | `tavily` | 需自备密钥 | 按调用计费 | 1000/月 | ARGO_TAVILY_API_KEY | 域 semantic_discovery、语义画像命中 | Tavily AI 搜索 API（免费层 1000 次/月，超出按美元计费；与 exa 同为 api 档） |
 | `tinyfish` | 需自备密钥 + 显式专用 | 免费 | 不限 | ARGO_TINYFISH_API_KEY | 显式调用（--engine） | TinyFish 实时网页搜索（免费，浏览器渲染，结果含原文摘要，X-API-Key 认证） |
 | `you` | 需自备密钥 | 按调用计费 | 不限 | YDC_API_KEY | 域 news_realtime | You.com 网页+新闻搜索（时效性强，官方一手源，web/news 合并） |
+| `yuanbao` | 需自备密钥 + 显式专用 | 按调用计费 | 不限 | ARGO_YUANBAO_API_KEY | 显式调用（--engine） | 腾讯元宝搜索 |
 | `zhihu_global` | 需自备密钥 | 按调用计费 | 5000/天 | ARGO_ZHIHU_ACCESS_SECRET | 域 chinese_general、域 news_realtime、域 zhihu_content | 知乎开放平台全网搜索（SearchDB=all 全网索引 + Filter host== 站点限定；需 ZHIHU_ACCESS_SECRET） |
 
 ### 学术文献（27）
@@ -565,7 +567,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 ## 七、怎么自己查当前状态
 
 ```bash
-argo search --list-engines --detail | python3 -m json.tool | less   # 全部 271 个源的详情
+argo search --list-engines --detail | python3 -m json.tool | less   # 全部 272 个源的详情
 argo search --list-engines --detail --routable-only              # 只看现在能用的
 python3 scripts/matrix_search_eval.py --offline                   # 可达性门：有没有死源
 python3 scripts/engine_validate.py --engine <名> --stage all       # 单个源的健康+质量双阶段体检

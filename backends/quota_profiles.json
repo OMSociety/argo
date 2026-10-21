@@ -2620,6 +2620,16 @@
     "cost_tier": "api",
     "priority": 12
   },
+  "yuanbao": {
+    "label": "腾讯元宝搜索",
+    "qps": 2,
+    "limit": null,
+    "period": "second",
+    "cost_per_call": 0.0,
+    "cost_unit": "cny",
+    "cost_tier": "api",
+    "priority": 55
+  },
   "zbmath": {
     "label": "zbmath",
     "qps": 2,

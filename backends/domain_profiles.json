@@ -2614,5 +2614,11 @@
     "documents": [],
     "boost_keywords": {},
     "boost_combos": {}
+  },
+  "yuanbao": {
+    "label": "腾讯元宝搜索",
+    "documents": [],
+    "boost_keywords": {},
+    "boost_combos": {}
   }
 }

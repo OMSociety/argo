@@ -94,6 +94,9 @@ from engines_builders_batch14 import (
     _build_cfets_engine,
     _build_defillama_engine,
 )
+from engines_builders_batch15 import (
+    _build_yuanbao_engine,
+)
 from engines_builders_data import (
     _build_open_library_engine,
     _build_weread_engine,

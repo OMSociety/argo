@@ -186,6 +186,10 @@ KNOWN_ENV_ALIASES: dict[str, list[str]] = {
     "firecrawl": ["ARGO_FIRECRAWL_API_KEY", "FIRECRAWL_API_KEY"],  # 可选（keyless 免费层）
     "weread": ["ARGO_WEREAD_API_KEY", "WEREAD_API_KEY"],  # 微信读书 Agent Gateway
     "em_miaoxiang": ["ARGO_EASTMONEY_APIKEY", "EASTMONEY_APIKEY"],  # 东财妙想（可选）
+    # 腾讯元宝搜索：官方文档用的名字是 TENCENTCLOUD_WSA_APIKEY，
+    # argo 推荐名在前；两个都认，便于照文档配的用户直接可用。
+    "yuanbao": ["ARGO_YUANBAO_API_KEY", "TENCENTCLOUD_WSA_APIKEY",
+                "YUANBAO_API_KEY"],
 }
 
 # 占位符名 → 候选 env（用于 config 中 {TAVILY_API_KEY} 展开）

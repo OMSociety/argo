@@ -25,6 +25,7 @@ required_env**。后果是状态机报 `ready` / `routable=True`，路由会选�
 """
 
 import ast
+import glob
 import os
 import re
 import sys
@@ -90,15 +91,14 @@ def _builder_env_reads_kind(engine_id: str) -> dict[str, bool]:
     if not fn_name:
         return {}
 
-    # 定位包含该函数的模块文件
+    # 定位包含该函数的模块文件。
+    # 用通配而不是硬编码清单：原清单只列到 engines_builders_tech.py，而新引擎
+    # 一律搬进 engines_builders_batchN.py，于是 batch 文件里的 builder 会因
+    # 「找不到模块」被判成「没读到密钥」——**假红**（2026-10-21 接入 yuanbao
+    # 实测：builder 就是 get_env 候选链，却被报成「builder get_env 读取 无」）。
+    # batch14 那批没暴露，是因为它们不声明 required_env，declared 为空直接跳过。
     mod_file = None
-    for cand in ("engines_builders.py", "engines_builders_cn.py",
-                 "engines_builders_data.py", "engines_builders_data_macro.py",
-                 "engines_builders_intl.py", "engines_builders_search.py",
-                 "engines_builders_tech.py"):
-        path = os.path.join(SCRIPTS_DIR, cand)
-        if not os.path.isfile(path):
-            continue
+    for path in sorted(glob.glob(os.path.join(SCRIPTS_DIR, "engines_builders*.py"))):
         try:
             src = open(path, encoding="utf-8").read()
         except OSError:
