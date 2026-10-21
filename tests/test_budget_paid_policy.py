@@ -115,3 +115,30 @@ def test_route_cache_fingerprint_tracks_paid_switch(monkeypatch):
     monkeypatch.setenv("ARGO_PAID_SEARCH", "off")
     b = route_cache._route_state_fingerprint()
     assert a and b and a != b
+    monkeypatch.setenv("ARGO_BUDGET_DEEPSEEK_SEARCH", "20")
+    c = route_cache._route_state_fingerprint()
+    assert c != b
+
+
+def test_budget_hot_reload_and_breaker_respect(isolated, monkeypatch):
+    """运行期改预算无需重建 QuotaManager 即生效；禁用或熔断的引擎不进对冲位。"""
+    from quota import get_quota_manager
+    qm = get_quota_manager()
+    assert qm.budget_status("deepseek_search")["budget"] == pytest.approx(5.0)
+    budget.set_budget("deepseek_search", 12.5, currency="CNY", period="month")
+    # 触发跨引擎或重查：热读立即感知 budgets.json 变更
+    assert qm.budget_status("deepseek_search")["budget"] == pytest.approx(12.5)
+
+    monkeypatch.setenv("ARGO_PAID_SEARCH", "auto")
+    monkeypatch.setattr(paid_policy, "_key_ready", lambda e: True)
+    monkeypatch.setattr(paid_policy, "_budget_ok", lambda e: True)
+    # enabled 集合不含 deepseek_search 时应自动回落 tinyfish
+    assert paid_policy.hedge_for("english_tech", "auto", enabled={"tinyfish"}) == ["tinyfish"]
+    assert paid_policy.hedge_for("english_tech", "auto", enabled=set()) == []
+
+
+def test_batch14_hkex_s2t_longest_match_first():
+    """长词优先：『回购注销』必须完整转为『購回註銷』，不被『回购→購回』提前截断。"""
+    from engines_builders_batch14 import _hkex_s2t
+    assert _hkex_s2t("腾讯回购注销公告") == "騰訊購回註銷公告"
+    assert _hkex_s2t("股东大会决议") == "股東大會決議"

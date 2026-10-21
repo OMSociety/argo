@@ -28,7 +28,7 @@ engine_dispatch。
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field, replace
+from search_types import slot_record as dataclass, slot_field as field, slot_replace as replace
 from typing import Any, Callable, Optional
 
 from engine_dispatch import run_dispatch

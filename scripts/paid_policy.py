@@ -31,8 +31,12 @@ _FREE_FALLBACK = "tinyfish"
 
 
 def _enabled() -> bool:
-    return (os.environ.get("ARGO_PAID_SEARCH", "auto").strip().lower()
-            not in ("off", "0", "false", "no"))
+    try:
+        from engine_env import get_env
+        raw = get_env("ARGO_PAID_SEARCH", "auto")
+    except Exception:
+        raw = os.environ.get("ARGO_PAID_SEARCH", "auto")
+    return raw.strip().lower() not in ("off", "0", "false", "no")
 
 
 def _key_ready(engine: str) -> bool:
@@ -46,14 +50,26 @@ def _key_ready(engine: str) -> bool:
 def _budget_ok(engine: str) -> bool:
     try:
         from quota import get_quota_manager
-        qm = get_quota_manager()
-        return (not qm.is_over_budget(engine)) and (not qm.is_hard_down(engine))
+        return not get_quota_manager().is_hard_down(engine)
     except Exception:
         # 预算层读失败时 fail-closed：宁可不自动花钱
         return False
 
 
-def hedge_for(domain: str, mode: str = "auto") -> list[str]:
+def _healthy_and_enabled(engine: str, enabled: set[str] | None) -> bool:
+    if enabled is not None and engine not in enabled:
+        return False
+    try:
+        from route_combo import _breaker_blocked
+        if _breaker_blocked(engine):
+            return False
+    except Exception:
+        pass
+    return True
+
+
+def hedge_for(domain: str, mode: str = "auto",
+              enabled: set[str] | None = None) -> list[str]:
     """返回该域应插入的付费/回落引擎（0 或 1 个）。永不抛异常。"""
     if not _enabled() or mode in ("fast", "budget"):
         return []
@@ -61,19 +77,22 @@ def hedge_for(domain: str, mode: str = "auto") -> list[str]:
     if not engine:
         return []
     try:
-        if _key_ready(engine) and _budget_ok(engine):
+        if (_healthy_and_enabled(engine, enabled)
+                and _key_ready(engine) and _budget_ok(engine)):
             return [engine]
         # 付费位不可用：TinyFish 是免费且带发布日期的回落位
-        if _key_ready(_FREE_FALLBACK) and _budget_ok(_FREE_FALLBACK):
+        if (_healthy_and_enabled(_FREE_FALLBACK, enabled)
+                and _key_ready(_FREE_FALLBACK) and _budget_ok(_FREE_FALLBACK)):
             return [_FREE_FALLBACK]
     except Exception:
         return []
     return []
 
 
-def insert_hedge(combo: list[str], domain: str, mode: str = "auto") -> list[str]:
+def insert_hedge(combo: list[str], domain: str, mode: str = "auto",
+                 enabled: set[str] | None = None) -> list[str]:
     """把付费/回落引擎插到 combo 第二位（原地改并返回，便于链式调用）。"""
-    for engine in reversed(hedge_for(domain, mode)):
+    for engine in reversed(hedge_for(domain, mode, enabled=enabled)):
         if engine not in combo:
             combo.insert(min(1, len(combo)), engine)
     return combo

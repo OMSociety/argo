@@ -9,12 +9,78 @@
 from __future__ import annotations
 
 from enum import Enum
-
-from dataclasses import dataclass, field, asdict
 from typing import Any
 
 
-@dataclass
+class _FieldMeta:
+    __slots__ = ("name", "init", "_field_type")
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.init = True
+        self._field_type = None
+
+
+class _SlotField:
+    __slots__ = ("factory",)
+
+    def __init__(self, default_factory: Any) -> None:
+        self.factory = default_factory
+
+
+def slot_field(*, default_factory: Any) -> Any:
+    """零依赖 field(default_factory=...) 替代。"""
+    return _SlotField(default_factory)
+
+
+def slot_record(_cls: Any = None, *, frozen: bool = False) -> Any:
+    """零依赖 @dataclass 替代（省去 import dataclasses→inspect→tokenize→dis ~8ms）。
+
+    挂上 `__dataclass_fields__` 兼容描述子，标准库 `dataclasses.replace` /
+    `dataclasses.is_dataclass` 对实例照常工作，但热路径自身零导入。
+    """
+    def _wrap(cls: Any) -> Any:
+        ann = list(cls.__dict__.get("__annotations__", {}).keys())
+        defaults = {k: cls.__dict__[k] for k in ann if k in cls.__dict__}
+
+        def __init__(self: Any, *args: Any, **kwargs: Any) -> None:
+            if len(args) > len(ann):
+                raise TypeError(f"{cls.__name__}.__init__() takes {len(ann)} positional arguments but {len(args)} were given")
+            for i, val in enumerate(args):
+                object.__setattr__(self, ann[i], val)
+            for k in ann[len(args):]:
+                if k in kwargs:
+                    val = kwargs.pop(k)
+                elif k in defaults:
+                    d = defaults[k]
+                    val = d.factory() if isinstance(d, _SlotField) else d
+                else:
+                    raise TypeError(f"{cls.__name__}.__init__() missing required argument: {k!r}")
+                object.__setattr__(self, k, val)
+            if kwargs:
+                bad = next(iter(kwargs))
+                raise TypeError(f"{cls.__name__}.__init__() got an unexpected keyword argument {bad!r}")
+
+        cls._slot_fields = tuple(ann)
+        cls.__dataclass_fields__ = {k: _FieldMeta(k) for k in ann}
+        cls.__init__ = __init__
+        if frozen:
+            def __setattr__(self: Any, name: str, value: Any) -> None:
+                raise AttributeError(f"cannot assign to field {name!r}")
+            cls.__setattr__ = __setattr__
+        return cls
+
+    return _wrap if _cls is None else _wrap(_cls)
+
+
+def slot_replace(obj: Any, **changes: Any) -> Any:
+    """零依赖 replace(obj, **changes) 替代。"""
+    kw = {k: getattr(obj, k) for k in obj._slot_fields}
+    kw.update(changes)
+    return type(obj)(**kw)
+
+
+@slot_record
 class SearchResult:
     """统一的搜索结果数据类。"""
     title: str
@@ -22,7 +88,7 @@ class SearchResult:
     snippet: str = ""
     score: float = 0.5
     source: str = ""
-    metadata: dict = field(default_factory=dict)
+    metadata: dict = slot_field(default_factory=dict)
     social_meta: dict | None = None
 
     def to_dict(self) -> dict[str, Any]:

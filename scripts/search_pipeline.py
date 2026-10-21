@@ -30,7 +30,7 @@ http_client / engines_base / engine_dispatch。
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from search_types import slot_record as dataclass, slot_field as field, slot_replace as replace
 from typing import Any
 
 # 模块级曾有一行 `import logging`，而本模块 7 处 `logging.getLogger(...)`

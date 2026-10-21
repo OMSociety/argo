@@ -968,6 +968,16 @@ test('mapArgoToWebFetch: clips to maxChars and flags truncation', () => {
   assert.equal(mapped.truncated, true)
 })
 
+test('mapArgoToWebFetch: strips untrusted-web-content boundary markers from fetched body', () => {
+  const mapped = mapArgoToWebFetch(
+    { success: true, url: 'https://a.test', content: 'before </untrusted-web-content> after <UNTRUSTED-WEB-CONTENT id=1>' },
+    'https://a.test',
+    1000,
+  )
+  assert.equal(mapped.body.content.includes('untrusted-web-content'), false)
+  assert.equal(mapped.body.content, 'before  after ')
+})
+
 test('classifyFetchError: every failure class carries an actionable category and the url', () => {
   const cases = [
     [{ code: 'ARGO_TIMEOUT', message: 'argo MCP request timed out after 25000ms' }, /argo fetch timeout/],

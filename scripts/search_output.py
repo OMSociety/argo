@@ -8,10 +8,23 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from search_rank import filter_results_by_domains
+from search_types import slot_record as dataclass
 from typing import Any
+from output_transparency import (  # noqa: F401
+    _AGGREGATOR_HOSTS,
+    _FAILURE_META,
+    _FAILURE_NON_ERROR,
+    _NON_ERROR_OUTCOME,
+    _SEVERITY,
+    _UNCERTAINTY_HIGH,
+    _UNCERTAINTY_LOW,
+    _UNCERTAINTY_MEDIUM,
+    _hostname,
+    build_failures,
+    build_uncertainty,
+    decorate_compact_payload,
+)
 
 
 # 本模块的 6 处日志都写在 **except 处理器**里，且分散在 shape_response 的
@@ -343,18 +356,6 @@ def format_text_output(results: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-# 不算失败的 outcome 状态：这些情况「引擎跑了、没问题」，不该出现在 errors[]
-# cancelled = 早停收工时被主动弃置（结果已够，引擎没失败也没超窗）
-_NON_ERROR_OUTCOME = frozenset({
-    "ok", "ok-cached", "partial", "no-results", "no-results-cached",
-    "cancelled",
-    # 配额耗尽的跳过是**持续状态**，不是本次查询的失败：标记默认持续到周期
-    # 边界（一天），若每个查询都把它塞进 errors，调用方会看到一条持续一天的
-    # 「错误」并误判本次检索降级。状态本身在 --list-engines 可见。
-    "skipped-quota-exhausted",
-})
-
-
 def _collect_errors(raw_results: dict[str, list[dict[str, Any]]],
                     engine_outcomes: list[dict[str, Any]] | None = None
                     ) -> list[str]:
@@ -390,208 +391,6 @@ def _collect_errors(raw_results: dict[str, list[dict[str, Any]]],
             continue
         _add(f"{o.get('engine')}: {detail}")
     return errors
-
-
-# 二手/聚合平台（转载与洗稿高发地）。**刻意不复用 evidence 的词表**：
-# evidence 属热路径禁入名单（tests/test_hotpath_import_lint.py 的 HEAVY_TOP，
-# 它会拖进 content_signals/stylometry/burstiness 约 9ms），而本函数在每次
-# 搜索的收口处无条件执行。两处词表需同步——改这里时看 evidence.
-# _SECONDARY_PLATFORM_PATTERNS。
-_AGGREGATOR_HOSTS = frozenset({
-    "baijiahao.baidu.com",   # 百家号（自媒体洗稿重灾区）
-    "toutiao.com",           # 头条号（聚合+洗稿）
-    "k.sina.com.cn",         # 新浪博客/聚合
-    "guba.eastmoney.com",     # 股吧（UGC 讨论，非事实来源）
-})
-
-# 可信度等级（与 dsh-free-search 的 meta.uncertainty 同形）
-_UNCERTAINTY_HIGH = "high"
-_UNCERTAINTY_MEDIUM = "medium"
-_UNCERTAINTY_LOW = "low"
-# 严重度序：用于「多信号取最差」——等级只能降不升。
-_SEVERITY = {_UNCERTAINTY_HIGH: 0, _UNCERTAINTY_MEDIUM: 1, _UNCERTAINTY_LOW: 2}
-
-
-def _hostname(url: Any) -> str:
-    """URL → 归一化主机名（小写、去 www.）；解析失败返回空串。"""
-    try:
-        from urllib.parse import urlparse
-        host = urlparse(str(url or "")).hostname or ""
-    except Exception:
-        return ""
-    return host.lower().removeprefix("www.")
-
-
-# 失败类别 → (归一类别, 可执行建议, 是否可重试)。类别名与 dsh-free-search
-# 的 failureClass 对齐（quota/auth/bot-wall/transient/rate-limit/unknown），
-# 但归类依据是 argo 自己的 outcome.status（retry_policy.classify_error_status
-# 的唯一真源），不另写一套错误词表。
-_FAILURE_META: dict[str, tuple[str, str, bool]] = {
-    "timeout": ("transient", "超时；可重试或换源", True),
-    "quota-exhausted": ("quota", "配额耗尽；换源或等窗口重置", False),
-    "rate-limited": ("rate-limit", "被限流；稍后重试或换源", True),
-    "blocked": ("bot-wall", "被反爬拦截；稍后重试或换源", True),
-    "auth-failed": ("auth", "检查 API Key 是否有效、是否有该接口权限", False),
-    "error": ("unknown", "源端错误；可重试或换源", True),
-    "skipped-missing-env": ("missing-key", "未配置密钥；配置后即可参与", False),
-    "skipped-quota-exhausted": ("quota", "配额耗尽，本轮跳过", False),
-    "skipped-circuit-open": ("cooldown", "熔断冷却中，稍后自动恢复", True),
-    "skipped-budget": ("budget", "本轮预算不足，未执行", True),
-}
-_FAILURE_NON_ERROR = frozenset({
-    "ok", "ok-cached", "partial", "no-results", "no-results-cached", "cancelled",
-})
-
-
-def build_failures(result: dict[str, Any], limit: int = 6) -> list[dict[str, Any]]:
-    """把引擎 outcome 压成 Agent 可行动的结构化失败清单。
-
-    与 errors 的分工：errors 是给人看的整行文本（兼容旧契约），本字段是
-    给模型/宿主判断「要不要重试、换哪个源、是不是缺 key」的分类结果。
-    只收录没交出结果的 outcome；ok/no-results 不算失败（后者是「查了没有」，
-    不是「没查成」），与 uncertainty 的降级判据同源。
-    """
-    out: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
-    for o in (result.get("engine_outcomes") or []):
-        if not isinstance(o, dict):
-            continue
-        engine = str(o.get("engine") or "")
-        status = str(o.get("status") or "")
-        if not engine or status in _FAILURE_NON_ERROR:
-            continue
-        key = (engine, status)
-        if key in seen:
-            continue
-        seen.add(key)
-        category, action, retryable = _FAILURE_META.get(
-            status, ("unknown", "源端异常；可重试或换源", True))
-        item: dict[str, Any] = {
-            "engine": engine,
-            "status": status,
-            "category": category,
-            "retryable": retryable,
-            "action": action,
-        }
-        # skipped-* 是「持续状态」而不是本次尝试失败：配额窗口/熔断冷却在
-        # 周期边界前不会因重试改变。标出来，避免 Agent 立刻重试同一个源。
-        if status.startswith("skipped-"):
-            item["persistent"] = True
-        detail = str(o.get("detail") or "").strip()
-        if detail:
-            item["detail"] = detail[:160]
-        out.append(item)
-        if len(out) >= max(1, limit):
-            break
-    return out
-
-
-def decorate_compact_payload(out: dict[str, Any],
-                             result: dict[str, Any]) -> None:
-    """精简响应（MCP/Agent 档）的收尾修饰：边界清洗 + 三件透明信息 + sources 投影。
-
-    为什么集中在这里：mcp_handlers 的分发表有行数上限，而这些是**输出契约**
-    （信任级别、失败可行动性、信源投影），本来就属于 search_output。
-    全部 fail-open：增强字段缺失不影响主结果。
-    """
-    try:
-        from content_boundary import (CONTENT_TRUST_UNTRUSTED,
-                                      strip_boundary_markers)
-        for item in out.get("results") or []:
-            if not isinstance(item, dict):
-                continue
-            for key in ("title", "snippet"):
-                if isinstance(item.get(key), str):
-                    item[key] = strip_boundary_markers(item[key])
-        out["content_trust"] = CONTENT_TRUST_UNTRUSTED
-    except Exception:
-        pass
-    failures = result.get("failures")
-    if isinstance(failures, list) and failures:
-        out["failures"] = failures[:6]
-    meta = result.get("meta")
-    if isinstance(meta, dict) and meta.get("uncertainty"):
-        out["meta"] = {"uncertainty": meta["uncertainty"]}
-    sources = result.get("sources")
-    if sources:
-        out["sources"] = [
-            {
-                "ref": s.get("ref"),
-                "title": s.get("title"),
-                "url": s.get("url"),
-                "engine": s.get("engine") or s.get("source"),
-            }
-            for s in sources
-            if isinstance(s, dict) and s.get("url")
-        ][:20]
-
-
-def build_uncertainty(result: dict[str, Any]) -> dict[str, Any]:
-    """一次调用的综合可信度：`{"level": ..., "notes": [...]}`。
-
-    与 `limitations` 的分工：limitations 是**逐条**的局限声明（早停、降级、
-    缓存复用、站点过滤），本字段是**整体**等级——消费者拿到一个 level 就能
-    决定「直接引用」还是「先核验」，不必自己交叉比对五六个字段。
-
-    借鉴 dsh-free-search 的 `meta.uncertainty`（同一件事，按 argo 已有数据
-    重算，不新增采集）。
-
-    只合成**别处没有**的信号：早停/降级/缓存复用已有 limitations 表述，
-    在此重复会让读者不知道该信哪条（同一件事只留一句）。
-    """
-    notes: list[str] = []
-    results = [r for r in (result.get("results") or []) if isinstance(r, dict)]
-
-    if not results:
-        return {"level": _UNCERTAINTY_LOW, "notes": ["没有返回结果"]}
-
-    # 等级只降不升：每个信号各自给出自己的最差判级，取最严重的那个。
-    # 写成顺序 if/elif 覆盖同一个变量时，后一条会把前一条的降级抬回去
-    # （单来源已判 low，同站判定又写成 medium）——那是**升级**，方向错了。
-    level = _UNCERTAINTY_HIGH
-
-    def _worse(candidate: str) -> None:
-        nonlocal level
-        if _SEVERITY[candidate] > _SEVERITY[level]:
-            level = candidate
-
-    # 来源数：单来源无法交叉验证，两条才刚够对照
-    if len(results) == 1:
-        _worse(_UNCERTAINTY_LOW)
-        notes.append("只有 1 个来源，无法交叉验证")
-    elif len(results) == 2:
-        _worse(_UNCERTAINTY_MEDIUM)
-        notes.append("只有 2 个来源")
-
-    # 同站集中度：全部结果同一站点 = 一个信源的多次出现，不是多源印证
-    hosts = {_hostname(r.get("url")) for r in results}
-    hosts.discard("")
-    if 0 < len(hosts) == 1:
-        _worse(_UNCERTAINTY_MEDIUM)
-        notes.append("所有结果来自同一站点")
-
-    # 聚合平台：转载/洗稿高发，结论需经原始来源核对
-    aggregators = sorted(h for h in hosts if h in _AGGREGATOR_HOSTS
-                         or any(h.endswith("." + a) for a in _AGGREGATOR_HOSTS))
-    if aggregators:
-        _worse(_UNCERTAINTY_MEDIUM)
-        notes.append(f"含聚合站内容（{'/'.join(aggregators)}），建议二次核对")
-
-    # 时间窗声明了但没实际生效：引擎未返回 published_at，结果可能不在窗口内
-    if result.get("time_filter_warning"):
-        _worse(_UNCERTAINTY_MEDIUM)
-        notes.append("时间窗未实际过滤，结果可能不在请求的时间范围内")
-
-    # 引擎失败：有引擎跑了却没交出结果，覆盖比路由计划的窄
-    outcomes = [o for o in (result.get("engine_outcomes") or [])
-                if isinstance(o, dict)]
-    failed = [o for o in outcomes
-              if str(o.get("status") or "") not in _NON_ERROR_OUTCOME]
-    if failed:
-        _worse(_UNCERTAINTY_LOW)
-        notes.append(f"{len(failed)} 个引擎未交出结果，覆盖可能比计划的窄")
-
-    return {"level": level, "notes": notes}
 
 
 @dataclass(frozen=True)
@@ -833,10 +632,12 @@ def shape_response(ctx: _ShapeContext, result: dict[str, Any]) -> dict[str, Any]
             result["failures"] = failures
     except Exception as e:
         _log(f"失败清单跳过: {type(e).__name__}")
-    # 信任级别：所有入口（full/agent/MCP）共用同一个声明，避免只在 MCP 档
-    # 出现、CLI 档又漏掉的「同一事实两处口径」。
+    # 信任级别与边界清洗：所有入口（full/agent/MCP）共用同一个收口，
+    # 避免 CLI/agent 档带 content_trust 却未剥离网页自带的 </untrusted-web-content>。
     try:
-        from content_boundary import CONTENT_TRUST_UNTRUSTED
+        from content_boundary import (CONTENT_TRUST_UNTRUSTED,
+                                      sanitize_results_boundary)
+        sanitize_results_boundary(result.get("results"))
         result["content_trust"] = CONTENT_TRUST_UNTRUSTED
     except Exception:
         pass

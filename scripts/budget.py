@@ -33,6 +33,7 @@ from typing import Any
 __all__ = [
     "DEFAULT_BUDGETS",
     "budget_file",
+    "budget_signature",
     "load_budgets",
     "budget_for",
     "apply_to_profiles",
@@ -132,6 +133,21 @@ def _read_env() -> dict[str, dict[str, Any]]:
     return out
 
 
+def budget_signature() -> tuple[Any, ...]:
+    """预算配置源的轻量签名（文件 mtime/size + 环境变量覆盖），供热读与路由缓存换键。"""
+    p = budget_file()
+    try:
+        st = p.stat()
+        f_sig: tuple[Any, ...] = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        f_sig = (0, 0)
+    return (
+        f_sig,
+        os.environ.get(_ENV_JSON, ""),
+        os.environ.get("ARGO_BUDGET_DEEPSEEK_SEARCH", ""),
+    )
+
+
 def load_budgets() -> dict[str, dict[str, Any]]:
     """默认 → 文件 → env，逐层覆盖。"""
     merged: dict[str, dict[str, Any]] = {k: dict(v) for k, v in DEFAULT_BUDGETS.items()}
@@ -146,14 +162,19 @@ def budget_for(engine: str) -> dict[str, Any] | None:
 
 def apply_to_profiles(profiles: dict[str, dict[str, Any]]) -> None:
     """把预算挂到 quota profile（就地）。只覆盖存在的引擎，拼错不生效。"""
-    for engine, entry in load_budgets().items():
-        spec = profiles.get(engine)
-        if not isinstance(spec, dict):
+    active = load_budgets()
+    for engine, spec in profiles.items():
+        if not isinstance(spec, dict) or str(engine).startswith("_"):
             continue
-        spec["budget_amount"] = entry["amount"]
-        spec["budget_currency"] = entry["currency"]
-        # 预算周期即重置周期；与 limit 共用同一条 `period`，避免两套时钟。
-        spec["period"] = entry["period"]
+        entry = active.get(engine)
+        if entry is not None:
+            spec["budget_amount"] = entry["amount"]
+            spec["budget_currency"] = entry["currency"]
+            # 预算周期即重置周期；与 limit 共用同一条 `period`，避免两套时钟。
+            spec["period"] = entry["period"]
+        else:
+            spec.pop("budget_amount", None)
+            spec.pop("budget_currency", None)
 
 
 def _write(data: dict[str, Any]) -> None:
@@ -171,9 +192,14 @@ def over_budget_error(engine: str) -> str | None:
     放在 budget.py 而不是 dispatch：engine_dispatch 有行数门禁，预算检查是
     「读状态 + 拼一句话」的纯策略，搬出来也让显式/自动路径共用同一文案。
     """
-    if (os.environ.get("ARGO_PAID_BUDGET_BYPASS", "").strip().lower()
-            in ("1", "true", "yes", "on")):
-        return None
+    try:
+        from engine_env import env_flag
+        if env_flag("ARGO_PAID_BUDGET_BYPASS", default=False):
+            return None
+    except Exception:
+        if (os.environ.get("ARGO_PAID_BUDGET_BYPASS", "").strip().lower()
+                in ("1", "true", "yes", "on")):
+            return None
     try:
         from quota import get_quota_manager
         qm = get_quota_manager()
@@ -181,7 +207,8 @@ def over_budget_error(engine: str) -> str | None:
         # 会返回真值 mock——不能把「mock 存在」当成预算耗尽。
         if qm.is_over_budget(engine) is not True:
             return None
-        st = qm.get_stats().get(engine) or {}
+        st = (qm.budget_status(engine) if hasattr(qm, "budget_status")
+              else (qm.get_stats().get(engine) or {}))
         return (f"本月预算已用完（{st.get('cost_used', 0)}/{st.get('budget')} "
                 f"{st.get('budget_currency') or ''}）；"
                 f"可用 ARGO_PAID_BUDGET_BYPASS=1 单次放行")

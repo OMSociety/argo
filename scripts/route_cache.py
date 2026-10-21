@@ -104,10 +104,20 @@ def _route_state_fingerprint() -> str:
     # 路由旋钮的 env 覆盖必须参与指纹：否则「设了 ARGO_GENERAL_FALLBACK_LEAD
     # 却因缓存命中不生效」，逃生开关与 A/B 臂都变成摆设（2026-10-21 实测踩中）。
     # LEGACY 是同一类开关（改通用兜底链的成员），一并入指纹，避免只修一个入口。
-    parts.append("lead=" + (os.environ.get("ARGO_GENERAL_FALLBACK_LEAD") or ""))
-    parts.append("legacy=" + (os.environ.get("ARGO_GENERAL_FALLBACK_LEGACY") or ""))
-    # 付费对冲开关同样改变 combo；不纳入指纹会让 off/auto 在缓存命中时静默不生效。
-    parts.append("paid=" + (os.environ.get("ARGO_PAID_SEARCH") or ""))
+    # 统一经 engine_env.get_env 取值（兼顾 ~/.config/argo/env 文件与进程环境）。
+    try:
+        from engine_env import get_env as _get_env
+    except Exception:
+        _get_env = lambda k, d="": os.environ.get(k, d)  # noqa: E731
+    parts.append("lead=" + (_get_env("ARGO_GENERAL_FALLBACK_LEAD") or ""))
+    parts.append("legacy=" + (_get_env("ARGO_GENERAL_FALLBACK_LEGACY") or ""))
+    # 付费对冲开关与月度预算同样改变 combo；不纳入指纹会让开关或预算变更在缓存命中时静默不生效。
+    parts.append("paid=" + (_get_env("ARGO_PAID_SEARCH") or ""))
+    try:
+        from budget import budget_signature
+        parts.append(f"bgt={budget_signature()!r}")
+    except Exception:
+        pass
     return "|".join(parts)
 
 

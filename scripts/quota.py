@@ -167,7 +167,13 @@ class QuotaManager:
         self._fresh_ts = now
         self._fresh_seen = {engine} if engine is not None else set()
         try:
-            if self._profiles_hot is not None and self._profiles_hot.changed():
+            import budget as _budget
+            b_sig = _budget.budget_signature()
+        except Exception:
+            b_sig = None
+        try:
+            if (self._profiles_hot is not None and self._profiles_hot.changed()) \
+                    or (b_sig is not None and b_sig != getattr(self, "_budget_sig", None)):
                 self._load_profiles()
             if self._state_hot is not None and self._state_hot.changed():
                 self._load_state()
@@ -188,8 +194,9 @@ class QuotaManager:
         try:
             import budget as _budget
             _budget.apply_to_profiles(self._profiles)
+            self._budget_sig = _budget.budget_signature()
         except Exception:
-            pass
+            self._budget_sig = None
 
     def _load_state(self) -> None:
         if _state_path().exists():
@@ -325,7 +332,7 @@ class QuotaManager:
     def get_remaining_ratio(self, engine: str) -> float:
         """获取配额剩余比例。无限配额返回 1.0。"""
         with self._lock:
-            self._fresh_locked()
+            self._fresh_locked(engine)
             # 按周期重置（先于 limit 判空：null 引擎计数也要按周期归零，
             # 否则用量计数永久累计、无周期语义）。重置在文件锁内落盘。
             if self._period_elapsed(engine, time.time()):
@@ -428,7 +435,7 @@ class QuotaManager:
 
     def is_remote_exhausted(self, engine: str) -> bool:
         with self._lock:
-            self._fresh_locked()
+            self._fresh_locked(engine)
             self._refresh_remote_state_locked(engine, time.time())
             return "remote_exhausted" in (self._state.get(engine) or {})
 
@@ -504,6 +511,18 @@ class QuotaManager:
             st = self._state.get(engine) or {}
             return float(st.get("cost_used", 0.0)) >= float(budget)
 
+    def budget_status(self, engine: str) -> dict[str, Any]:
+        """单引擎预算快照（O(1)，避免 over_budget_error 为拼错误文案扫全表 280 引擎）。"""
+        with self._lock:
+            self._fresh_locked(engine)
+            profile = self._profiles.get(engine) or {}
+            st = self._state.get(engine) or {}
+            return {
+                "budget": profile.get("budget_amount"),
+                "budget_currency": profile.get("budget_currency"),
+                "cost_used": round(float(st.get("cost_used", 0.0)), 6),
+            }
+
     def get_current_rpm(self, engine: str) -> float:
         """获取最近 1 分钟的调用速率。"""
         with self._lock:
@@ -539,7 +558,7 @@ class QuotaManager:
         将 is_remote_exhausted / get_remaining_ratio / get_current_rpm 的
         检查合并到单次持锁中，消除 TOCTOU 间隙。
         """
-        self._fresh_locked()
+        self._fresh_locked(engine)
         # is_remote_exhausted 的内联版本（不重复获取锁）
         self._refresh_remote_state_locked(engine, time.time())
         if "remote_exhausted" in (self._state.get(engine) or {}):

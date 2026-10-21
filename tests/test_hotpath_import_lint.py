@@ -138,6 +138,8 @@ HEAVY_STDLIB = frozenset({
     "random",
     "argparse",   # → gettext ~2ms
     "gettext",
+    "dataclasses",  # → inspect → tokenize → dis → opcode ~8ms（Plan B 收口）
+    "inspect",
 })
 
 PROBE_ENTRIES = ("search", "mcp_server")

@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import sys
 import time
-from dataclasses import dataclass
+from search_types import slot_record as dataclass
 from typing import Any, Callable
 from cli_io import dumps
 
@@ -599,7 +599,7 @@ def _route_by_domain(ctx: _RouteCtx, domain: dict[str, Any], secondary: list[dic
         # 双引擎默认串行，利于 early-stop（答案域）
         parallel = parallel and len(engines_combo) > 2
 
-    engines_combo = insert_hedge(engines_combo, domain.get("name", ""), mode)
+    engines_combo = insert_hedge(engines_combo, domain.get("name", ""), mode, enabled)
 
     return _done(
         engine=engines_combo[0],

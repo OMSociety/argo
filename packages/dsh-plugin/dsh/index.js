@@ -868,7 +868,7 @@ export function classifyFetchError(err, url) {
  */
 export function mapArgoToWebFetch(payload, requestUrl, maxChars) {
   const url = typeof payload?.url === 'string' && payload.url !== '' ? payload.url : requestUrl
-  const content = typeof payload?.content === 'string' ? payload.content : ''
+  const content = typeof payload?.content === 'string' ? stripBoundary(payload.content) : ''
   // 双保险截断：MCP 侧已按 max_chars 裁过，这里按 fetchMaxChars 再兜一层
   // （单发路径的 max_chars 由 resolveNativeSpawn 透传，两条路同源）。
   const clipped = content.length > maxChars

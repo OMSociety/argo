@@ -75,7 +75,7 @@ _HKEX_S2T_CHARS = str.maketrans({
     "艺": "藝", "乐": "樂", "闻": "聞", "题": "題", "问": "問", "见": "見",
     "观": "觀", "识": "識", "说": "說", "请": "請", "谢": "謝", "让": "讓",
     "对": "對", "应": "應", "该": "該", "个": "個", "这": "這", "时": "時",
-    "间": "間", "户": "戶",
+    "间": "間", "户": "戶", "决": "決", "议": "議", "注": "註",
 })
 
 # 常见公告主题词（简体→繁体）。字表之外的整词映射，覆盖「回购/业绩」这类
@@ -101,7 +101,8 @@ _HKEX_NOISE = re.compile(
 
 def _hkex_s2t(text: str) -> str:
     out = str(text or "")
-    for s, t in _HKEX_TERMS.items():
+    # 最长词优先替换：防止「回购」先把「回购注销」前半截换掉而漏掉「注销→註銷」
+    for s, t in sorted(_HKEX_TERMS.items(), key=lambda kv: len(kv[0]), reverse=True):
         out = out.replace(s, t)
     return out.translate(_HKEX_S2T_CHARS)
 
@@ -141,7 +142,10 @@ _HKEX_NON_EQUITY = re.compile(r"(購|沽|牛|熊|證|ETF|基金|債券|票據|�
 
 from concurrent.futures import ThreadPoolExecutor
 
-_TOPIC_TERMS = frozenset(_HKEX_TERMS) | frozenset(_HKEX_TERMS.values())
+_TOPIC_TERMS = tuple(sorted(
+    frozenset(_HKEX_TERMS) | frozenset(_HKEX_TERMS.values()),
+    key=len, reverse=True,
+))
 
 
 def _hkex_resolve(query: str) -> tuple[list[tuple[str, str, str]], str] | None:
@@ -407,7 +411,7 @@ def _build_shfe_engine(spec: dict[str, Any]) -> Any:
         core = re.sub(
             r"(?i)(上期所|上海期货交易所|期货|主力|连续|合约|行情|价格|报价|今日|最新|"
             r"收盘|结算价|shfe|futures?)", " ", q)
-        core = core.replace("沪", " ").replace("沪铜", " ")
+        core = core.replace("沪", " ")
         core = re.sub(r"(?<!\d)\d{4}(?!\d)", " ", core)
         core = re.sub(r"\s+", " ", core).strip().lower()
         if not core:

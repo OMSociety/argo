@@ -34,3 +34,13 @@ def strip_boundary_markers(text: Any, limit: int | None = None) -> str:
     if limit is not None and limit >= 0 and len(out) > limit:
         out = out[:limit]
     return out
+
+
+def sanitize_results_boundary(results: Any) -> None:
+    """就地清洗结果列表每条的 title/snippet 边界标记（CLI/Agent/MCP 共用单一出口）。"""
+    for item in results or []:
+        if not isinstance(item, dict):
+            continue
+        for key in ("title", "snippet"):
+            if isinstance(item.get(key), str):
+                item[key] = strip_boundary_markers(item[key])
