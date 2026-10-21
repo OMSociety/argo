@@ -3234,29 +3234,39 @@ engines:
   twitter:
     qps: 2
     type: cli
-    # timeout 声明（2026-09-10 核查）：该引擎内部已有**广谱重试**
-    # （429 + URLError/OSError，最多 3 次带指数退避，见 _http_get_with_retry）。
-    # 按 search._engine_retries 约定，声明 ≥8s 即不再叠加引擎级重试——
-    # 否则内外两层重试叠乘（anysearch 曾因此跑出 31s）。
-    # 安全性：缺 tw 依赖不可路由，声明以保持一致，远低于 8s，不会截断正常请求。
-    timeout: 8
+    # timeout 声明（2026-10-21 改道后核查）：主通道改为 scripts/x_search.py
+    # （ego-browser，复用已登录的 X 会话），实测 3.1s 返回 3 条。
+    # 内含浏览器首屏等待，故给 20s 上限；dispatch 仍按整轮预算截断，
+    # 不会因为这一源拖垮整次搜索。
+    timeout: 20
     label: Twitter/X
     enabled: true
     cost_tier: free
+    # 覆盖标签决定路由：X 是社交/英文语料，不是通用网页源。
+    # 此前缺省为 [general]，社交意图选不到它、通用意图反而可能被它拖慢。
+    coverage:
+    - social
+    - english
+    canary_query: OpenAI
     cmd:
     - python3
-    - scripts/social_engines/twitter_engine.py
+    - scripts/x_search.py
     search_args:
-    - search
     - '{query}'
     - -n
     - '{n}'
+    - --json
     env: {}
-    # 后端依赖：脚本内部调 `tw` CLI。缺它时引擎只能返回空，
-    # 故为必需——声明后状态显示 missing_dep 并给出安装命令。
+    # 通道变更（2026-10-21）：旧脚本 twitter_engine.py 的三个通道当时全失效——
+    # FxTwitter /2/search 上游已停用、nitter 公共实例实测零结果、tw CLI 未装，
+    # 强制调用 6s 超时且结果为空。x_search.py 是仓库内既有的可用替代，
+    # 且支持 X 原生布尔语法（from:/-is:retweet/lang:），比旧通道更准。
+    # ego-browser 缺失只影响该源本身（显式调用报错），不阻断路由，故标 optional。
     requires:
-    - bin: tw
-      fix: 安装 twitter-cli（`pipx install twitter-cli` 或 npm i -g twitter-cli），完成后确保 `tw` 在 PATH 上
+    - bin: ego-browser
+      optional: true
+      fix: 安装 ego-browser（Ego Lite）并登录 X；缺失时该源跳过，单条推文仍可走 `argo tweet`
+    desc: X/Twitter 关键词搜索（ego-browser 通道，原生布尔语法 from:/-is:retweet/lang:）
   reddit:
     qps: 2
     type: cli

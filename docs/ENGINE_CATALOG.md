@@ -246,7 +246,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 | `v2ex` | 可直接用 | 免费 | 不限 | — | 域 cn_tech_community、域 social、域 v2ex_search | V2EX（中文技术社区，官方 API 候选池 + 本地相关性过滤） |
 | `weibo` | 可直接用 | 免费 | 不限 | — | 域 social、语义画像命中 | 微博 |
 | `reddit` | 需装后端工具 | 免费 | 不限 | — | 域 social、语义画像命中 | Reddit |
-| `twitter` | 需装后端工具 | 免费 | 不限 | — | 域 social、语义画像命中 | Twitter/X |
+| `twitter` | 需装后端工具 | 免费 | 不限 | — | 域 social、语义画像命中 | X/Twitter 关键词搜索（ego-browser 通道，原生布尔语法 from:/-is:retweet/lang:） |
 | `twitter_syndication` | 显式专用 | 免费 | 不限 | — | 显式调用（--engine） | X/Twitter 单条推文（syndication 通道，免登录零 key，含正文/作者/时间/媒体计数） |
 | `xiaohongshu` | 需装后端工具 | 免费 | 不限 | — | 域 social、语义画像命中 | 小红书 |
 | `zhihu` | 需自备密钥 | 免费 | 5000/天 | ARGO_ZHIHU_ACCESS_SECRET | 域 shopping、域 social、域 zhihu_content、域 zhihu_hot_list、语义画像命中 | 知乎搜索，中文观点/评测 |
