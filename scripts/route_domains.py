@@ -76,6 +76,26 @@ _compiled_domains: list[dict[str, Any]] | None = None
 _compiled_domains_id: tuple | None = None  # (name, patterns/exclude_if 内容指纹)
 
 
+def _ensure_domain_compiled(domain: dict[str, Any]) -> list[tuple[re.Pattern, re.Pattern | None]]:
+    """按需编译单个域的触发词与意图正则（扫到哪个域才编译哪个域）。"""
+    rules = domain.get("_rules")
+    if rules is not None:
+        return rules
+    rules = []
+    for p in _pattern_entries(domain):
+        match_src, unless_src = _split_pattern_entry(p)
+        match_re = _try_compile(match_src)
+        if match_re is None:
+            continue  # 触发词写坏 → 丢这一条（与旧行为一致）
+        rules.append((match_re, _try_compile(unless_src)))
+    intent_src = domain.get("intent_required")
+    domain["_intent"] = (
+        _try_compile(intent_src) if isinstance(intent_src, str) and intent_src else None
+    )
+    domain["_rules"] = rules
+    return rules
+
+
 def _compile_domain_patterns(domains: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """把域声明编译成可执行形态（`_rules` = (触发词, 该词的否决词|None) 列表）。
 
@@ -85,22 +105,9 @@ def _compile_domain_patterns(domains: list[dict[str, Any]]) -> list[dict[str, An
     """
     compiled = []
     for idx, domain in enumerate(domains):
-        rules = []
-        for p in _pattern_entries(domain):
-            match_src, unless_src = _split_pattern_entry(p)
-            match_re = _try_compile(match_src)
-            if match_re is None:
-                continue  # 触发词写坏 → 丢这一条（与旧行为一致）
-            rules.append((match_re, _try_compile(unless_src)))
-        intent_re = None
-        intent_src = domain.get("intent_required")
-        if isinstance(intent_src, str) and intent_src:
-            try:
-                intent_re = re.compile(intent_src)
-            except re.error:
-                intent_re = None
-        compiled.append({**domain, "_idx": idx, "_rules": rules,
-                         "_intent": intent_re})
+        entry = {**domain, "_idx": idx, "_rules": None, "_intent": None}
+        _ensure_domain_compiled(entry)
+        compiled.append(entry)
     return compiled
 
 
@@ -129,7 +136,7 @@ def _split_pattern_entry(entry: Any) -> tuple[Any, Any]:
 
 def _domain_fires(domain: dict[str, Any], query: str) -> bool:
     """一个域是否成立：任一触发词命中，且它自己的否决词没命中。"""
-    for match_re, unless_re in domain["_rules"]:
+    for match_re, unless_re in _ensure_domain_compiled(domain):
         if unless_re is not None and unless_re.search(query):
             continue
         if match_re.search(query):
@@ -155,7 +162,12 @@ def _get_compiled_domains(domains: list[dict[str, Any]]) -> list[dict[str, Any]]
     )
     if _compiled_domains is not None and _compiled_domains_id == dom_fp:
         return _compiled_domains
-    _compiled_domains = _compile_domain_patterns(domains)
+    # 槽位懒初始化：实际正则在 _domain_fires 扫到该域时才按需编译，
+    # 冷启动路由省去未扫到域（及被语言门跳过的域）的正则编译税。
+    _compiled_domains = [
+        {**domain, "_idx": idx, "_rules": None, "_intent": None}
+        for idx, domain in enumerate(domains)
+    ]
     _compiled_domains_id = dom_fp
     return _compiled_domains
 
@@ -168,7 +180,8 @@ def warm_compiled_domains() -> None:
     懒编译与全量回退都会自愈，预热是纯优化。
     """
     try:
-        _get_compiled_domains(get_domains())
+        for d in _get_compiled_domains(get_domains()):
+            _ensure_domain_compiled(d)
     except Exception:
         pass
 

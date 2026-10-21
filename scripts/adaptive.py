@@ -92,10 +92,27 @@ class AdaptiveLearner:
         self._lock = threading.Lock()
         self._local = threading.local()
         self._score_cache: dict[str, tuple[float, float]] = {}  # engine -> (score, expires_at)
+        self._session_engines: set[str] = set()
         self._batch_depth = 0
         self._batch_dirty = False
         DB_DIR.mkdir(parents=True, exist_ok=True)
         self._init_db()
+
+    def _prune_foreign(self, conn: sqlite3.Connection) -> None:
+        """清理非配置残留引擎（与 quota._prune_foreign_engines 同构，保护本实例已写入名）。"""
+        try:
+            from quota import _config_engine_names
+            known = _config_engine_names()
+        except Exception:
+            known = None
+        if not known:
+            return
+        keep = known | getattr(self, "_session_engines", set())
+        foreign = [r[0] for r in conn.execute("SELECT DISTINCT engine FROM engine_perf")
+                   if r[0] not in keep]
+        if foreign:
+            ph = ",".join("?" for _ in foreign)
+            conn.execute(f"DELETE FROM engine_perf WHERE engine IN ({ph})", tuple(foreign))
 
     @contextlib.contextmanager
     def batch(self):
@@ -108,7 +125,9 @@ class AdaptiveLearner:
             with self._lock:
                 self._batch_depth = max(0, getattr(self, "_batch_depth", 1) - 1)
                 if self._batch_depth == 0 and getattr(self, "_batch_dirty", False):
-                    self._connect().commit()
+                    conn = self._connect()
+                    self._prune_foreign(conn)
+                    conn.commit()
                     self._batch_dirty = False
 
     def _connect(self) -> sqlite3.Connection:
@@ -152,6 +171,7 @@ class AdaptiveLearner:
         )
         cutoff = time.time() - WINDOW_DAYS * 86400
         conn.execute("DELETE FROM engine_perf WHERE created_at < ?", (cutoff,))
+        self._prune_foreign(conn)
         conn.commit()
 
     def record(self, engine: str, success: bool, latency_ms: float, cost: float = 0.0,
@@ -168,6 +188,9 @@ class AdaptiveLearner:
         """
         q = 0.0 if quality is None else max(0.0, min(1.0, float(quality)))
         with self._lock:
+            if not hasattr(self, "_session_engines"):
+                self._session_engines = set()
+            self._session_engines.add(engine)
             conn = self._connect()
             conn.execute(
                 "INSERT INTO engine_perf "

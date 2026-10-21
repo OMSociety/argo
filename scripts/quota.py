@@ -151,8 +151,21 @@ class QuotaManager:
             self._profiles_hot = None
             self._state_hot = None
 
-    def _fresh_locked(self) -> None:
-        """带锁调用：磁盘文件签名变化即重读（调用方须已持锁）。"""
+    def _fresh_locked(self, engine: str | None = None) -> None:
+        """带锁调用：磁盘文件签名变化即重读（调用方须已持锁）。
+
+        同一次路由遍历（~0.3ms 内对 230+ 个不同 engine 逐一查询）共用首轮
+        stat 结果，避免单次 route_query 产生 900+ 次重复 stat；同一引擎再次
+        查询或超过 2ms 立即重新 stat，保持跨进程热读立即可见（test_hot_state）。
+        """
+        now = time.monotonic()
+        seen = getattr(self, "_fresh_seen", None)
+        if (engine is not None and seen is not None and engine not in seen
+                and (now - getattr(self, "_fresh_ts", 0.0)) < 0.002):
+            seen.add(engine)
+            return
+        self._fresh_ts = now
+        self._fresh_seen = {engine} if engine is not None else set()
         try:
             if self._profiles_hot is not None and self._profiles_hot.changed():
                 self._load_profiles()
@@ -436,9 +449,18 @@ class QuotaManager:
         与限频/预算无关——路由组合层用它做全模式排除；
         is_available 的限频/付费判断不在此列。
         """
-        if self.is_remote_exhausted(engine):
-            return True
-        return self.get_remaining_ratio(engine) <= 0
+        with self._lock:
+            self._fresh_locked(engine)
+            now = time.time()
+            self._refresh_remote_state_locked(engine, now)
+            st = self._state.get(engine) or {}
+            if "remote_exhausted" in st:
+                return True
+            if self._period_elapsed(engine, now):
+                self._reset_period_locked(engine, now)
+                st = self._state.get(engine) or {}
+            limit = (self._profiles.get(engine) or {}).get("limit")
+            return limit is not None and (limit - st.get("used", 0)) <= 0
 
     def get_current_rpm(self, engine: str) -> float:
         """获取最近 1 分钟的调用速率。"""

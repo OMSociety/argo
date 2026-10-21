@@ -354,7 +354,17 @@ class SQLiteCache:
                     pass
 
     def _init_db(self):
+        if (self._db_path not in (":memory:", "")
+                and not self._db_path.startswith("file:")
+                and os.path.exists(self._db_path)
+                and not os.access(self._db_path, os.W_OK)):
+            raise _get_sqlite3().OperationalError("readonly database")
         with self._conn() as conn:
+            try:
+                if conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone() == (str(self.SCHEMA_VERSION),):
+                    return
+            except _get_sqlite3().Error:
+                pass
             conn.executescript("""
                 CREATE TABLE IF NOT EXISTS search_cache (
                     key TEXT PRIMARY KEY,
@@ -463,6 +473,20 @@ class SQLiteCache:
                 self._hits += 1
                 return self._deserialize(value_blob, compressed)
 
+    def get_many(self, keys: list[str]) -> dict[str, dict]:
+        if not keys or self._degraded_reason is not None:
+            return {}
+        out: dict[str, dict] = {}
+        with self._lock, self._conn() as conn:
+            ph = ",".join("?" for _ in keys)
+            for k, blob, comp, ts, ttl in conn.execute(
+                f"SELECT key, value_blob, compressed, created_at, ttl "
+                f"FROM search_cache WHERE key IN ({ph})", tuple(keys)
+            ):
+                if not self._is_expired(ts, ttl):
+                    out[k] = self._deserialize(blob, comp)
+        return out
+
     def set(self, key: str, query: str, engine: str, max_results: int,
             value: dict, domain: str = "general", ttl: int | None = None,
             mode: str = "", depth: str = ""):
@@ -516,35 +540,9 @@ class SQLiteCache:
             pass
 
     def _evict_if_needed(self):
-        """空间回收三步：过期行 → LRU 淘汰 → VACUUM。
-
-        **历史 bug（2026-09-19 复现）**：判定读的是文件页数
-        （page_count × page_size），扣减的却是 payload 净长。而本库
-        `auto_vacuum=0` 且全仓无 VACUUM，页数**永不下降**——库一旦超过
-        MAX_DB_SIZE_MB，`while total_bytes > target_bytes` 就永不收敛：
-        每次 set() 把整库（含刚写入的那一行）删空，此后每次写入重复清空，
-        缓存永久 100% miss。修法是让扣减与判定同源——进入淘汰循环后一律
-        用 payload 口径，删完再 VACUUM 把文件真正缩回去（不 VACUUM 的话
-        下一轮 set() 会看到同样的页数并重删一遍，正是这个 bug 的另一半）。
-
-        另一半是**过期行**：它们对任何调用方都不可见（get() 命中即删），
-        实测线上 5521 行里 5444 行（98.6%）已过期、占 payload 的 98.3%。
-        不回收不只是占盘——find_similar 与淘汰扫描都要扫过这些永不命中的行。
-        按节流间隔回收，稳态每小时一次。
-
-        阈值口径（2026-10-15）：limit 取 `self._max_size_mb`（构造时定下），
-        不再直接读模块常量 MAX_DB_SIZE_MB——生产侧的上限现在来自 config.yaml
-        的 `cache.max_size_mb`，改配置真的会改行为。
-        """
+        """空间回收三步：过期行清扫（每小时节流）→ LRU 淘汰（按 payload 口径）→ VACUUM。"""
         with self._conn() as conn:
             limit_bytes = self._max_size_mb * 1024 * 1024
-
-            # 三条触发各自独立，代价都是 O(1)：
-            #   过期清扫（节流到每小时一次，因为它要全表扫）
-            #   LRU 淘汰（文件超限时）
-            #   纯回收（空闲页够多时——清扫刚删完一大片就会命中这条，
-            #          不把它独立出来，回收就会被节流挡到下一个清扫点，
-            #          文件白停在高水位一小时）
             if self._expiry_sweep_due(conn):
                 conn.execute(
                     "DELETE FROM search_cache WHERE created_at + ttl < ?",
@@ -557,7 +555,6 @@ class SQLiteCache:
                 "      * (SELECT page_size  FROM pragma_page_size)"
             ).fetchone()[0] or 0
             if page_bytes > limit_bytes:
-                # 按最近访问时间淘汰最旧行；扣减口径与判定同源，循环必然收敛
                 target_bytes = int(limit_bytes * 0.8)
                 payload = conn.execute(
                     "SELECT COALESCE(SUM(LENGTH(value_blob)), 0) FROM search_cache"
@@ -574,9 +571,6 @@ class SQLiteCache:
                     payload -= sum((sz or 0) for _, sz in rows)
                     conn.commit()
 
-            # 删行不会让文件变小：页进 freelist，文件停在高水位。不回收的话
-            # 稳态下会留着一整块「只有空闲页」的库——实测线上 10.1MB 文件里
-            # 活数据只有 0.12MB。判据用空闲页占比而非固定字节：小库才会回收。
             if self._free_bytes(conn) > self._RECLAIM_FREE_RATIO * (page_bytes or 1):
                 conn.execute("VACUUM")
 
@@ -603,42 +597,11 @@ class SQLiteCache:
                      mode: str = "auto", depth: str = "fast") -> list[dict]:
         """近重复查询软命中：扫描最近缓存，minhash 相似度 ≥ threshold 的条目。
 
-        返回 [{key, query, similarity}]，按相似度降序。用于语义缓存——
-        「苹果 2025 营收」可软命中「苹果 2025 年营收」的缓存。
-        扫描限制 limit 条最近查询，控制成本。
-
-        阈值 0.7：中文字符级 n-gram 下，「营收」vs「年营收」这类
-        单字差异相似度约 0.75，0.7 可捕捉近重复且排除无关查询（≈0）。
-
-        engine 隔离（v2.4.2 修复）：SQL 必须按 engine 列过滤。此前形参收了
-        engine 但 WHERE 子句只用 domain，软命中因此跨引擎串味——实测
-        `--engine v2ex` 可命中 bilibili 缓存；fetch 与 evidence 同 domain 下
-        URL 词面相似（如 x 与 x.md，相似度 0.875）会互相串正文。
-        组合键（多引擎拼接的 `a+b`）不参与软命中：组合结果集是融合产物，
-        与任何单引擎缓存都不可互换。
-
-        **engine 现在是精确匹配，不再是「auto 通配」**（2026-09-19 随之调整）：
-        engine 列从「路由出来的引擎组合」改存「请求侧身份」（用户点名的引擎
-        或 auto，见 search.execute_search 的 cache_engine_key 说明）。语义变了，
-        通配的含义也跟着变——以前 `auto` 不是列里会出现的值，通配分支其实
-        从未被走到（组合列要么是 `a+b` 要么是单引擎名）；现在 `auto` 是真实的
-        请求身份，再通配就等于让「自动路由」的请求去吃「显式指定 pypi」的
-        缓存，正是 v2.4.2 要挡的跨引擎串味。请求不同 → 结果不可互换。
-
-        限定符隔离（2026-09-18 修复）：限定符是过滤器而非内容，整串相似度
-        会被它主导——`keywords:pi-package mcp` 与 `keywords:pi-package
-        memory` 整串相似度 0.875，判别词只占几个字符，于是软命中把另一条
-        查询的结果交了出去（实测 `--engine npm` 查 mcp 拿到 memory 那批包）。
-        现在先要求限定符集合相同，再比**载荷**的相似度；无限定符的查询载荷
-        即整串，行为不变。
-
-        mode/depth 隔离（2026-09-19 修复）：这是同一类串味的第三处，前两处
-        （engine、限定符）修的时候漏了它。`_key` 刻意把 mode/depth 编进键、
-        类 docstring 也承诺「depth / mode 隔离，防 fast/deep、budget 污染」，
-        但软命中的 WHERE 只有 domain+engine：`--depth deep` 请求会软命中一条
-        按 fast 写的条目（或反过来），拿到的结果集与请求档位不匹配，而结果里
-        还报 `cached: true`。现在 WHERE 带上 mode/depth 精确匹配——它们本来
-        就是「结果集全集的组成部分」，与限定符同理：档位不同，结果就不可互换。
+        返回 [{key, query, similarity}]，按相似度降序。
+        隔离契约：
+          - engine 精确匹配（多引擎组合 a+b / a,b 不参与软命中）
+          - 限定符集合必须一致，仅对载荷计算相似度
+          - domain / mode / depth 精确匹配
         """
         nq = normalize_query(query)
         nq_quals, nq_payload = split_qualifiers(nq)
@@ -847,6 +810,7 @@ class SearchCache:
         self._l1 = LRUCache(max_size=MAX_MEMORY_ITEMS)
         self._l2 = SQLiteCache(db_path=self._db_path, ttl=self._ttl,
                                max_size_mb=self._max_size_mb)
+        self._miss_memo: tuple[float, frozenset[str]] = (0.0, frozenset())
 
     @staticmethod
     def _key(query: str, engine: str, max_results: int = 0, domain: str = "general",
@@ -931,6 +895,8 @@ class SearchCache:
                 out["_cache_level"] = "L1"
                 return out
             self._l1.remove(key)
+        if time.monotonic() - self._miss_memo[0] < 0.05 and key in self._miss_memo[1]:
+            return None
 
         hit = self._l2.get(key)
         if hit is not None:
@@ -942,11 +908,32 @@ class SearchCache:
             return out
         return None
 
+    def _read_many(self, keys: list[str]) -> dict[str, dict]:
+        if not keys or self._disabled():
+            return {}
+        out, miss, now = {}, [], time.time()
+        for k in dict.fromkeys(keys):
+            hit = self._l1.get(k)
+            if hit is not None and hit.get("_ttl", 0) > 0 and now - hit.get("_ts", 0) < hit.get("_ttl", 0):
+                out[k] = hit
+            else:
+                if hit is not None:
+                    self._l1.remove(k)
+                miss.append(k)
+        if miss:
+            l2_hits = self._l2.get_many(miss)
+            for k, hit in l2_hits.items():
+                self._l1.set(k, hit)
+                out[k] = hit
+            self._miss_memo = (time.monotonic(), frozenset(k for k in miss if k not in l2_hits))
+        return out
+
     def _write(self, key: str, query: str, engine: str, max_results: int,
                value: dict, domain: str, ttl: int,
                mode: str = "", depth: str = "") -> None:
         if self._disabled():
             return
+        self._miss_memo = (0.0, frozenset())
         payload = {**value, "_domain": domain, "_ttl": ttl, "_ts": time.time(),
                    "_max_results": max_results}
         self._l1.set(key, payload)
@@ -1173,7 +1160,7 @@ class SearchCache:
         返回 {url: {"body": {...}|None, "retrieval": {...}}}，只含本地有记录的 URL。
         """
         out: dict[str, dict] = {}
-        if not urls:
+        if not urls or self._disabled():
             return out
         try:
             from fulltext_store import path_for as _ft_path
@@ -1183,14 +1170,15 @@ class SearchCache:
             from robots_guard import known_blocked as _known_blocked
         except ImportError:
             _known_blocked = None
+        try:
+            hits = self._read_many([self._fetch_key(u) for u in urls if u])
+        except IO_BENIGN + SHAPE_BENIGN:
+            hits = {}
 
         for url in urls:
             if not url:
                 continue
-            try:
-                hit = self._read(self._fetch_key(url))
-            except IO_BENIGN + SHAPE_BENIGN:
-                hit = None
+            hit = hits.get(self._fetch_key(url))
             entry: dict = {}
 
             # ① 反面记录：以前抓过、结果不可用

@@ -98,6 +98,7 @@ def test_enabled_false_turns_cache_off(patched_config, tmp_path):
     assert off.get_engine("新查询", "e", 5, "general") is None
     assert _rows(db) == 1, f"set_engine 在关缓存状态下仍写盘：rows={_rows(db)}"
     assert off.get_fetch("https://example.com/a") is None
+    assert off.local_status(["https://example.com/a"]) == {}
 
 
 def test_max_size_mb_is_the_eviction_limit(patched_config, tmp_path):

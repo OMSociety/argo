@@ -136,7 +136,7 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "_redact_secrets fallback 加基本脱敏（Bearer token + key=value）；"
               "2026-09-28 +2：_detect_anti_bot head 区按需 lower（性能优化）"),
     "scripts/cache.py": (
-        1385, "结果缓存 + 路由软命中 + 指纹；「键/存储/命中策略」三段的第二段"
+        1373, "结果缓存 + 路由软命中 + 指纹；「键/存储/命中策略」三段的第二段"
               "已落地——2026-10-16 命中判据层（normalize_query / minhash "
               "query_similarity / split_qualifiers / is_freshness_sensitive_query"
               "共 ~115 行）整段拆至 cache_similarity.py，本文件只剩存储实现与门面"
