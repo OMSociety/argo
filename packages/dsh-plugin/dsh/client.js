@@ -1011,7 +1011,17 @@ window.__ModuleLoader__.load({
 
       if (tab === 'engines') {
         const map = envMap();
-        const groups = ['cache', 'fetch', 'semantic', 'engines', 'net', 'local', 'misc'];
+        // 渲染顺序即面板顺序。**不是**从 ENGINE_TOGGLES 去重推导——那样分组
+        // 顺序会随白名单增删而漂移，用户每次升级都看到重排的面板。
+        //
+        // 历史 bug（2026-10-21 定位）：`paid` 一度不在这个清单里，于是
+        // ARGO_PAID_SEARCH 与 ARGO_BUDGET_DEEPSEEK_SEARCH 两条开关在
+        // index.js 白名单、client.js ENGINE_TOGGLES、双语文案三处都齐全，
+        // 却在面板上完全不显示——用户配好了预算却找不到入口，还以为是插件
+        // 没装。漂移门禁只核对「两边名单同集合、字段一致」，核对不到「这个
+        // 分组到底渲不渲染」；已由 test/client.test.js 的「engines tab renders
+        // a control for every ENGINE_TOGGLES switch」补上（见该测试注释）。
+        const groups = ['cache', 'fetch', 'semantic', 'engines', 'net', 'local', 'paid', 'misc'];
         const groupTitle = (group) => t('group' + group.charAt(0).toUpperCase() + group.slice(1));
         panel.push(h('p', { key: 'hint', style: S.hint }, t('enginesHint')));
         for (const group of groups) {

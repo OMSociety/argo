@@ -230,3 +230,70 @@ test('ArgoPanel renders every tab without undefined references', () => {
   const roTree = mod.ArgoPanel({ ...props, useArgoForm: (select) => select({ status: 'ready', writable: false, value }) })
   assert.ok(roTree && roTree.type === 'div')
 })
+
+test('engines tab renders a control for every ENGINE_TOGGLES switch (no invisible group)', () => {
+  // 上面的 mirror 测试只核对「index.js 白名单 ↔ client.js 镜像」同名同字段，
+  // 核对不到「这个 group 到底渲不渲染」。2026-10-21 实锤：`paid` 分组没进渲染
+  // 清单，ARGO_PAID_SEARCH 与 ARGO_BUDGET_DEEPSEEK_SEARCH 在白名单、镜像、
+  // 双语文案三处都齐全，面板上却完全不显示——用户配了预算却找不到入口，
+  // 只会以为插件没装。
+  //
+  // 判据取「每个开关的标签都必须出现在渲染树里」，而不是「分组数量对得上」：
+  // 后者在两组互相吞并、或多渲染一个空组时仍可能凑巧通过，前者直接锁住
+  // 「用户能看见并可操作这一项」这件事本身。
+  const definition = loadBundle()
+  const { react, hooks, reset } = statefulReact()
+  const mod = definition.factory((id) => {
+    if (id === 'react') return react
+    throw new Error(`unexpected require: ${id}`)
+  })
+  const props = {
+    useArgoForm: (select) => select({
+      status: 'ready',
+      writable: true,
+      value: { nativeTools: [], keyRefs: [], argoEnv: [] },
+    }),
+    set: async () => true,
+    mutate: async () => true,
+    credentials: {
+      describe: async () => ({ ok: true, value: {} }),
+      set: async () => ({ ok: true }),
+      unset: async () => ({ ok: true }),
+    },
+    remote: { $on: () => () => {} },
+    locale: { getSnapshot: () => ({ active: 'zh' }), subscribe: () => () => {} },
+    view: 'page',
+  }
+  reset()
+  hooks.length = 0
+  hooks[1] = 'engines'
+  const texts = new Set()
+  // 与「七个分组卡」那条测试同一套迷你渲染器（函数组件要真跑，children 要补映射）
+  const walk = (node) => {
+    if (node === null || node === undefined) return
+    if (Array.isArray(node)) { node.forEach(walk); return }
+    if (typeof node !== 'object') {
+      if (typeof node === 'string' || typeof node === 'number') texts.add(String(node))
+      return
+    }
+    if (typeof node.type === 'function') {
+      const nextProps = { ...node.props }
+      if (node.children && node.children.length > 0) {
+        nextProps.children = node.children.length === 1 ? node.children[0] : node.children
+      }
+      walk(node.type(nextProps))
+      return
+    }
+    ;(node.children || []).forEach(walk)
+  }
+  walk(mod.ArgoPanel(props))
+  // 标签带 suffix（未配置时追加「（默认）」），故用前缀匹配而非全等。
+  const visible = (label) => [...texts].some((text) => String(text).startsWith(label))
+  const missing = [...mod.ENGINE_TOGGLES]
+    .filter((spec) => !visible(spec.zh))
+    .map((spec) => `${spec.name}(${spec.group})`)
+  assert.deepEqual(
+    missing, [],
+    `这些开关定义了但面板上没有控件（分组未进渲染清单？）：${missing.join(', ')}`,
+  )
+})

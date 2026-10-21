@@ -69,13 +69,35 @@ MIN_PYTHON = (3, 9)
 # 运行（静默跑在不支持的解释器上）。根因是把「版本」和「依赖」两个判据拆到了两条
 # 分支上，谁抄漏一个就少一半闸门。现在两个脚本同源生成，只换 yaml 那一段。
 _PY_MIN_VER = ",".join(str(part) for part in MIN_PYTHON)
+# 廉价档：find_spec 只问「存在性」，不 import（~15 ms）。
 _PY_CHEAP_CHECK = (
     "import sys, importlib.util as u; sys.exit(0 if sys.version_info >= (%s,) "
     "and u.find_spec('yaml') is not None else 1)" % _PY_MIN_VER
 )
+# 严格档：真 import 一遍（~80–170 ms），抓「find_spec 说在、import 却炸」——
+# 半装的 PyYAML、被 sys.path 上的坏 .pth 顶掉的 namespace 包、ABI 不匹配的
+# 扩展模块都属这类。版本判据必须与廉价档同源，否则又会回到「3.9 被选中写进
+# 缓存」那个历史 bug（见上方历史注记）。
+#
+# 2026-10-21 修复：此前的写法是
+#     import sys; sys.exit(0 if sys.version_info >= (3,9,) else 1); import yaml
+# `sys.exit()` 在版本判据成立的那一刻就终止进程，`import yaml` 是**永不执行的
+# 死代码**——严格档与廉价档的唯一区别（真 import）被自己吃掉了，两个档退化成
+# 同一个判据。实锤后果：macOS 自带 python3.9（无 PyYAML）通过探测、被写进
+# ~/.cache/unified-search/.argo_python，此后每个 `type: cli` 引擎都先付一次
+# 子进程 ModuleNotFoundError；实测 weather 引擎单次 5.8s 失败、weather_query
+# 域 p50 被抬到 3071ms（本机最慢域）。
+#
+# 现在的写法把「版本不达标 → exit(1)」写成**前置 if**，import yaml 与 sys.exit(0)
+# 都在它后面：只有版本放过之后才碰依赖，依赖炸就炸在 exit 之前，rc 非 0。
+# 反过来写（`sys.exit(0 if ... else 1); import yaml`，无论单行还是换行）都还是
+# 死代码——exit 是立即终止，同一行分号挡不住它。测试见
+# tests/test_python_probe.py::test_strict_check_fails_when_yaml_is_unavailable。
 _PY_STRICT_CHECK = (
-    "import sys; sys.exit(0 if sys.version_info >= (%s,) else 1); import yaml"
-    % _PY_MIN_VER
+    "import sys\n"
+    "if sys.version_info < (%s,): sys.exit(1)\n"
+    "import yaml\n"
+    "sys.exit(0)" % _PY_MIN_VER
 )
 
 
@@ -145,6 +167,43 @@ def _remember_python(p: str) -> None:
         pass
 
 
+# 已知安装前缀：GUI / 非交互式 shell 常常没跑 `brew shellenv`，于是
+# /opt/homebrew/bin 不在 PATH 上，`shutil.which("python3.14")` 一律落空。
+#
+# 本机实测（2026-10-21）：`/opt/homebrew/bin/python3.14` 带 PyYAML 6.0.3，
+# 而 PATH 上只有 `/usr/bin/python3`（3.9.6，无 PyYAML）。探测链全部落空后
+# _pick_python 回落到 sys.executable=3.9，argo 全程跑在缺依赖的解释器上：
+# 每个 `type: cli` 引擎（weather/wx.py 等）都先付一次 ModuleNotFoundError
+# （实测 weather 单次 5.8s 失败，weather_query 域 p50 被抬到 3071ms）。
+#
+# PATH 仍然优先（那是用户的显式意图），这只是「which 落空时按惯例位置再找
+# 一遍」的兜底，不改变任何 PATH 上已能解析到的选择。Windows 无这些前缀，
+# 列表里的路径不存在即跳过（isfile 守卫），不引入平台分支。
+_KNOWN_PY_PREFIXES = (
+    "/opt/homebrew/bin",              # macOS arm64 Homebrew
+    "/usr/local/bin",                 # macOS x86 Homebrew / 手工安装
+    "/opt/local/bin",                 # MacPorts
+    os.path.expanduser("~/.local/bin"),
+)
+
+
+def _which_python(name: str) -> str:
+    """按「PATH → 已知安装前缀」的顺序解析解释器；都找不到返回空串。
+
+    只替换 `shutil.which` 的调用点，语义是它的**严格超集**：PATH 上有就直接
+    用它（含用户自建的 shim/pyenv），没有才去惯例位置找。因此不会改变任何
+    「原本就能解析到」的机器上的选择。
+    """
+    found = shutil.which(name)
+    if found:
+        return found
+    for prefix in _KNOWN_PY_PREFIXES:
+        cand = os.path.join(prefix, name)
+        if os.path.isfile(cand) and os.access(cand, os.X_OK):
+            return cand
+    return ""
+
+
 def _pick_python() -> str:
     """选择可用解释器：ARGO_PYTHON 优先，其次高版本 python3.x，兜底当前解释器。
 
@@ -153,13 +212,17 @@ def _pick_python() -> str:
     python3），只有在没有更高版本时才被选中——那时 MIN_PYTHON 仍会兜住，
     不会静默选一个跑不动的解释器。
 
+    候选名经 `_which_python` 解析（PATH 优先 + 已知安装前缀兜底），见
+    _KNOWN_PY_PREFIXES 的实测记录：只查 PATH 会让「装了 3.14 但没进 PATH」
+    的机器静默回落到无 PyYAML 的系统 python。
+
     探测结果落盘缓存（见 _PY_CACHE）：命中时不再起子进程 import 依赖。显式
     指定 ARGO_PYTHON 时不查也不写缓存——用户的覆盖是权威，不该被缓存遮蔽，
     也不该把它固化下来。
     """
     env_py = os.environ.get("ARGO_PYTHON", "").strip()
     if env_py:
-        p = shutil.which(env_py) if not os.path.isabs(env_py) else env_py
+        p = _which_python(env_py) if not os.path.isabs(env_py) else env_py
         if p and _probe_python(p, True):
             return p
     else:
@@ -177,9 +240,9 @@ def _pick_python() -> str:
         if isinstance(cand, str):
             if not cand:
                 continue
-            py = cand if os.path.isabs(cand) else shutil.which(cand)
+            py = cand if os.path.isabs(cand) else _which_python(cand)
         else:
-            launcher = shutil.which(cand[0])
+            launcher = _which_python(cand[0])
             py = _resolve_launcher([launcher] + list(cand[1:])) if launcher else ""
         if not py:
             continue

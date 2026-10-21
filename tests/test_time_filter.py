@@ -447,21 +447,41 @@ class TestCliEngineRetry(unittest.TestCase):
         import search_v3  # noqa: F401
         cls.search_v3 = search_v3
 
+    def setUp(self):
+        """钉住「CLI 可用」这一前置，让用例只测重试/吞错语义。
+
+        可用性判据 2026-10-12 由「跑一次 `<cmd> --help` 子进程」改成
+        `shutil.which`（见 search_v3._check_cli_available 的 docstring：TTL 缓存
+        只在同进程内有效，CLI 用法下每次调用都是新进程，等于每次白付约 190ms）。
+
+        本类的用例全都在测「rc=0 吞错识别 / 慢失败不重试」这些**判据之后的**
+        行为，与「本机装没装 ddgs」毫无关系。但旧的 stub 只拦 subprocess.run，
+        判据换成 which 之后就不再被覆盖：
+          - 没装 ddgs 的机器 → 函数在进入被测逻辑之前就返回
+            `ddgs not available`，用例必然红（且报错信息与真实缺陷无关）；
+          - 装了 ddgs 的机器 → 必然通过，但走的是真 which 判定，
+            被 stub 的那条路径其实一次都没执行。
+        两头都不再验证被测行为，所以这里显式钉住，装与不装都测同一件事。
+        """
+        sv3 = self.search_v3
+        self._orig_check_cli_available = sv3._check_cli_available
+        sv3._check_cli_available = lambda cmd: True
+
+    def tearDown(self):
+        self.search_v3._check_cli_available = self._orig_check_cli_available
+
     def _spec(self, name="local_yahoo"):
         spec = self.search_v3.get_registry().get_engine(name)
         return spec
 
-    def _fake_help_aware(self, search_side_effect):
-        """包装：--help 探测返回成功，其余走 search_side_effect。"""
-        class R:
-            def __init__(self, rc, out="", err=""):
-                self.returncode, self.stdout, self.stderr = rc, out, err
+    def _stub_run(self, search_side_effect):
+        """把 subprocess.run 换成给定实现；可用性由 setUp 单独钉住。
 
-        def runner(cmd, **kwargs):
-            if "--help" in cmd:
-                return R(0, "Usage: ddgs ...")
-            return search_side_effect(cmd, **kwargs)
-        return runner
+        旧名 `_fake_help_aware`：它曾在 runner 里拦下 `--help` 探测并返回成功，
+        因为当时「装没装」是靠跑 `<cmd> --help` 问出来的。判据改成 shutil.which
+        之后这个分支永不命中，留着只会让人以为可用性还由它兜着。
+        """
+        return search_side_effect
 
     def test_rc0_error_signal_retries_then_recovers(self):
         """场景：rc=0 + stdout 错误信号 → 重试 → 恢复。"""
@@ -480,7 +500,7 @@ class TestCliEngineRetry(unittest.TestCase):
             return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
         real_run = sv3.subprocess.run
-        sv3.subprocess.run = self._fake_help_aware(se)
+        sv3.subprocess.run = self._stub_run(se)
         try:
             res, err = sv3._run_cli_engine(self._spec(), "q", 3, 8.0)
         finally:
@@ -499,7 +519,7 @@ class TestCliEngineRetry(unittest.TestCase):
                                   "stderr": ""})()
 
         real_run = sv3.subprocess.run
-        sv3.subprocess.run = self._fake_help_aware(se)
+        sv3.subprocess.run = self._stub_run(se)
         try:
             res, err = sv3._run_cli_engine(self._spec(), "q", 3, 8.0)
         finally:
@@ -524,7 +544,7 @@ class TestCliEngineRetry(unittest.TestCase):
             raise sv3.subprocess.TimeoutExpired(cmd, 8)
 
         real_run = sv3.subprocess.run
-        sv3.subprocess.run = self._fake_help_aware(se)
+        sv3.subprocess.run = self._stub_run(se)
         try:
             res, err = sv3._run_cli_engine(self._spec(), "q", 3, 8.0)
         finally:
@@ -552,8 +572,6 @@ class TestCliEngineRetry(unittest.TestCase):
             stderr = ""
 
         def fake_run(cmd, **kwargs):
-            if "--help" in cmd:
-                return type("R2", (), {"returncode": 0, "stdout": "Usage: ddgs", "stderr": ""})()
             return R()
 
         real_run = sv3.subprocess.run

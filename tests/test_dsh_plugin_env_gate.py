@@ -54,3 +54,26 @@ def test_allowlist_delta_is_reported(capsys):
     with capsys.disabled():
         print(f"[argoEnv] allowlist={len(allowlist)} names, "
               f"argo-source-only={len(delta)}: {delta}")
+
+
+def test_readme_stated_allowlist_count_matches_code():
+    """README 里写死的「白名单 N 个」必须等于 ARGO_ENV_SPECS 的实际条数。
+
+    why（2026-10-21）：`paid` 分组的两个开关（ARGO_PAID_SEARCH、
+    ARGO_BUDGET_DEEPSEEK_SEARCH）随付费预算功能加进白名单后，README 两处
+    「28 个」没跟着改，而文档数字此前**没有任何门禁**——上面两条测试只核对
+    「名单里的名字在 argo 源码有读取点」，核对不到「文档说的条数对不对」。
+    于是 28 一路飘着，直到有人按文档找「预算」找不到入口。
+
+    只做数字对拍，不做文案审校：数字是可判定的，措辞不是。分组名、说明
+    文案仍然靠 review。
+    """
+    count = len(_plugin_allowlist())
+    readme = (ROOT / "packages" / "dsh-plugin" / "README.md").read_text(encoding="utf-8")
+    stated = set(re.findall(r"白名单\s*(\d+)\s*个", readme))
+    assert stated, "README 里没有「白名单 N 个」的表述：门禁失去锚点，请恢复该措辞"
+    wrong = sorted(n for n in stated if int(n) != count)
+    assert not wrong, (
+        f"README 写「白名单 {','.join(wrong)} 个」，实际 ARGO_ENV_SPECS 有 {count} 个。"
+        f" 增删开关时请同步 README（两处：设置界面的「引擎」分区、argoEnv 说明）"
+    )

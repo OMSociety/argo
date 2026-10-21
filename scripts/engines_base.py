@@ -384,11 +384,11 @@ def _build_cli_engine(spec: dict[str, Any]) -> Any:
         args = _resolve(search_args, query, n, mode=mode, **kwargs)
         if not cmd:
             return []
-        # 跨平台解释器解析：Windows 一般没有 python3 这个可执行名
+        # 跨平台解释器：优先 sys.executable（bin/argo 已验证它带 PyYAML）；
+        # PATH 上的 python3 未必是同一解释器，见 tests/test_cli_engine_interpreter.py
         if isinstance(cmd, list) and cmd and cmd[0] == "python3":
             import shutil  # 仅 CLI 引擎解析解释器时需要，不进模块级导入链
-            py3 = shutil.which("python3") or shutil.which("python") or sys.executable
-            cmd[0] = py3
+            cmd[0] = sys.executable or shutil.which("python3") or shutil.which("python")
         for key, tmpl in filter_args.items():
             if kwargs.get(key) not in (None, ""):
                 args += _resolve(tmpl, query, n, mode=mode, **kwargs)
