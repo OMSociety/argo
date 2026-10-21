@@ -128,6 +128,7 @@ from route_lang import (  # noqa: E402
     _SOCIAL_ZH_GENERAL,
     _get_registry,
 )
+from paid_policy import insert_hedge
 from route_combo import (  # noqa: E402
     _expand_local_search,
     _general_fallback,
@@ -585,14 +586,11 @@ def _route_by_domain(ctx: _RouteCtx, domain: dict[str, Any], secondary: list[dic
         is_catch_all=is_catch_all, enabled=enabled)
     if _strong:
         confidence = 0.9
-    # 熔断统一处理 + 槽位回填（2026-10-02，回填逻辑与
-    # 判据见 backfill_after_breaker docstring）
+    # 熔断统一处理 + 槽位回填（判据见 backfill_after_breaker）
     engines_combo = backfill_after_breaker(
         engines_combo, enabled, features=features, query=query,
         skip_aux=_pure_combo, refill_pool=pre_policy_pool)
-    # budget 截断后保持一致 parallel，避免短 combo 仍开多余并行
-    # research 语境例外：子查询跑满 combo（no_early_stop），串行会拖垮
-    # 整条研究管线，强制并行
+    # parallel 与预算后 combo 长度对齐；research 语境强制并行
     if (mode == "fast" and context != "research") or len(engines_combo) <= 1:
         parallel = False
     elif context == "research":
@@ -600,6 +598,8 @@ def _route_by_domain(ctx: _RouteCtx, domain: dict[str, Any], secondary: list[dic
     elif len(engines_combo) <= 2 and not domain.get("parallel", False):
         # 双引擎默认串行，利于 early-stop（答案域）
         parallel = parallel and len(engines_combo) > 2
+
+    engines_combo = insert_hedge(engines_combo, domain.get("name", ""), mode)
 
     return _done(
         engine=engines_combo[0],

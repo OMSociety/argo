@@ -23,7 +23,7 @@
   "anysearch": {
     "label": "AnySearch",
     "qps": 5,
-    "limit": 2000,
+    "limit": 1000,
     "period": "day",
     "cost_per_call": 0.0,
     "cost_unit": "free",
@@ -666,7 +666,7 @@
     "limit": 1000,
     "period": "month",
     "cost_per_call": 0.0,
-    "cost_unit": "free",
+    "cost_unit": "usd",
     "cost_tier": "api",
     "priority": 14
   },
@@ -706,7 +706,7 @@
     "limit": null,
     "period": "second",
     "cost_per_call": 0.0,
-    "cost_unit": "credit",
+    "cost_unit": "usd",
     "cost_tier": "paid",
     "priority": 8
   },
@@ -736,7 +736,7 @@
     "limit": 1000,
     "period": "month",
     "cost_per_call": 0.001,
-    "cost_unit": "credit",
+    "cost_unit": "usd",
     "cost_tier": "free",
     "priority": 50
   },
@@ -2005,8 +2005,8 @@
     "qps": 1,
     "limit": 300,
     "period": "day",
-    "cost_per_call": 1.0,
-    "cost_unit": "request",
+    "cost_per_call": 0.0,
+    "cost_unit": "usd",
     "cost_tier": "free",
     "priority": 45
   },
@@ -2066,7 +2066,7 @@
     "limit": 1000,
     "period": "month",
     "cost_per_call": 0.001,
-    "cost_unit": "credit",
+    "cost_unit": "usd",
     "cost_tier": "api",
     "priority": 5
   },

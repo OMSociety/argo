@@ -182,6 +182,14 @@ class QuotaManager:
                 self._profiles = json.loads(QUOTA_PROFILES_PATH.read_bytes())
             except (json.JSONDecodeError, OSError):
                 self._profiles = {}
+        # 月度预算覆盖（2026-10-21）：只改 profile 的 budget_* 与 period，
+        # 不碰 quota_profiles.json（那是随包发版的派生件）。拼错/无预算的引擎
+        # 不受影响，符合「其他默认不改」。
+        try:
+            import budget as _budget
+            _budget.apply_to_profiles(self._profiles)
+        except Exception:
+            pass
 
     def _load_state(self) -> None:
         if _state_path().exists():
@@ -269,12 +277,18 @@ class QuotaManager:
                 st = self._state.setdefault(engine, {
                     "used": 0, "limit": 0, "calls": [],
                     "errors": 0, "last_reset": now, "total_cost": 0.0,
+                    "cost_used": 0.0,
                 })
                 st["used"] = st.get("used", 0) + credits
                 st.setdefault("calls", []).append(now)
                 if not success:
                     st["errors"] = st.get("errors", 0) + 1
-                st["total_cost"] = st.get("total_cost", 0.0) + self.get_cost_per_call(engine)
+                else:
+                    # 只对成功调用计费：DeepSeek 等按成功请求收费，失败也计入
+                    # 会让预算被网络抖动假消耗（2026-10-21 修）。
+                    _cost = self.get_cost_per_call(engine)
+                    st["cost_used"] = st.get("cost_used", 0.0) + _cost
+                    st["total_cost"] = st.get("total_cost", 0.0) + _cost
                 self._prune_locked(st, now)
 
         self._mutate_locked(_apply)
@@ -304,6 +318,7 @@ class QuotaManager:
             if not isinstance(state, dict):
                 return
             state["used"] = 0
+            state["cost_used"] = 0.0
             state["last_reset"] = now
             argo_paths.atomic_write_json(_state_path(), self._state)
 
@@ -318,9 +333,15 @@ class QuotaManager:
             profile = self._profiles.get(engine, {})
             state = self._state.get(engine, {})
             limit = profile.get("limit")
-            if limit is None:
-                return 1.0
-            return max(0.0, (limit - state.get("used", 0)) / limit)
+            ratios: list[float] = []
+            if limit is not None:
+                ratios.append(max(0.0, (limit - state.get("used", 0)) / limit))
+            budget = profile.get("budget_amount")
+            if budget:
+                ratios.append(max(0.0,
+                                  (float(budget) - float(state.get("cost_used", 0.0)))
+                                  / float(budget)))
+            return min(ratios) if ratios else 1.0
 
     @staticmethod
     def _engine_key_fp(engine: str) -> str:
@@ -460,7 +481,28 @@ class QuotaManager:
                 self._reset_period_locked(engine, now)
                 st = self._state.get(engine) or {}
             limit = (self._profiles.get(engine) or {}).get("limit")
-            return limit is not None and (limit - st.get("used", 0)) <= 0
+            if limit is not None and (limit - st.get("used", 0)) <= 0:
+                return True
+            budget = (self._profiles.get(engine) or {}).get("budget_amount")
+            return budget is not None and float(st.get("cost_used", 0.0)) >= float(budget)
+
+    def is_over_budget(self, engine: str) -> bool:
+        """只判「月度预算是否用完」，不看次数/限频/远端配额。
+
+        调度层用它给显式调用一条可行动的错误（「本月预算已用完 ¥5.00/¥5.00」），
+        与 is_hard_down 的「配额意义上不可用」分开，避免把限流也报成预算。
+        """
+        with self._lock:
+            self._fresh_locked(engine)
+            now = time.time()
+            if self._period_elapsed(engine, now):
+                self._reset_period_locked(engine, now)
+            profile = self._profiles.get(engine) or {}
+            budget = profile.get("budget_amount")
+            if budget is None:
+                return False
+            st = self._state.get(engine) or {}
+            return float(st.get("cost_used", 0.0)) >= float(budget)
 
     def get_current_rpm(self, engine: str) -> float:
         """获取最近 1 分钟的调用速率。"""
@@ -515,6 +557,9 @@ class QuotaManager:
             qr = max(0.0, (limit - used) / limit)
             if qr <= 0:
                 return False
+        budget = profile.get("budget_amount")
+        if budget is not None and float(state.get("cost_used", 0.0)) >= float(budget):
+            return False
         # get_current_rpm 的内联版本（不重复获取锁）
         qps = profile.get("qps")
         if qps is not None:
@@ -560,6 +605,10 @@ class QuotaManager:
                 "total_cost": round(self.get_total_cost(engine), 6),
                 "used": self._state.get(engine, {}).get("used", 0),
                 "limit": profile.get("limit", "∞"),
+                # 月度预算（原生币种）：amount=None 表示未设预算、沿用次数额度
+                "budget": profile.get("budget_amount"),
+                "budget_currency": profile.get("budget_currency"),
+                "cost_used": round((self._state.get(engine) or {}).get("cost_used", 0.0), 6),
                 "cost_tier": profile.get("cost_tier", "free"),
                 "remote_exhausted_until": (
                     round(float(mark["until"])) if mark else None),

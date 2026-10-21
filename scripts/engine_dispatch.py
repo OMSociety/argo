@@ -32,6 +32,7 @@ from cache_guard import (
     is_state_failure_outcome,
 )
 from time_utils import is_time_capable
+from budget import over_budget_error
 from dispatch_result import DispatchResult, summarize_dispatch
 from query_signals import (
     cumulative_sufficient,
@@ -461,6 +462,14 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
                 outcome["status"] = "ok-cached" if eng_hit else "no-results-cached"
                 return eng, eng_hit, outcome, lat
 
+        # 预算：缓存命中不收费，放在缓存之后；判定/文案在 budget.py。
+        _budget_err = over_budget_error(eng)
+        if _budget_err:
+            lat = int((_now() - t_eng) * 1000)
+            outcome = classify_outcome(eng, [], lat, status_hint="skipped-budget")
+            outcome["detail"] = _budget_err
+            return eng, [], outcome, lat
+
         # 网络调用
         # 答案型域（early_min 存在，1 条快照即可交付）的慢源收紧超时：
         # FRED/Eurostat 这类 timeout=10s 的源一旦挂掉就阻塞整条串行路径，
@@ -585,21 +594,15 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
         raw_results[eng] = res
         engine_outcomes.append(outcome)
         engine_latency[eng] = lat
-        # 完成时刻（相对本次编排起点）：wasted 的真值来源，见函数尾部的记账
         engine_done_ms[eng] = (_now() - _budget_base) * 1000.0
         if outcome["status"] in _CONTRIBUTING_STATUS:
             contributed_ms.append(engine_done_ms[eng])
 
     engine_done_ms: dict[str, float] = {}
     contributed_ms: list[float] = []
-    # 被编排主动**弃置**的引擎（早停收工时仍在跑的）已经花掉的墙钟。
-    # 这些时间既没换来结果、也没拖住返回（函数当刻就返回了），此前只把
-    # lat_ms 记进 engine_latency 就丢掉——「答案就绪后还在等」这个口径在
-    # 有界并发下恒为 0（最后完成的引擎就是触发早停的那个，wall==useful），
-    # 仪表盘因此永远显示 0，无法据此调 tail_grace / hedge / 并发上限。
+    # 早停弃置引擎已花的墙钟（并行资源浪费，不是用户等待）；记账口径见
+    # dispatch_result 模块注释。
     abandoned_ms: list[float] = []
-    # 首个「可交付」与首个「够用」的时刻（相对本次编排起点）。前者在 no_early
-    # 域里就是唯一能算出尾等待的锚点；后者是早停判据真正成立的那一瞬。
     first_result_at: float | None = None
     first_sufficient_at: float | None = None
     # 配额批次的构造在调用方：flush 必须发生在**最后一个 _ingest 之后**，
@@ -961,11 +964,8 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
                 tail_grace_fn=straggler_tail_fn):
             early_stopped = True
 
-
-
     budget_total_ms = int(budget_s * 1000) if budget_s is not None else None
-    # 墙钟账拆成两组量（真源与历史见 dispatch_result 模块注释）：tail 指向
-    # 收工时机，abandoned 指向并发/对冲预算。旧 wasted_ms 保留为别名。
+    # 记账口径见 dispatch_result 模块注释；wasted_ms 保留为 abandoned 别名。
     wall_ms = int((_now() - _budget_base) * 1000)
     _acc = summarize_dispatch(
         wall_ms=wall_ms, contributed_ms=contributed_ms,

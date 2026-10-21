@@ -106,6 +106,8 @@ def _route_state_fingerprint() -> str:
     # LEGACY 是同一类开关（改通用兜底链的成员），一并入指纹，避免只修一个入口。
     parts.append("lead=" + (os.environ.get("ARGO_GENERAL_FALLBACK_LEAD") or ""))
     parts.append("legacy=" + (os.environ.get("ARGO_GENERAL_FALLBACK_LEGACY") or ""))
+    # 付费对冲开关同样改变 combo；不纳入指纹会让 off/auto 在缓存命中时静默不生效。
+    parts.append("paid=" + (os.environ.get("ARGO_PAID_SEARCH") or ""))
     return "|".join(parts)
 
 

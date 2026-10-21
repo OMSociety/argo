@@ -20,6 +20,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime
 from typing import Any
 
 from engine_env import get_env
@@ -69,6 +70,42 @@ def _zhihu_error_item(code: Any, message: Any) -> dict[str, Any]:
     return {"error": text, "source": "zhihu_global"}
 
 
+def _zhihu_epoch(value: Any) -> int | None:
+    """ISO 时间窗 → 秒级时间戳；空/不可解析返回 None（不阻断检索）。"""
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        return int(datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp())
+    except (TypeError, ValueError):
+        return None
+
+
+_DB_OPERATOR_RE = re.compile(r"(?:^|\s)db:(all|realtime|static)(?=\s|$)", re.I)
+
+
+def _parse_db_operator(query: str) -> tuple[str, str]:
+    """解析 `db:realtime|static|all` 查询操作符，返回 (db, 剩余查询)。"""
+    match = _DB_OPERATOR_RE.search(query or "")
+    if not match:
+        return "all", query
+    db = match.group(1).lower()
+    rest = _DB_OPERATOR_RE.sub(" ", query, count=1).strip()
+    return db, rest or (query or "")
+
+
+def _build_zhihu_publish_filter(since: Any, until: Any) -> str:
+    """把 --since/--until 下推成官方 Filter（publish_time 支持 >=/<=）。"""
+    since_ts = _zhihu_epoch(since)
+    until_ts = _zhihu_epoch(until)
+    parts = []
+    if since_ts is not None:
+        parts.append(f"publish_time>={since_ts}")
+    if until_ts is not None:
+        parts.append(f"publish_time<={until_ts}")
+    return " AND ".join(parts)
+
+
 def _build_zhihu_global_engine(spec: dict[str, Any]) -> Any:
     """知乎开放平台全网搜索（developer.zhihu.com global_search）。
 
@@ -92,12 +129,20 @@ def _build_zhihu_global_engine(spec: dict[str, Any]) -> Any:
 
         # 解析 site:/host: 站点限定语法 → Filter: host=="..."（实现单点在 cn）
         filter_expr, search_query = _parse_site_filter(query)
+        # db:realtime|static|all：官方 SearchDB 选择（默认 all）
+        db, search_query = _parse_db_operator(search_query or query)
+        # --since/--until → 官方 publish_time 过滤（文档 2026-10 正式定义）
+        _time_filter = _build_zhihu_publish_filter(kwargs.get("since"),
+                                                   kwargs.get("until"))
+        if _time_filter:
+            filter_expr = (f"{filter_expr} AND {_time_filter}"
+                           if filter_expr else _time_filter)
 
-        filtered = bool(filter_expr or kwargs.get("since"))
+        filtered = bool(filter_expr or db != "all")
         params: dict[str, Any] = {
             "Query": search_query or query,
             "Count": str(_ZHIHU_COUNT_MAX if filtered else min(int(n or 5), _ZHIHU_COUNT_MAX)),
-            "SearchDB": "all",
+            "SearchDB": db,
         }
         if filter_expr:
             params["Filter"] = filter_expr

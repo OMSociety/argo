@@ -3,7 +3,7 @@
 > 本文受门禁保护（tests/test_usage_doc_gates.py）：文中命令必须存在于
 > bin/argo 分发表、`ARGO_*` 开关必须代码实存。改命令先改代码，本文随行。
 
-## 命令总览（26 个，唯一事实=bin/argo 分发表）
+## 命令总览（28 个，唯一事实=bin/argo 分发表）
 
 | 命令 | 一句话 |
 |------|--------|
@@ -32,6 +32,8 @@
 | `argo paths` | 路径自省与状态目录自检 |
 | `argo daemon` | 常驻进程管理（search 自动走 UDS 快路径，见「argo daemon」节） |
 | `argo stats` | 使用日志与反馈状态（本地使用日志只读出口） |
+| `argo budget` | 按引擎的月度预算（原生币种；list/set/unset） |
+| `argo quota` | 知乎开放平台当日额度（官方 API，不消耗业务额度） |
 | `argo local-image` | 本地图片检索（Vision 索引；默认关，见「图片检索」节） |
 
 > SKILL.md 只留核心命令；本页是参数大全与输出字段说明。
@@ -584,13 +586,18 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 | `ARGO_YDC_API_KEY` | 对应引擎/服务的凭据（you.com） | 缺密钥=该源跳过或降级 |
 | `ARGO_ZHIHU_ACCESS_SECRET` | 对应引擎/服务的凭据 | 缺密钥=该源跳过或降级 |
 
-### 行为调参（23）
+### 行为调参（28）
 
 | 变量 | 作用 | 默认/备注 |
 |------|------|----------|
 | `ARGO_ADAPTIVE_GRACE` | 对冲宽限窗按主引擎历史 P75 自适应收窄（只缩不放） | 默认开；=0 关闭（回固定 base 窗，作消融对照）。v2 冻结期 A/B 曾判未证实收益，c52b7d4 起转默认启用 |
 | `ARGO_GENERAL_FALLBACK_LEGACY` | 通用兜底链退回旧顺序（anysearch → local_bing，不含 octen） | 默认关；=1 开启。2026-10-17 交错 A/B：octen 第二顺位在 anysearch 抖动窗口把 p90 3273→1614ms、max 6266→1928ms、错误 9→0，健康窗口中位无差 |
 | `ARGO_GENERAL_FALLBACK_LEAD` | 通用兜底链领队覆盖（传引擎名，提到首位） | 默认空=按 engine_policy 常量（octen 领队）；=anysearch 复现 2026-10-21 之前的顺位。用于交错 A/B，不改默认值即可对拍 |
+| `ARGO_PAID_SEARCH` | 付费搜索对冲开关 | 默认 `auto`：仅在 english_tech / intl_news_flash 的付费位插入 DeepSeek（预算用完回落 TinyFish）；`off` 关闭。见 `scripts/paid_policy.py` |
+| `ARGO_BUDGET_DEEPSEEK_SEARCH` | DeepSeek 月度预算（元） | 默认 5（≈1000 次成功调用）；0=关闭自动使用。也可用 `argo budget set deepseek_search 5` 写共享文件 |
+| `ARGO_BUDGETS_JSON` | 预算整份 JSON 覆盖 | 高级/测试用；优先级高于预算文件，例 `{"deepseek_search":{"amount":5,"currency":"CNY","period":"month"}}` |
+| `ARGO_BUDGET_FILE` | 预算文件路径覆盖 | 默认 `~/.config/argo/budgets.json`；多环境隔离时用 |
+| `ARGO_PAID_BUDGET_BYPASS` | 单次绕过月度预算 | =1 时显式/自动调用都不检查预算；用于临时排障，不改变配置 |
 | `ARGO_ADAPTIVE_TAIL` | 尾宽按 backup 引擎历史 P75 分层（快源等满/慢源早收工） | 默认关；=1 开启（2026-10-16 三轮交错 A/B 未证实收益，对拍记录在本机 docs-local/调度对拍_尾宽分层与并发_2026-10-16.md，属本地归档不随发布件分发） |
 | `ARGO_ADMISSION_TTL_S` | 行为阈值/预算调参 | 默认经实测校准，勿轻动 |
 | `ARGO_DAEMON` | 允许 search 在 daemon 不在位时自动后台拉起（显式 opt-in） | 默认关；=1 开启。`argo daemon start` 手动启动的实例不受此开关影响；`ARGO_NO_DAEMON=1` 优先 |
@@ -699,6 +706,30 @@ Crossref+OpenAlex 免 key。MCP 工具 `argo_cite`（dois 数组 + style）。
 - `argo job "query" --city 成都`：BOSS/猎聘/智联/前程无忧/597/今日招聘并发聚合。
 - `argo paths [--check] [--migrate]`：状态目录/密钥文件位置自省与本机自检。
 - `argo mcp {{status|inject|undo}}`：多客户端 MCP 一键注入/诊断/还原。
+
+## argo budget — 月度预算（原生币种）
+
+```bash
+argo budget list                 # 预算 + 本月已用 + 可用状态
+argo budget set deepseek_search 5 --currency CNY --period month
+argo budget unset deepseek_search
+```
+
+预算存 `~/.config/argo/budgets.json`（`ARGO_BUDGET_FILE` 可覆盖），`quota.py`
+启动时读取；只对配置了预算的引擎生效，其他引擎沿用 `quota_profiles.json`
+的次数额度。默认只有 DeepSeek ¥5/月（≈1000 次成功调用）。预算用完时自动
+路由剔除、显式调用返回可读错误；`ARGO_PAID_BUDGET_BYPASS=1` 单次放行。
+
+## argo quota — 知乎开放平台当日额度
+
+```bash
+argo quota            # 人读表：全网/知乎/热榜/直答/知识库/用户数据/创作
+argo quota --json     # 机器读
+argo quota --refresh  # 跳过 10 分钟缓存
+```
+
+数据源 `GET /api/v1/quota`（官方，不消耗业务额度），按北京时间 00:00 重置；
+同一账号多个 Access Secret 共用额度。缓存 10 分钟。
 
 ## 日志与反馈（本地使用日志 + stats 读出口）
 

@@ -31,7 +31,7 @@ qps: 1
 period: month
 limit: 1000
 cost_per_call: 0.001
-cost_unit: credit
+cost_unit: usd
 
 # 可选密钥（OPTIONAL_ENV_ENGINES）：未配置时不发送 Authorization（keyless 直连免费层）
 headers:

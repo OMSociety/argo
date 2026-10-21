@@ -498,6 +498,8 @@ Usage:
   argo paths [--check] [--migrate]     路径自省 / 本机自检 / 搬历史状态到惯例目录
   argo daemon    {{start|status|stop}}   常驻进程（search 自动走 UDS 快路径，消每次 ~85ms 启动+import；ARGO_NO_DAEMON=1 关）
   argo stats [-n N]                    使用日志与反馈状态（本地使用日志只读出口）
+  argo budget  {{list|set|unset}}        按引擎的月度预算（原生币种；默认 DeepSeek ¥5/月）
+  argo quota   [--json] [--refresh]    知乎开放平台当日额度（官方 API，不消耗业务额度）
 
 Common flags: --json --mode {{fast|auto|deep|budget}} --max-results N --depth {{fast|balanced|deep}}
 
@@ -595,6 +597,10 @@ def main():
         "mcp":       ("mcp_setup.py",  []),
         # stats：本地使用日志只读出口（日志与反馈的规范化入口，见 references/usage.md）
         "stats":     ("stats_cli.py",  ["--json"]),
+        # budget：按引擎的月度预算（原生币种）；quota 启动时读取并强制执行
+        "budget":    ("budget_cli.py", []),
+        # quota：知乎开放平台当日额度（官方 /api/v1/quota，不消耗业务额度）
+        "quota":     ("zhihu_quota.py", []),
         # paths：路径自省（状态目录/密钥文件到底解析到了哪里）。支持类问题的
         # 第一问，且不必进 MCP 工具面（与 answer/watch 同类）。
         "paths":     ("argo_paths.py", []),

@@ -6,7 +6,7 @@
      读取方保持标准 os.environ 直读不动，入口同步一份过去；
   2. ja/ko 查询 anysearch 前二注入（策略/预算截断之后，防 must_keep 换位
      挤出）；english_tech/chinese_general 升权；
-  3. quota_profiles 保持一致服务商真实计算方式（zhihu 5000/anysearch 2000/
+  3. quota_profiles 保持一致服务商真实计算方式（zhihu 5000/anysearch 1000/
      zhihu_global 5000）+ null 引擎计数周期归零。
 """
 from __future__ import annotations
@@ -142,7 +142,7 @@ class TestMultilingualAnysearchInjection(unittest.TestCase):
 
 class TestQuotaProfilesAligned(unittest.TestCase):
     """保持一致服务商面板真实计算方式（2026-09-06）：知乎搜索 5000/天、AnySearch
-    2000/天、知乎全网搜 5000/天。修复前 zhihu=1000 会在本地提前封禁
+    1000/天（2026-10-21 按默认额度收敛）、知乎全网搜 5000/天。修复前 zhihu=1000 会在本地提前封禁
     （浪费 80% 额度）、anysearch=null 则完全没有次数限制保护。"""
 
     def setUp(self):
@@ -168,7 +168,7 @@ class TestQuotaProfilesAligned(unittest.TestCase):
         _quota_mod.QUOTA_STATE_PATH = self._orig_state_path
 
     def test_limits(self):
-        cases = {"zhihu": 5000, "anysearch": 2000, "zhihu_global": 5000}
+        cases = {"zhihu": 5000, "anysearch": 1000, "zhihu_global": 5000}
         for eng, limit in cases.items():
             p = self.qm._profiles.get(eng, {})
             self.assertEqual(p.get("limit"), limit, eng)
