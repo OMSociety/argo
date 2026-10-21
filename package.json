@@ -16,7 +16,6 @@
     "argo",
     "npx"
   ],
-  "private": true,
   "license": "Apache-2.0",
   "author": "Argo Search",
   "repository": {
@@ -57,6 +56,7 @@
     "docs/assets/",
     "docs/engines/",
     "cordis.patch.yml",
+    "mcp/clients.yaml",
     "packages/dsh-plugin/",
     "README.md",
     "SKILL.md",
