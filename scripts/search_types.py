@@ -1,24 +1,44 @@
 #!/usr/bin/env python3
-"""search_types.py — 统一类型系统（已废弃，勿接入）
+"""search_types.py — 统一类型系统（轻量记录 + 零依赖 dataclass 替代）。
 
-早期设计声明的统一 schema 层，从未被任何模块 import（grep 全仓库无引用）：
-  - 引擎输出直接透传 dict，运行时防御在 engines_base/safe_search 与
-    search.py 的 execute_search 里完成
-  - 保留本文件仅避免旧版外部脚本 import 断裂；新代码禁止使用
+`slot_record` / `slot_field` / `slot_replace` 是为热路径准备的
+`@dataclass` / `field` / `replace` 零依赖替代：`dataclasses` 的导入链是
+`dataclasses → inspect → tokenize → dis`（实测 ~8ms），而 `SearchResult`
+这类记录在每次搜索都要构造，导入成本全落在固定开销上。
+
+兼容面：挂 `__dataclass_fields__`，标准库的 `dataclasses.replace` /
+`is_dataclass` / `fields` 对实例照常工作（`_field_type` 惰性解析）。
+
+仍不建议新代码接入本模块的 `SearchResult`（引擎输出直接透传 dict，运行时
+防御在 engines_base/safe_search 里）；这里的价值在**替代实现本身**。
 """
 from __future__ import annotations
 
+import sys
 from enum import Enum
 from typing import Any
 
 
 class _FieldMeta:
-    __slots__ = ("name", "init", "_field_type")
+    """`__dataclass_fields__` 的兼容描述子。
+
+    `dataclasses.replace` 只读 `.init`；`dataclasses.fields` 会按
+    `_field_type is dataclasses._FIELD` 过滤，所以 `_field_type` 做成**惰性
+    属性**：dataclasses 已被 import 时（也就是有人真去调 `fields()` 时）
+    返回真哨兵，没 import 时返回 None。热路径因此仍然零导入——`_FIELD`
+    只在 dataclasses 已经进场后才去取它。
+    """
+
+    __slots__ = ("name", "init")
 
     def __init__(self, name: str) -> None:
         self.name = name
         self.init = True
-        self._field_type = None
+
+    @property
+    def _field_type(self) -> Any:
+        dc = sys.modules.get("dataclasses")
+        return getattr(dc, "_FIELD", None) if dc is not None else None
 
 
 class _SlotField:
@@ -33,14 +53,26 @@ def slot_field(*, default_factory: Any) -> Any:
     return _SlotField(default_factory)
 
 
+def _class_annotations(cls: Any) -> dict:
+    """读类的注解，兼容 PEP 649 惰性注解。
+
+    `cls.__dict__["__annotations__"]` 在 3.14 的惰性注解下**可能根本不存在**
+    （注解由 `__annotate__` 描述子按需计算，不进类字典）——此时取到的是
+    `{}`，类会静默变成「零字段」，实例化时报一个与真因毫不相干的
+    TypeError。必须走 `getattr` 触发描述子。
+    """
+    return getattr(cls, "__annotations__", None) or {}
+
+
 def slot_record(_cls: Any = None, *, frozen: bool = False) -> Any:
     """零依赖 @dataclass 替代（省去 import dataclasses→inspect→tokenize→dis ~8ms）。
 
     挂上 `__dataclass_fields__` 兼容描述子，标准库 `dataclasses.replace` /
-    `dataclasses.is_dataclass` 对实例照常工作，但热路径自身零导入。
+    `dataclasses.is_dataclass` / `dataclasses.fields` 对实例照常工作，但热
+    路径自身零导入（`_field_type` 惰性解析，只在 dataclasses 已进场时取哨兵）。
     """
     def _wrap(cls: Any) -> Any:
-        ann = list(cls.__dict__.get("__annotations__", {}).keys())
+        ann = list(_class_annotations(cls).keys())
         defaults = {k: cls.__dict__[k] for k in ann if k in cls.__dict__}
 
         def __init__(self: Any, *args: Any, **kwargs: Any) -> None:
