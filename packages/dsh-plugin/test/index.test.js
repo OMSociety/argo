@@ -1336,3 +1336,37 @@ test('pool: already-aborted signal never spawns a connection', async () => {
   )
   assert.equal(existsSync(marker), false, '已取消的调用不得 spawn 子进程')
 })
+
+test('pool: request timeout evicts the wedged connection so the next call spawns a fresh one', async () => {
+  stubEnv({ ARGO_STUB_DELAY_MS: '2000' })
+  const tool = stubTool({ nativeTimeoutMs: 120, searchConcurrency: 1 })
+  await assert.rejects(
+    () => tool.execute({ query: 'slow' }),
+    (err) => err.code === 'ARGO_TIMEOUT',
+  )
+  assert.equal(spawnCount(), 1)
+  process.env.ARGO_STUB_DELAY_MS = '0'
+  const res = await tool.execute({ query: 'fast-after-timeout' })
+  assert.equal(tool.output.render({}, res)[0].text, 'pooled-ok')
+  assert.equal(spawnCount(), 2, '超时连接必须被关闭摘除，下一次调用应新建连接而非排在死连接后')
+})
+
+test('makeNativeTool: WEB_ABORTED from pool is rethrown without falling back to single-shot spawn', async () => {
+  stubEnv({ ARGO_STUB_DELAY_MS: '2000' })
+  let spawned = 0
+  const tool = makeNativeTool(
+    { searchCommand: process.execPath, searchArgs: [STUB_SERVER], nativeTimeoutMs: 5000 },
+    'argo_search',
+    {
+      mcpCall: nativeViaMcpPool,
+      run: async () => { spawned += 1; return '{}' },
+    },
+  )
+  const controller = new AbortController()
+  setTimeout(() => controller.abort(), 60)
+  await assert.rejects(
+    () => tool.execute({ query: 'abort-me' }, { signal: controller.signal }),
+    (err) => err.code === 'WEB_ABORTED',
+  )
+  assert.equal(spawned, 0, '主动取消不得回退单发重跑')
+})

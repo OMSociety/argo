@@ -603,9 +603,12 @@ function createMcpConnection(options) {
           // 带可判别的 code：调用方要能区分「这次调用超时」与「连接坏了」。
           // 超时不是传输故障——原样重发只会把同一次慢调用再跑一遍（双倍引擎
           // 调用与配额），见 makeNativeTool.execute 对它的处理。
+          // 同时必须关闭并摘除当前连接：MCP 服务端是单线程同步顺序读 stdin，
+          // 超时意味着该子进程仍卡在上一条慢调用里，留在池中会让后续请求排进死队。
           const err = new Error(`argo MCP request timed out after ${timeoutMs}ms: ${method}`)
           err.code = 'ARGO_TIMEOUT'
           rej(err)
+          close()
         }, timeoutMs)
         if (reqTimer.unref) reqTimer.unref()
       }
@@ -1752,7 +1755,24 @@ async function nativeViaMcpPool(config, kind, argsObj, timeoutMs, signal) {
     initMs: timeoutMs,
     credentials: config.credentials,
   }, signal)
-  const result = await conn.request('tools/call', { name: kind, arguments: argsObj }, timeoutMs)
+  const result = await new Promise((resolve, reject) => {
+    const onAbort = () => reject(argoAborted())
+    if (signal !== undefined) {
+      if (signal.aborted) {
+        conn.release()
+        reject(argoAborted())
+        return
+      }
+      signal.addEventListener('abort', onAbort, { once: true })
+    }
+    conn.request('tools/call', { name: kind, arguments: argsObj }, timeoutMs).then((value) => {
+      if (signal !== undefined) signal.removeEventListener('abort', onAbort)
+      resolve(value)
+    }, (err) => {
+      if (signal !== undefined) signal.removeEventListener('abort', onAbort)
+      reject(err)
+    })
+  })
   if (result?.isError) {
     const body = result?.content?.[0]?.text
     throw argoToolError(typeof body === 'string' && body !== ''
@@ -1823,12 +1843,13 @@ export function makeNativeTool(config, kind, deps = {}) {
         try {
           return { stdout: await mcpCall(config, kind, argsObj, timeoutMs, signal) }
         } catch (err) {
-          // 这两类错误都表示「调用确实到达了服务器、并且已经跑完」，重发只会
-          // 把同一次注定失败（或注定很慢）的调用再跑一遍：
+          // 这三类错误都表示「调用已明确终结（工具报错 / 已花满超时 / 调用方主动取消）」，
+          // 重发只会把注定失败、很慢或已取消的调用再起一个子进程跑一遍：
           //   ARGO_TOOL_ERROR —— 工具跑过了、它说不行；
-          //   ARGO_TIMEOUT    —— 这次调用超时了，引擎调用与配额已经花掉。
+          //   ARGO_TIMEOUT    —— 这次调用超时了，引擎调用与配额已经花掉；
+          //   WEB_ABORTED     —— 调用方已取消，不应再派生单发进程。
           // 其余错误（进程崩溃 / 入口不支持 stdio）才是传输层故障，回退单发。
-          if (err?.code === 'ARGO_TOOL_ERROR' || err?.code === 'ARGO_TIMEOUT') throw err
+          if (err?.code === 'ARGO_TOOL_ERROR' || err?.code === 'ARGO_TIMEOUT' || err?.code === 'WEB_ABORTED') throw err
           // 常驻连接不可用（进程崩溃 / 入口不支持 stdio）→ 回退单发，保证功能不丢
         }
       }
