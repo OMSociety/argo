@@ -159,6 +159,28 @@ domains:
   - (?i)(sec\s+filing|edgar|form\s+10-?[kq]|proxy\s+statement)
   - (招股书|财报申报|年报申报|季报申报|证券申报|申报文件)
   primary: sec_edgar
+- desc: 港股公告（港交所披露易一手公告）
+  engines_combo:
+  - hkex
+  - anysearch
+  fallback: anysearch
+  name: hk_filings
+  parallel: false
+  patterns:
+  - (?i)(港股|港交所|披露易|hkex|H股|红筹|同股不同权)
+  - (?i)\b\d{5}\.HK\b
+  primary: hkex
+- desc: 商品期货行情（上期所官方日行情）
+  engines_combo:
+  - shfe
+  - anysearch
+  fallback: anysearch
+  name: futures_market
+  parallel: false
+  patterns:
+  - (沪铜|沪铝|沪锌|沪铅|沪镍|沪锡|沪金|沪银|螺纹钢|热轧卷板|热卷|黄金期货|白银期货|原油期货|上期所|上海期货交易所)
+  - (?i)(\bSHFE\b|copper\s+futures|crude\s+oil\s+futures|rebar\s+futures)
+  primary: shfe
 - desc: 美股结构化财务（SEC XBRL companyfacts：营收/净利/资产/EPS 年度值）
   engines_combo:
   - sec_companyfacts
@@ -228,6 +250,7 @@ domains:
   # 反向），不足以单独收工，强制 eastmoney 并行补位；3 条以上才停。
   engines_combo:
   - fx_rate
+  - cfets
   - eastmoney
   - frankfurter
   - anysearch
@@ -733,6 +756,7 @@ domains:
 - desc: 加密货币/币种查询
   engines_combo:
   - coingecko
+  - defillama
   - anysearch
   fallback: anysearch
   name: crypto_search
@@ -740,6 +764,7 @@ domains:
   patterns:
   - (?i)(比特币|以太坊|莱特币|狗狗币|加密货币|虚拟货币|数字货币|币价|币种|山寨币|空气币|代币|区块链|挖矿|钱包地址|token 经济|稳定币)
   - (?i)\b(bitcoin|ethereum|btc|eth|crypto|altcoin|defi|nft|blockchain|coin)\b
+  - (?i)(\btvl\b|总锁仓|锁仓量|链上资金|协议收入|defillama)
   primary: coingecko
 - desc: 包管理器/语言包查询（PyPI/npm/crates/Docker）
   engines_combo:
@@ -1466,8 +1491,9 @@ domains:
   - (?i)\b(API|api)\b
   - (?i)\b(Rust|Python|JavaScript|TypeScript|React|Vue|Node|Docker|Kubernetes|asyncio)\b
   primary: octen
-- desc: 公司注册/尽调（OpenCorporates 全球公司注册）
+- desc: 公司注册/尽调（GLEIF 法人主数据 + OpenCorporates 注册库）
   engines_combo:
+  - gleif
   - opencorporates
   - cninfo
   - baidu_baike
@@ -1476,6 +1502,7 @@ domains:
   parallel: false
   patterns:
   - (?i)(公司注册|注册号|统一社会信用代码|工商信息|股东|法人|注册资本|经营范围|尽调|工商登记|企业信息)
+  - (?i)(\bLEI\b|法人识别码|法人标识|法人主数据|legal\s+entity\s+identifier)
   - (?i)\b(company\s*registration|incorporation|registered\s+number|business\s+registry|company\s+search|corporate\s+records)\b
   - (?i)(会社|法人|登記|기업|법인|등록)
   primary: opencorporates

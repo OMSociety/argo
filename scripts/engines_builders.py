@@ -85,6 +85,12 @@ from engines_builders_batch13 import (
     _build_sec_companyfacts_engine,
     _build_frankfurter_engine,
 )
+from engines_builders_batch14 import (
+    _build_hkex_engine,
+    _build_shfe_engine,
+    _build_cfets_engine,
+    _build_defillama_engine,
+)
 from engines_builders_data import (
     _build_open_library_engine,
     _build_weread_engine,

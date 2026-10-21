@@ -6,8 +6,8 @@
 
 ## 一、总量与口径
 
-- **收录 264 个源**（config.yaml + `engines/specs/*.yaml` 声明合并后的总数）
-- **开箱可用 227 个**：不需要你配任何密钥或装额外工具，自动路由就会用上
+- **收录 269 个源**（config.yaml + `engines/specs/*.yaml` 声明合并后的总数）
+- **开箱可用 232 个**：不需要你配任何密钥或装额外工具，自动路由就会用上
 - **需自备密钥 22 个**：`bocha`、`bocha_ai`、`byted`、`deepseek_search`、`em_miaoxiang`、`exa`、`keenable`、`octen`、`parallel`、`qweather`、`seltz`、`tavily`、`tinyfish`、`tinyfish_news`、`tinyfish_paper`、`unpaywall`、`weread`、`you`、`zhihu`、`zhihu_global`、`zhihu_hot`、`zhihu_user`（没配也不影响搜索，路由会跳过）
 - **需装后端工具 3 个**：`reddit`、`twitter`、`xiaohongshu`（装好并登录后即可用）
 - **已停用 12 个**：`brave`、`digup`、`europeana`、`felo`、`jikan`、`local_goodreads`、`metaso`、`nbs_stats`、`realtime_index`、`searxng`、`soilgrids`、`wolframalpha`
@@ -26,7 +26,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 
 ## 二、费用与密钥：哪些白用、哪些要钱
 
-- **免费档 250 个**（含已停用）：无需密钥，或只需免费注册的密钥；其中 13 个要自备密钥（免费额度）：em_miaoxiang、keenable、qweather、searxng、tinyfish、tinyfish_news、tinyfish_paper、unpaywall、weread、wolframalpha、zhihu、zhihu_hot、zhihu_user
+- **免费档 255 个**（含已停用）：无需密钥，或只需免费注册的密钥；其中 13 个要自备密钥（免费额度）：em_miaoxiang、keenable、qweather、searxng、tinyfish、tinyfish_news、tinyfish_paper、unpaywall、weread、wolframalpha、zhihu、zhihu_hot、zhihu_user
 - **计费档 14 个**（下表逐个列出，档位取自各源自己的 `cost_tier` 声明）
 
 | 引擎 | 档位 | 是否进自动路由 | 需自备密钥 |
@@ -81,7 +81,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 
 | 引擎 | 状态 | 费用 | 频率上限 | 需自备密钥 | 什么时候用到 | 说明 |
 |---|---|---|---|---|---|---|
-| `anysearch` | 可直接用 | 免费 | 1000/天 | — | 域 ai_model、域 book_search、域 chinese_general、域 claim_check、域 code_search、域 crypto_search、域 dataset_search、域 earth_science、域 energy_grid、域 english_tech、域 financial_news、域 fund_query、域 fx_query、域 game_search、域 hackernews_search、域 image_search、域 japan_law、域 kor_law、域 law_text、域 legal、域 lifecycle_search、域 local_code、域 local_general、域 macro_data、域 medical、域 meme_slang、域 outbreak_health、域 package_intel、域 prediction_market、域 redskill_search、域 rfc_search、域 sec_filings、域 security_search、域 semantic_discovery、域 shopping、域 skill_search、域 soil_agri、域 sports_search、域 stackoverflow_search、域 stock_query、域 ths_hot_search、域 trade_stats、域 transport_rt、域 us_fundamentals、域 us_legal、域 us_stock、域 v2ex_search、域 vehicle_data、域 wechat_search、域 wenshu_query、域 world_news、域 zhihu_content、深度研究 boost、语义画像命中、通用兜底链 | 通用搜索主力，进程内 JSON-RPC（HttpClient），零 token |
+| `anysearch` | 可直接用 | 免费 | 1000/天 | — | 域 ai_model、域 book_search、域 chinese_general、域 claim_check、域 code_search、域 crypto_search、域 dataset_search、域 earth_science、域 energy_grid、域 english_tech、域 financial_news、域 fund_query、域 futures_market、域 fx_query、域 game_search、域 hackernews_search、域 hk_filings、域 image_search、域 japan_law、域 kor_law、域 law_text、域 legal、域 lifecycle_search、域 local_code、域 local_general、域 macro_data、域 medical、域 meme_slang、域 outbreak_health、域 package_intel、域 prediction_market、域 redskill_search、域 rfc_search、域 sec_filings、域 security_search、域 semantic_discovery、域 shopping、域 skill_search、域 soil_agri、域 sports_search、域 stackoverflow_search、域 stock_query、域 ths_hot_search、域 trade_stats、域 transport_rt、域 us_fundamentals、域 us_legal、域 us_stock、域 v2ex_search、域 vehicle_data、域 wechat_search、域 wenshu_query、域 world_news、域 zhihu_content、深度研究 boost、语义画像命中、通用兜底链 | 通用搜索主力，进程内 JSON-RPC（HttpClient），零 token |
 | `firecrawl` | 可直接用 | 免费 | 1000/月 | — | 域 semantic_discovery、通用兜底链 | Firecrawl 云搜索（search+全文markdown，JS渲染/学术/PDF垂直，keyless 免费层 1000 credits/月） |
 | `lieu` | 可直接用 | 免费 | 不限 | — | 域 semantic_discovery、语义画像命中 | webring 专用搜索（只索引加入 webring 的小众站点，HTML 解析） |
 | `local_baidu` | 可直接用 | 免费 | 不限 | — | 语义画像命中、通用兜底链 | 百度本地 |
@@ -207,13 +207,14 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 | `local_goodreads` | 已停用 | 免费 | 不限 | — | 域 book_search | Goodreads本地 |
 | `weread` | 需自备密钥 | 免费 | 不限 | ARGO_WEREAD_API_KEY | 域 book_search | 微信读书图书搜索（中文书目/评分/在读，需 WEREAD_API_KEY） |
 
-### 百科 / 实体（18）
+### 百科 / 实体（19）
 
 | 引擎 | 状态 | 费用 | 频率上限 | 需自备密钥 | 什么时候用到 | 说明 |
 |---|---|---|---|---|---|---|
 | `baidu_baike` | 可直接用 | 免费 | 不限 | — | 域 cn_encyclopedia、域 company_search、域 entity_search、域 org_entity | 百度百科词条（suggest + OpenAPI 卡片，免认证） |
 | `dnb` | 可直接用 | 免费 | 不限 | — | 域 book_search、语义画像命中 | 德语出版物最全书目（SRU/RDF XML） |
 | `free_dictionary` | 可直接用 | 免费 | 不限 | — | 域 dictionary_search、语义画像命中 | dictionaryapi.dev 英英词典（免认证，响应为数组） |
+| `gleif` | 可直接用 | 免费 | 不限 | — | 域 company_search、域 org_entity | GLEIF 全球法人 LEI 注册库（法定名称/注册地/状态/母公司，免 key） |
 | `local_wikipedia` | 可直接用 | 免费 | 不限 | — | 经 local_search 展开 | Wikipedia本地 |
 | `local_wikiquote` | 可直接用 | 免费 | 不限 | — | 经 local_search 展开 | Wikiquote本地 |
 | `local_wiktionary` | 可直接用 | 免费 | 不限 | — | 经 local_search 展开 | Wiktionary本地 |
@@ -271,6 +272,26 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 | `pypi` | 可直接用 | 免费 | 不限 | — | 域 package_search | PyPI 包查询（/pypi/{name}/json 精确解析，免认证） |
 | `stackoverflow` | 可直接用 | 免费 | 300/天 | — | 域 stackoverflow_search、域 web_docs | Stack Overflow（Stack Exchange API，编程问答） |
 
+### 行情 / 资金（15）
+
+| 引擎 | 状态 | 费用 | 频率上限 | 需自备密钥 | 什么时候用到 | 说明 |
+|---|---|---|---|---|---|---|
+| `cninfo` | 可直接用 | 免费 | 不限 | — | 域 company_search、域 financial_news | 巨潮资讯网官方公告（A股公告第一官方源，免认证） |
+| `defillama` | 可直接用 | 免费 | 不限 | — | 域 crypto_search | DeFiLlama 协议 TVL（8700+ 协议资金规模/24h 与 7d 变化，免 key） |
+| `eastmoney` | 可直接用 | 免费 | 不限 | — | 域 financial_news、域 fund_query、域 fx_query、域 stock_query、域 us_stock、语义画像命中 | 东方财富，金融数据首选 |
+| `em_flow` | 可直接用 | 免费 | 不限 | — | 域 stock_query | 东财资金流向（个股主力/北向/板块，push2.eastmoney.com 免认证） |
+| `finviz` | 可直接用 | 免费 | 不限 | — | 域 us_stock | Finviz 美股快照（HTML，免认证） |
+| `frankfurter` | 可直接用 | 免费 | 不限 | — | 域 fx_query、域 macro_data | Frankfurter ECB 官方参考汇率（免认证，2026-10-06 接入） |
+| `hkex` | 可直接用 | 免费 | 不限 | — | 域 hk_filings | 港交所披露易公告检索（港股一手公告 PDF，代码/公司名/标题关键词，免 key） |
+| `sec_companyfacts` | 可直接用 | 免费 | 不限 | — | 域 us_fundamentals | SEC XBRL companyfacts 年度结构化财务（营收/净利/资产/EPS，免认证） |
+| `sec_edgar` | 可直接用 | 免费 | 不限 | — | 域 sec_filings | SEC EDGAR 美国证监会官方全文检索（公司/财报/申报，免认证） |
+| `seeking_alpha` | 可直接用 | 免费 | 不限 | — | 域 us_stock | Seeking Alpha 美股分析（HTML，反爬较强） |
+| `shfe` | 可直接用 | 免费 | 不限 | — | 域 futures_market | 上海期货交易所日行情（铜/铝/黄金/螺纹钢等品种，官方一手，免 key） |
+| `sina_quote` | 可直接用 | 免费 | 不限 | — | 域 stock_query | 新浪实时行情快照（现价/涨跌/成交量，免认证） |
+| `tencent_kline` | 可直接用 | 免费 | 不限 | — | 域 us_stock、语义画像命中 | 腾讯财经前复权日 K 线（A股+港股+美股） |
+| `tencent_quote` | 可直接用 | 免费 | 不限 | — | 域 stock_query | 腾讯实时行情（qt.gtimg.cn 免认证，含换手率/市盈率/五档） |
+| `yahoo_finance` | 可直接用 | 免费 | 不限 | — | 域 us_stock | Yahoo Finance 美股代码解析+实时行情（search/chart 免认证，2026-10-06 接入） |
+
 ### 本地新闻流（14）
 
 | 引擎 | 状态 | 费用 | 频率上限 | 需自备密钥 | 什么时候用到 | 说明 |
@@ -325,23 +346,6 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 | `x_trending` | 显式专用 | 免费 | 不限 | — | 显式调用（--engine） | X (Twitter) Trending 全球热榜（ego-browser 浏览器通道，带分类与排名；显式调用） |
 | `zhihu_hot` | 需自备密钥 | 免费 | 100/天 | ARGO_ZHIHU_ACCESS_SECRET | 域 hot_trending、域 zhihu_hot_list | 知乎开放平台热榜 hot_list（日配额约 100；需 ZHIHU_ACCESS_SECRET；原 zhihu skill 迁入） |
 
-### 行情 / 资金（12）
-
-| 引擎 | 状态 | 费用 | 频率上限 | 需自备密钥 | 什么时候用到 | 说明 |
-|---|---|---|---|---|---|---|
-| `cninfo` | 可直接用 | 免费 | 不限 | — | 域 company_search、域 financial_news | 巨潮资讯网官方公告（A股公告第一官方源，免认证） |
-| `eastmoney` | 可直接用 | 免费 | 不限 | — | 域 financial_news、域 fund_query、域 fx_query、域 stock_query、域 us_stock、语义画像命中 | 东方财富，金融数据首选 |
-| `em_flow` | 可直接用 | 免费 | 不限 | — | 域 stock_query | 东财资金流向（个股主力/北向/板块，push2.eastmoney.com 免认证） |
-| `finviz` | 可直接用 | 免费 | 不限 | — | 域 us_stock | Finviz 美股快照（HTML，免认证） |
-| `frankfurter` | 可直接用 | 免费 | 不限 | — | 域 fx_query、域 macro_data | Frankfurter ECB 官方参考汇率（免认证，2026-10-06 接入） |
-| `sec_companyfacts` | 可直接用 | 免费 | 不限 | — | 域 us_fundamentals | SEC XBRL companyfacts 年度结构化财务（营收/净利/资产/EPS，免认证） |
-| `sec_edgar` | 可直接用 | 免费 | 不限 | — | 域 sec_filings | SEC EDGAR 美国证监会官方全文检索（公司/财报/申报，免认证） |
-| `seeking_alpha` | 可直接用 | 免费 | 不限 | — | 域 us_stock | Seeking Alpha 美股分析（HTML，反爬较强） |
-| `sina_quote` | 可直接用 | 免费 | 不限 | — | 域 stock_query | 新浪实时行情快照（现价/涨跌/成交量，免认证） |
-| `tencent_kline` | 可直接用 | 免费 | 不限 | — | 域 us_stock、语义画像命中 | 腾讯财经前复权日 K 线（A股+港股+美股） |
-| `tencent_quote` | 可直接用 | 免费 | 不限 | — | 域 stock_query | 腾讯实时行情（qt.gtimg.cn 免认证，含换手率/市盈率/五档） |
-| `yahoo_finance` | 可直接用 | 免费 | 不限 | — | 域 us_stock | Yahoo Finance 美股代码解析+实时行情（search/chart 免认证，2026-10-06 接入） |
-
 ### 法律判例（11）
 
 | 引擎 | 状态 | 费用 | 频率上限 | 需自备密钥 | 什么时候用到 | 说明 |
@@ -387,10 +391,11 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 | `who_gho` | 可直接用 | 免费 | 不限 | — | 域 medical、域 outbreak_health | WHO GHO 全球卫生指标（世卫官方统计目录，免认证） |
 | `worms` | 可直接用 | 免费 | 不限 | — | 域 species_search | WoRMS 海洋物种权威命名（分类学标准，免认证） |
 
-### 宏观数据（6）
+### 宏观数据（7）
 
 | 引擎 | 状态 | 费用 | 频率上限 | 需自备密钥 | 什么时候用到 | 说明 |
 |---|---|---|---|---|---|---|
+| `cfets` | 可直接用 | 免费 | 不限 | — | 域 fx_query | 中国外汇交易中心人民币中间价（25 个币种，官方授权口径，免 key） |
 | `eurostat` | 可直接用 | 免费 | 不限 | — | 域 macro_data | 欧盟统计局宏观数据（EU 国家 GDP/人均GDP/失业率/人口，ec.europa.eu SDMX 免认证） |
 | `fred` | 可直接用 | 免费 | 不限 | — | 域 macro_data | FRED 宏观时序数据（CPI/失业率/国债收益率/GDP/M2，免认证） |
 | `fx_rate` | 可直接用 | 免费 | 不限 | — | 域 fx_query、域 macro_data | 实时汇率（open.er-api.com 免认证） |
@@ -453,7 +458,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 
 ## 六、分发域清单（自动生成）
 
-共 95 个业务域；命中即按域内的组合取源（多意图时按配置顺序取，窄意图域排在宽泛域之前）。自己看某个域为什么选这些源，看 `config.yaml` 的 `domains` 段。
+共 97 个业务域；命中即按域内的组合取源（多意图时按配置顺序取，窄意图域排在宽泛域之前）。自己看某个域为什么选这些源，看 `config.yaml` 的 `domains` 段。
 
 | 域 | 主源 | 组合 |
 |---|---|---|
@@ -469,10 +474,12 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 | `em_news_search` | `em_global_news` | `em_global_news`、`cls_telegraph` |
 | `fund_query` | `eastmoney` | `eastmoney`、`anysearch` |
 | `sec_filings` | `sec_edgar` | `sec_edgar`、`anysearch` |
+| `hk_filings` | `hkex` | `hkex`、`anysearch` |
+| `futures_market` | `shfe` | `shfe`、`anysearch` |
 | `us_fundamentals` | `sec_companyfacts` | `sec_companyfacts`、`anysearch` |
 | `us_stock` | `finviz` | `finviz`、`exa`、`yahoo_finance`、`seeking_alpha`、`anysearch`、`eastmoney`、`tencent_kline` |
 | `stock_query` | `sina_quote` | `sina_quote`、`tencent_quote`、`em_flow`、`eastmoney`、`anysearch` |
-| `fx_query` | `fx_rate` | `fx_rate`、`eastmoney`、`frankfurter`、`anysearch` |
+| `fx_query` | `fx_rate` | `fx_rate`、`cfets`、`eastmoney`、`frankfurter`、`anysearch` |
 | `macro_data` | `fred` | `fred`、`worldbank`、`nbs_stats`、`eurostat`、`fx_rate`、`frankfurter`、`anysearch` |
 | `chem_search` | `pubchem` | `pubchem`、`openalex` |
 | `species_search` | `gbif` | `gbif`、`iplant`、`wikipedia`、`obis`、`worms` |
@@ -503,7 +510,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 | `zhihu_hot_list` | `zhihu_hot` | `zhihu_hot`、`zhihu` |
 | `hot_trending` | `baidu_hot` | `baidu_hot`、`toutiao_hot`、`bilibili_hot`、`weibo_hot`、`douyin_hot`、`ths_hot`、`zhihu_hot`、`zhihu_hot_app` |
 | `patent_search` | `google_patents` | `google_patents`、`semantic_scholar`、`local_arxiv` |
-| `crypto_search` | `coingecko` | `coingecko`、`anysearch` |
+| `crypto_search` | `coingecko` | `coingecko`、`defillama`、`anysearch` |
 | `package_search` | `pypi` | `pypi`、`npm`、`crates`、`docker_hub`、`github` |
 | `web_docs` | `mdn` | `mdn`、`stackoverflow` |
 | `ml_models` | `huggingface` | `huggingface`、`github` |
@@ -543,7 +550,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 | `news_realtime` | `byted` | `byted`、`zhihu_global`、`people_daily`、`google_news`、`octen`、`you`、`realtime_index` |
 | `chinese_tech_deep` | `byted` | `byted`、`octen`、`juejin`、`cn_ai_news`、`parallel` |
 | `english_tech` | `octen` | `octen`、`anysearch`、`exa`、`keenable` |
-| `company_search` | `opencorporates` | `opencorporates`、`cninfo`、`baidu_baike` |
+| `company_search` | `opencorporates` | `gleif`、`opencorporates`、`cninfo`、`baidu_baike` |
 | `chinese_general` | `bocha` | `bocha`、`byted`、`octen`、`anysearch`、`zhihu_global`、`wechat_sogou`、`local_search`、`so`、`shenma`、`metaso` |
 | `local_chinese` | `local_search` | `local_search`、`bocha` |
 | `local_news` | `local_search` | `local_search`、`byted` |
@@ -556,7 +563,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 ## 七、怎么自己查当前状态
 
 ```bash
-argo search --list-engines --detail | python3 -m json.tool | less   # 全部 264 个源的详情
+argo search --list-engines --detail | python3 -m json.tool | less   # 全部 269 个源的详情
 argo search --list-engines --detail --routable-only              # 只看现在能用的
 python3 scripts/matrix_search_eval.py --offline                   # 可达性门：有没有死源
 python3 scripts/engine_validate.py --engine <名> --stage all       # 单个源的健康+质量双阶段体检

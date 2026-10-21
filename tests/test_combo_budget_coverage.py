@@ -103,6 +103,13 @@ _NARROW_TOP2_DEBT = {
     # + 零结果恢复链 L3/switch_engine 拉通用源。建域实测两源均非零返回
     # （675ms，含中间价快讯与双向即期汇率）。
     "fx_query",
+    # ── 2026-10-21：crypto_search 接入 DeFiLlama 后登记 ──────────────────
+    #
+    # 前 2 位 coingecko（币价/市值）+ defillama（协议 TVL）都是免 key 的
+    # 结构化一手源，没有「网页搜索保底」的等价物：TVL 是链上统计量，二手
+    # 页面只会转述且滞后。保底走 fallback=anysearch（combo 位次 3）与零
+    # 结果恢复链；两源实测均非零返回（coingecko 45ms / defillama 2.6s）。
+    "crypto_search",
 }
 
 

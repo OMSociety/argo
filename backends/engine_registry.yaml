@@ -242,6 +242,21 @@ engines:
   recommended: false
   explicit_only: false
   desc: 英国电网碳强度与发电结构（国家电网官方，免认证）
+- name: cfets
+  tier: T1
+  type: cfets
+  coverage:
+  - finance
+  - macro
+  - china
+  - official
+  - realtime
+  latency_ms: 2000
+  cost: free
+  status: ok
+  recommended: false
+  explicit_only: false
+  desc: 中国外汇交易中心人民币中间价（25 个币种，官方授权口径，免 key）
 - name: cinii
   tier: T1
   type: http
@@ -518,6 +533,20 @@ engines:
   recommended: false
   explicit_only: false
   desc: 音乐艺人/专辑（Deezer，免认证）
+- name: defillama
+  tier: T1
+  type: defillama
+  coverage:
+  - crypto
+  - finance
+  - blockchain
+  - defi
+  latency_ms: 2000
+  cost: free
+  status: ok
+  recommended: false
+  explicit_only: false
+  desc: DeFiLlama 协议 TVL（8700+ 协议资金规模/24h 与 7d 变化，免 key）
 - name: deps_dev
   tier: T1
   type: deps_dev
@@ -1115,6 +1144,20 @@ engines:
   recommended: true
   explicit_only: false
   desc: GitHub 代码搜索 API
+- name: gleif
+  tier: T1
+  type: http
+  coverage:
+  - company
+  - business
+  - legal
+  - org_entity
+  latency_ms: 2000
+  cost: free
+  status: ok
+  recommended: false
+  explicit_only: false
+  desc: GLEIF 全球法人 LEI 注册库（法定名称/注册地/状态/母公司，免 key）
 - name: google_news
   tier: T1
   type: google_news
@@ -1246,6 +1289,21 @@ engines:
   recommended: true
   explicit_only: false
   desc: 日本技术圈书签搜索（RDF RSS，带收藏日期）
+- name: hkex
+  tier: T1
+  type: hkex
+  coverage:
+  - finance
+  - stock
+  - hk_stock
+  - legal
+  - official
+  latency_ms: 2000
+  cost: free
+  status: ok
+  recommended: false
+  explicit_only: false
+  desc: 港交所披露易公告检索（港股一手公告 PDF，代码/公司名/标题关键词，免 key）
 - name: huggingface
   tier: T1
   type: http
@@ -2425,6 +2483,21 @@ engines:
   recommended: true
   explicit_only: false
   desc: 神马搜索（m.sm.cn/s 移动端 HTML 解析），中文通用网页
+- name: shfe
+  tier: T1
+  type: shfe
+  coverage:
+  - finance
+  - futures
+  - commodity
+  - china
+  - official
+  latency_ms: 2000
+  cost: free
+  status: ok
+  recommended: false
+  explicit_only: false
+  desc: 上海期货交易所日行情（铜/铝/黄金/螺纹钢等品种，官方一手，免 key）
 - name: sina_quote
   tier: T1
   type: sina_quote

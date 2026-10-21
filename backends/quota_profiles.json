@@ -190,6 +190,16 @@
     "cost_tier": "free",
     "priority": 50
   },
+  "cfets": {
+    "label": "人民币中间价",
+    "qps": 2,
+    "limit": null,
+    "period": "second",
+    "cost_per_call": 0.0,
+    "cost_unit": "free",
+    "cost_tier": "free",
+    "priority": 51
+  },
   "cinii": {
     "label": "cinii",
     "qps": 2,
@@ -409,6 +419,16 @@
     "cost_unit": "free",
     "cost_tier": "free",
     "priority": 50
+  },
+  "defillama": {
+    "label": "DeFiLlama",
+    "qps": 1,
+    "limit": null,
+    "period": "second",
+    "cost_per_call": 0.0,
+    "cost_unit": "free",
+    "cost_tier": "free",
+    "priority": 45
   },
   "deps_dev": {
     "label": "deps_dev",
@@ -890,6 +910,16 @@
     "cost_tier": "free",
     "priority": 11
   },
+  "gleif": {
+    "label": "GLEIF 法人标识",
+    "qps": 2,
+    "limit": null,
+    "period": "second",
+    "cost_per_call": 0.0,
+    "cost_unit": "free",
+    "cost_tier": "free",
+    "priority": 55
+  },
   "google_news": {
     "label": "google_news",
     "qps": 2,
@@ -989,6 +1019,16 @@
     "cost_unit": "free",
     "cost_tier": "free",
     "priority": 48
+  },
+  "hkex": {
+    "label": "港交所披露易",
+    "qps": 1,
+    "limit": null,
+    "period": "second",
+    "cost_per_call": 0.0,
+    "cost_unit": "free",
+    "cost_tier": "free",
+    "priority": 50
   },
   "huggingface": {
     "label": "Hugging Face",
@@ -1939,6 +1979,16 @@
     "cost_unit": "free",
     "cost_tier": "free",
     "priority": 20
+  },
+  "shfe": {
+    "label": "上期所行情",
+    "qps": 2,
+    "limit": null,
+    "period": "second",
+    "cost_per_call": 0.0,
+    "cost_unit": "free",
+    "cost_tier": "free",
+    "priority": 52
   },
   "sina_quote": {
     "label": "新浪行情",

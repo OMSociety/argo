@@ -112,12 +112,17 @@ _ENGINE_FAMILY_OVERRIDES: dict[str, str] = {
     "eastmoney": "finance_market",
     "cninfo": "finance_market",
     "seeking_alpha": "finance_market",
+    # 2026-10-21 批次十四：一手行情/公告
+    "hkex": "finance_market",       # 港交所披露易公告
+    "shfe": "finance_market",       # 上期所商品日行情
+    "defillama": "finance_market",  # 协议 TVL（链上资金规模）
     # 宏观
     "fred": "finance_macro",
     "worldbank": "finance_macro",
     "nbs_stats": "finance_macro",
     "eurostat": "finance_macro",
     "fx_rate": "finance_macro",
+    "cfets": "finance_macro",     # 人民币中间价（官方在岸口径）
     # 快讯
     "cls_telegraph": "news_flash",
     "em_global_news": "news_flash",
@@ -250,6 +255,7 @@ _ENGINE_FAMILY_OVERRIDES: dict[str, str] = {
     # 百科/实体
     "ror": "knowledge",        # 研究机构标识
     "opencorporates": "knowledge",
+    "gleif": "knowledge",        # 全球法人 LEI 注册库
     "wikisource": "knowledge",
     "zdic": "knowledge",       # 汉典：字义/音韵/字源
     # 媒体/图书/艺术

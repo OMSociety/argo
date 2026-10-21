@@ -2572,5 +2572,35 @@
     "documents": [],
     "boost_keywords": {},
     "boost_combos": {}
+  },
+  "cfets": {
+    "label": "人民币中间价",
+    "documents": [],
+    "boost_keywords": {},
+    "boost_combos": {}
+  },
+  "defillama": {
+    "label": "DeFiLlama",
+    "documents": [],
+    "boost_keywords": {},
+    "boost_combos": {}
+  },
+  "gleif": {
+    "label": "GLEIF 法人标识",
+    "documents": [],
+    "boost_keywords": {},
+    "boost_combos": {}
+  },
+  "hkex": {
+    "label": "港交所披露易",
+    "documents": [],
+    "boost_keywords": {},
+    "boost_combos": {}
+  },
+  "shfe": {
+    "label": "上期所行情",
+    "documents": [],
+    "boost_keywords": {},
+    "boost_combos": {}
   }
 }
