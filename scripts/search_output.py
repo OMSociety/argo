@@ -93,6 +93,10 @@ def _strip_for_agent(payload: dict[str, Any]) -> dict[str, Any]:
         # 阶段耗时：默认就带（--no-timing 才没有）。剥掉会让使用者看不到
         # 「这次慢在哪」，也拿不到自己动手优化所需的依据。
         "timing",
+        # 综合可信度：一个 level 就能决定「直接引用」还是「先核验」。
+        # 剥掉它等于让 agent 自己交叉比对来源数/同站/聚合站/引擎失败——
+        # 而那正是它最容易漏掉的一步。
+        "meta",
     )
     out: dict[str, Any] = {k: payload[k] for k in keep_top
                            if payload.get(k) is not None}
@@ -380,6 +384,105 @@ def _collect_errors(raw_results: dict[str, list[dict[str, Any]]],
         _add(f"{o.get('engine')}: {detail}")
     return errors
 
+
+# 二手/聚合平台（转载与洗稿高发地）。**刻意不复用 evidence 的词表**：
+# evidence 属热路径禁入名单（tests/test_hotpath_import_lint.py 的 HEAVY_TOP，
+# 它会拖进 content_signals/stylometry/burstiness 约 9ms），而本函数在每次
+# 搜索的收口处无条件执行。两处词表需同步——改这里时看 evidence.
+# _SECONDARY_PLATFORM_PATTERNS。
+_AGGREGATOR_HOSTS = frozenset({
+    "baijiahao.baidu.com",   # 百家号（自媒体洗稿重灾区）
+    "toutiao.com",           # 头条号（聚合+洗稿）
+    "k.sina.com.cn",         # 新浪博客/聚合
+    "guba.eastmoney.com",     # 股吧（UGC 讨论，非事实来源）
+})
+
+# 可信度等级（与 dsh-free-search 的 meta.uncertainty 同形）
+_UNCERTAINTY_HIGH = "high"
+_UNCERTAINTY_MEDIUM = "medium"
+_UNCERTAINTY_LOW = "low"
+# 严重度序：用于「多信号取最差」——等级只能降不升。
+_SEVERITY = {_UNCERTAINTY_HIGH: 0, _UNCERTAINTY_MEDIUM: 1, _UNCERTAINTY_LOW: 2}
+
+
+def _hostname(url: Any) -> str:
+    """URL → 归一化主机名（小写、去 www.）；解析失败返回空串。"""
+    try:
+        from urllib.parse import urlparse
+        host = urlparse(str(url or "")).hostname or ""
+    except Exception:
+        return ""
+    return host.lower().removeprefix("www.")
+
+
+def build_uncertainty(result: dict[str, Any]) -> dict[str, Any]:
+    """一次调用的综合可信度：`{"level": ..., "notes": [...]}`。
+
+    与 `limitations` 的分工：limitations 是**逐条**的局限声明（早停、降级、
+    缓存复用、站点过滤），本字段是**整体**等级——消费者拿到一个 level 就能
+    决定「直接引用」还是「先核验」，不必自己交叉比对五六个字段。
+
+    借鉴 dsh-free-search 的 `meta.uncertainty`（同一件事，按 argo 已有数据
+    重算，不新增采集）。
+
+    只合成**别处没有**的信号：早停/降级/缓存复用已有 limitations 表述，
+    在此重复会让读者不知道该信哪条（同一件事只留一句）。
+    """
+    notes: list[str] = []
+    results = [r for r in (result.get("results") or []) if isinstance(r, dict)]
+
+    if not results:
+        return {"level": _UNCERTAINTY_LOW, "notes": ["没有返回结果"]}
+
+    # 等级只降不升：每个信号各自给出自己的最差判级，取最严重的那个。
+    # 写成顺序 if/elif 覆盖同一个变量时，后一条会把前一条的降级抬回去
+    # （单来源已判 low，同站判定又写成 medium）——那是**升级**，方向错了。
+    level = _UNCERTAINTY_HIGH
+
+    def _worse(candidate: str) -> None:
+        nonlocal level
+        if _SEVERITY[candidate] > _SEVERITY[level]:
+            level = candidate
+
+    # 来源数：单来源无法交叉验证，两条才刚够对照
+    if len(results) == 1:
+        _worse(_UNCERTAINTY_LOW)
+        notes.append("只有 1 个来源，无法交叉验证")
+    elif len(results) == 2:
+        _worse(_UNCERTAINTY_MEDIUM)
+        notes.append("只有 2 个来源")
+
+    # 同站集中度：全部结果同一站点 = 一个信源的多次出现，不是多源印证
+    hosts = {_hostname(r.get("url")) for r in results}
+    hosts.discard("")
+    if 0 < len(hosts) == 1:
+        _worse(_UNCERTAINTY_MEDIUM)
+        notes.append("所有结果来自同一站点")
+
+    # 聚合平台：转载/洗稿高发，结论需经原始来源核对
+    aggregators = sorted(h for h in hosts if h in _AGGREGATOR_HOSTS
+                         or any(h.endswith("." + a) for a in _AGGREGATOR_HOSTS))
+    if aggregators:
+        _worse(_UNCERTAINTY_MEDIUM)
+        notes.append(f"含聚合站内容（{'/'.join(aggregators)}），建议二次核对")
+
+    # 时间窗声明了但没实际生效：引擎未返回 published_at，结果可能不在窗口内
+    if result.get("time_filter_warning"):
+        _worse(_UNCERTAINTY_MEDIUM)
+        notes.append("时间窗未实际过滤，结果可能不在请求的时间范围内")
+
+    # 引擎失败：有引擎跑了却没交出结果，覆盖比路由计划的窄
+    outcomes = [o for o in (result.get("engine_outcomes") or [])
+                if isinstance(o, dict)]
+    failed = [o for o in outcomes
+              if str(o.get("status") or "") not in _NON_ERROR_OUTCOME]
+    if failed:
+        _worse(_UNCERTAINTY_LOW)
+        notes.append(f"{len(failed)} 个引擎未交出结果，覆盖可能比计划的窄")
+
+    return {"level": level, "notes": notes}
+
+
 @dataclass(frozen=True)
 class _ShapeContext:
     """输出成形的全部选项（请求侧只读 + 一个本地检索钩子）。"""
@@ -604,4 +707,11 @@ def shape_response(ctx: _ShapeContext, result: dict[str, Any]) -> dict[str, Any]
             # 待核验 0 条」这类自相矛盾的口径。
             _el["suggested"] = _sug
             _el["pending_count"] = len(_sug)
+    # 综合可信度：读的 results 必须与最终输出同源，所以放在收口（与 count
+    # 重算同处）——域过滤与本地命中并入都发生在这之前。只读不写结果，
+    # 失败时静默跳过（增强失败不得让一次搜索失败）。
+    try:
+        result["meta"] = {"uncertainty": build_uncertainty(result)}
+    except Exception as e:
+        _log(f"可信度评估跳过: {type(e).__name__}")
     return result

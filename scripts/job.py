@@ -895,13 +895,13 @@ def _is_quota_exhausted(exc: Exception) -> bool:
     的模块静默生效。403/429 各有归属：engine_failure.classify 分 auth /
     blocked / rate_limited，健康问题交熔断器自愈，本函数不接手。
 
-    关键词表复用 engine_dispatch 的 `_QUOTA_ERROR_KEYWORDS`（该表自述为
-    「唯一来源」，配额分类与自适应跳过共用），不另起一份。
+    关键词表真源是 cache_guard 的 `_QUOTA_ERROR_KEYWORDS`（配额分类与自适应
+    跳过共用），不另起一份。
     真欠费的文案（`You do not have enough money or package quota`）含
     `quota`，仍然照常命中。
     """
     try:
-        from engine_dispatch import _QUOTA_ERROR_KEYWORDS
+        from cache_guard import _QUOTA_ERROR_KEYWORDS
     except ImportError:
         return False
     text = str(exc).lower()

@@ -1,0 +1,76 @@
+#!/usr/bin/env python3
+"""retry_policy.py — 失败类别与重试判据（唯一来源）。
+
+拆出 engine_dispatch 的理由有两条：
+
+1. **单一真源**：重试判据（该不该再发一次）与归因判据（这次算什么失败）
+   必须用同一套词表与同一个优先级。两处各写一套的下场是重试按一套词表
+   跳过、熔断按另一套记账，对同一次失败给出两个不同判断。
+2. **行数门禁**：engine_dispatch 已接近祖父上限（tests/test_module_size_gate.
+   py），而本模块是纯策略、无 IO、无闭包状态——正好是「拆出去两边都轻」
+   的那一类。
+
+本模块不做决定、不碰状态：只把「错误文本 → 类别 → 是否值得重试」算出来。
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from cache_guard import _QUOTA_ERROR_KEYWORDS
+
+# 拦截页特征词（唯一来源）：error 文本里出现即判 blocked。HTML 引擎的反爬
+# 命中没有 error 文本（静默空结果），走 engines_base 的归因寄存器；
+# 这张表兜住「error 结果里带拦截页字样」的可见路径。
+_BLOCKED_ERROR_KEYWORDS = (
+    "just a moment", "checking your browser", "cf-browser-verification",
+    "challenge", "ddos-guard", "perimeterx", "access denied",
+    "handshake failure", "unable to handshake", "安全验证", "滑动验证",
+)
+
+# 确定性失败：源端状态，不是网络抖动。重试只是多烧一次调用并推迟切备选
+#——配额耗尽重试仍是耗尽，鉴权重试仍是 401，反爬重试仍撞同一堵墙。
+# 与 dsh-free-search 的 failure-aware fallback 同构（quota/auth 冷却到会话
+# 结束、bot-wall 短退避，只有 transient 才重试一次）。
+NON_RETRYABLE_STATUS = frozenset({"quota-exhausted", "auth-failed", "blocked"})
+
+
+def classify_error_status(message: Any) -> str:
+    """错误文本 → 失败类别。**重试判据与归因判据的共同定义点**。
+
+    优先级顺序即语义强弱：超时最具体（描述本次调用的形态），配额/限流/
+    拦截是源端状态，鉴权最后（401/403 也可能来自拦截页）。
+    """
+    m = str(message or "").lower()
+    if "timeout" in m or "timed out" in m:
+        return "timeout"
+    if any(k in m for k in _QUOTA_ERROR_KEYWORDS):
+        return "quota-exhausted"
+    if "rate" in m or "429" in m:
+        return "rate-limited"
+    if any(k in m for k in _BLOCKED_ERROR_KEYWORDS):
+        return "blocked"
+    if "auth" in m or "401" in m or "403" in m:
+        return "auth-failed"
+    return "error"
+
+
+def is_retryable_failure(res: list[Any] | None) -> bool:
+    """这组结果值不值得再试一次（纯函数，门禁可直接打到）。
+
+    判据取自 `classify_error_status`，与归因同源。空结果与无错误条目返回
+    True——沿用既有「重试一次」语义，本次只收紧确定性失败这一类。
+    """
+    for r in res or []:
+        if isinstance(r, dict) and "error" in r:
+            return classify_error_status(r.get("error")) not in NON_RETRYABLE_STATUS
+    return True
+
+
+def record_attempts(outcome: dict[str, Any], attempts: dict[str, int]) -> None:
+    """把「实际发了几次网络请求」如实写进 outcome。
+
+    单独成函数是为了让 engine_dispatch 不必为 3 行记账逻辑长到行数门禁
+    外面去；记账口径（至少 1 次）也只在这里定义一次。
+    """
+    outcome["attempts"] = max(1, int((attempts or {}).get("n", 1)))

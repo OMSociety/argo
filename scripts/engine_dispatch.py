@@ -27,7 +27,6 @@ import threading
 from typing import Any, Callable
 
 from cache_guard import (
-    _QUOTA_ERROR_KEYWORDS,
     attempt_cache_write,
     is_state_failure_outcome,
 )
@@ -38,6 +37,12 @@ from query_signals import (
     cumulative_sufficient,
     results_sufficient,
     query_coverage_ok,
+)
+from retry_policy import (
+    NON_RETRYABLE_STATUS as _NON_RETRYABLE_STATUS,
+    classify_error_status,
+    is_retryable_failure,
+    record_attempts,
 )
 
 # 失败原因分类（engine_failure.py 的类别全集）→ 引擎结果 status 的对照表。
@@ -160,14 +165,8 @@ def _adaptive_grace(engine: str, base_grace_s: float) -> float:
         return base_grace_s
     return max(0.3, min(base, float(p75_ms) / 1000.0))
 
-# 拦截页特征词（唯一来源）：error 文本里出现即判 blocked。HTML 引擎的反爬
-# 命中没有 error 文本（静默空结果），走 engines_base 的归因寄存器；
-# 这张表兜住「error 结果里带拦截页字样」的可见路径。
-_BLOCKED_ERROR_KEYWORDS = (
-    "just a moment", "checking your browser", "cf-browser-verification",
-    "challenge", "ddos-guard", "perimeterx", "access denied",
-    "handshake failure", "unable to handshake", "安全验证", "滑动验证",
-)
+# 失败类别与重试判据住在 retry_policy（唯一来源）：重试判据与归因判据必须
+# 同源，而本文件已接近行数上限——纯策略搬出去，两边都轻。
 
 
 def classify_engine_outcome(eng: str, res: list[dict[str, Any]],
@@ -187,19 +186,7 @@ def classify_engine_outcome(eng: str, res: list[dict[str, Any]],
     errors = [r for r in res if isinstance(r, dict) and "error" in r]
     goods = [r for r in res if isinstance(r, dict) and "error" not in r]
     if errors and not goods:
-        msg = str(errors[0].get("error", "")).lower()
-        if "timeout" in msg:
-            st = "timeout"
-        elif any(k in msg for k in _QUOTA_ERROR_KEYWORDS):
-            st = "quota-exhausted"
-        elif "rate" in msg or "429" in msg:
-            st = "rate-limited"
-        elif any(k in msg for k in _BLOCKED_ERROR_KEYWORDS):
-            st = "blocked"
-        elif "auth" in msg or "401" in msg or "403" in msg:
-            st = "auth-failed"
-        else:
-            st = "error"
+        st = classify_error_status(errors[0].get("error"))
         return {
             "engine": eng, "status": st,
             "results_count": 0, "latency_ms": latency_ms,
@@ -248,6 +235,8 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
     raw_results: dict[str, list[dict[str, Any]]] = {}
     engine_outcomes: list[dict[str, Any]] = []
     engine_latency: dict[str, int] = {}
+    # 每引擎实际发出的网络请求数（含重试与 balanced 补跑）——_run_one 收账用。
+    _attempt_counts: dict[str, int] = {}
 
     # 远端配额耗尽快照（route_combo 的 F7 已在 combo 层排除 hard-down
     # 引擎；本快照供下方 per-engine 闸口兜底主路由/恢复链/显式 engine=
@@ -368,7 +357,13 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
                 since=since_iso, until=until_iso, skip_cache=skip_cache,
                 **_engine_domain_kwargs(),
             )
+            _attempt_counts[eng] = _attempt_counts.get(eng, 0) + 1
             if last_result and any("error" not in r for r in last_result):
+                return last_result
+            # 确定性失败不重试：配额/鉴权/反爬是源端状态，再发一次仍是同样
+            # 的结果，只多烧一次调用并推迟切备选（见 is_retryable_failure）。
+            # transient 与空结果沿用既有「重试一次」语义。
+            if not is_retryable_failure(last_result):
                 return last_result
         # 慢源（retries=0，超时即弃）不再用 balanced 补跑，避免超时场景双倍耗时
         if retries > 0 and depth != "balanced":
@@ -381,6 +376,7 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
                     since=since_iso, until=until_iso, skip_cache=skip_cache,
                     **_engine_domain_kwargs(),
                 )
+                _attempt_counts[eng] = _attempt_counts.get(eng, 0) + 1
         return last_result
 
     def _run_one(eng: str) -> tuple[str, list[dict[str, Any]], dict[str, Any], int]:
@@ -511,6 +507,9 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
                 r.setdefault("_elapsed", lat / 1000.0)
 
         outcome = classify_outcome(eng, res, lat)
+        # 如实记账：本次实际发了几次网络请求（重试 + balanced 补跑）。
+        # 「重试了一次」此前不可见——与「早停 + wasted_ms 如实记账」同一纪律。
+        record_attempts(outcome, {"n": _attempt_counts.get(eng, 1)})
         # 失败原因合入：引擎内部那些不报错的失败路径（反爬命中/HTTP 状态码/网络异常）
         # 没有 error 文本，结果会落成 no-results；失败原因记录把它们还原成
         # 真实状态，供熔断与 --json 可观测面使用。

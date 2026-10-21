@@ -165,7 +165,7 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "dispatch+恢复链」结构性循环，12 行；策略常量在 cache_guard."
               "RECOVERED_DEGRADED_TTL）；随动上限 1357 → 1385"),
     "scripts/engine_dispatch.py": (
-        983, "引擎编排调度器（wave-1 竞速 / wave-2 补全 / 串行对冲 / 收账）；"
+        982, "引擎编排调度器（wave-1 竞速 / wave-2 补全 / 串行对冲 / 收账）；"
               "2026-10-21 −36：DispatchResult 与墙钟记账拆到 dispatch_result.py"
               "（纯数据、无 IO；顺带把尾等待从 wasted 单值拆成 tail/abandoned "
               "两个可行动量），上限 1019 → 983；"
@@ -185,7 +185,13 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "quota-exhausted，_QUOTA_ERROR_KEYWORDS 补「余额/额度/配额」文本），"
               "上限 1033 → 1036 随动登记；"
               "2026-10-19 −17：_QUOTA_ERROR_KEYWORDS 收口至 cache_guard 唯一真源 + "
-              "熔断器记账分支改为 _BREAKER_FAIL_KIND 表驱动，上限 1036 → 1019"),
+              "熔断器记账分支改为 _BREAKER_FAIL_KIND 表驱动，上限 1036 → 1019；"
+              "2026-10-21 −1：重试按失败类别区分（确定性失败不再重试）——"
+              "classify_error_status / is_retryable_failure / 拦截页词表 / "
+              "NON_RETRYABLE_STATUS 拆到 retry_policy.py（重试判据与归因判据"
+              "同源，且本文件已贴上限）；顺带删掉 search.py 里只导入未使用的 "
+              "_QUOTA_ERROR_KEYWORDS 死导入、job.py 改从真源 cache_guard 取表，"
+              "上限 983 → 982"),
     "scripts/http_client.py": (
         1053, "HTTP 客户端（UA 轮换 + Cookie 积累 + 重试 + 主机节流）；"
               "2026-09-27 +8：host throttle buckets 加 LRU 淘汰（100 个上限）；"

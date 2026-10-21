@@ -214,7 +214,6 @@ def _missing_env_for(eng: str) -> list[str]:
 # 学习跳过判定。
 
 from engine_dispatch import (  # noqa: E402
-    _QUOTA_ERROR_KEYWORDS,
     classify_engine_outcome as _classify_engine_outcome,
     run_dispatch,
 )
