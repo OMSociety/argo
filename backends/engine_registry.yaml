@@ -3308,7 +3308,7 @@ engines:
   cost: api
   status: ok
   recommended: false
-  explicit_only: true
+  explicit_only: false
   desc: 腾讯元宝搜索（yuanbao）
 - name: zbmath
   tier: T1

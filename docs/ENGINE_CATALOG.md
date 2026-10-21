@@ -11,7 +11,7 @@
 - **需自备密钥 22 个**：`bocha`、`bocha_ai`、`byted`、`deepseek_search`、`em_miaoxiang`、`keenable`、`octen`、`parallel`、`qweather`、`seltz`、`tavily`、`tinyfish`、`tinyfish_news`、`tinyfish_paper`、`unpaywall`、`weread`、`you`、`yuanbao`、`zhihu`、`zhihu_global`、`zhihu_hot`、`zhihu_user`（没配也不影响搜索，路由会跳过）
 - **需装后端工具 3 个**：`reddit`、`twitter`、`xiaohongshu`（装好并登录后即可用）
 - **已停用 12 个**：`brave`、`digup`、`europeana`、`felo`、`jikan`、`local_goodreads`、`metaso`、`nbs_stats`、`realtime_index`、`searxng`、`soilgrids`、`wolframalpha`
-- **显式专用 17 个**：`bing_rss`、`datagov_uk`、`deepseek_search`、`doi`、`ecosia`、`gdelt`、`opencitations`、`qwant`、`tineye`、`tinyfish`、`tinyfish_news`、`tinyfish_paper`、`twitter_syndication`、`unpaywall`、`x_trending`、`yuanbao`、`zbmath`（设计上不进自动路由，按 `--engine` 或交接提示调用）
+- **显式专用 16 个**：`bing_rss`、`datagov_uk`、`deepseek_search`、`doi`、`ecosia`、`gdelt`、`opencitations`、`qwant`、`tineye`、`tinyfish`、`tinyfish_news`、`tinyfish_paper`、`twitter_syndication`、`unpaywall`、`x_trending`、`zbmath`（设计上不进自动路由，按 `--engine` 或交接提示调用）
 
 自己核一遍（口径不同，别混用）：
 
@@ -44,10 +44,10 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 | `seltz` | 按调用计费 | 是 | SELTZ_API_KEY |
 | `tavily` | 按调用计费 | 是 | ARGO_TAVILY_API_KEY |
 | `you` | 按调用计费 | 是 | YDC_API_KEY |
-| `yuanbao` | 按调用计费 | 否，仅显式调用 | ARGO_YUANBAO_API_KEY |
+| `yuanbao` | 按调用计费 | 是 | ARGO_YUANBAO_API_KEY |
 | `zhihu_global` | 按调用计费 | 是 | ARGO_ZHIHU_ACCESS_SECRET |
 
-**结论**：付费档里有 1 个进了自动路由（felo），用之前先确认额度；低价/按量计费的源有 12 个在自动路由路径上，多数带免费额度或已配密钥。额度记在本地配额表（`backends/quota_profiles.json` 的 limit / period，用量存在本机状态库），用尽后该源在语义路由里被降权；本地表统计的是 argo 自己的调用，若同一密钥还被别的工具用，实际额度以服务商侧为准。想彻底避开计费源，用 `--engine` 显式指定免费源，或走 `--mode budget`。
+**结论**：付费档里有 1 个进了自动路由（felo），用之前先确认额度；低价/按量计费的源有 13 个在自动路由路径上，多数带免费额度或已配密钥。额度记在本地配额表（`backends/quota_profiles.json` 的 limit / period，用量存在本机状态库），用尽后该源在语义路由里被降权；本地表统计的是 argo 自己的调用，若同一密钥还被别的工具用，实际额度以服务商侧为准。想彻底避开计费源，用 `--engine` 显式指定免费源，或走 `--mode budget`。
 
 ## 三、特别能力（不是普通网页搜索）
 
@@ -118,7 +118,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 | `tavily` | 需自备密钥 | 按调用计费 | 1000/月 | ARGO_TAVILY_API_KEY | 域 semantic_discovery、语义画像命中 | Tavily AI 搜索 API（免费层 1000 次/月，超出按美元计费；与 exa 同为 api 档） |
 | `tinyfish` | 需自备密钥 + 显式专用 | 免费 | 不限 | ARGO_TINYFISH_API_KEY | 显式调用（--engine） | TinyFish 实时网页搜索（免费，浏览器渲染，结果含原文摘要，X-API-Key 认证） |
 | `you` | 需自备密钥 | 按调用计费 | 不限 | YDC_API_KEY | 域 news_realtime | You.com 网页+新闻搜索（时效性强，官方一手源，web/news 合并） |
-| `yuanbao` | 需自备密钥 + 显式专用 | 按调用计费 | 6000/月 | ARGO_YUANBAO_API_KEY | 显式调用（--engine） | 腾讯元宝搜索 |
+| `yuanbao` | 需自备密钥 | 按调用计费 | 6000/月 | ARGO_YUANBAO_API_KEY | 域 chinese_general | 腾讯元宝搜索 |
 | `zhihu_global` | 需自备密钥 | 按调用计费 | 5000/天 | ARGO_ZHIHU_ACCESS_SECRET | 域 chinese_general、域 news_realtime、域 zhihu_content | 知乎开放平台全网搜索（SearchDB=all 全网索引 + Filter host== 站点限定；需 ZHIHU_ACCESS_SECRET） |
 
 ### 学术文献（27）
@@ -555,7 +555,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 | `chinese_tech_deep` | `byted` | `byted`、`octen`、`juejin`、`cn_ai_news`、`parallel` |
 | `english_tech` | `octen` | `octen`、`anysearch`、`exa`、`keenable` |
 | `company_search` | `opencorporates` | `gleif`、`opencorporates`、`cninfo`、`baidu_baike` |
-| `chinese_general` | `bocha` | `bocha`、`byted`、`octen`、`anysearch`、`zhihu_global`、`wechat_sogou`、`local_search`、`so`、`shenma`、`metaso` |
+| `chinese_general` | `bocha` | `bocha`、`yuanbao`、`byted`、`octen`、`anysearch`、`zhihu_global`、`wechat_sogou`、`local_search`、`so`、`shenma`、`metaso` |
 | `local_chinese` | `local_search` | `local_search`、`bocha` |
 | `local_news` | `local_search` | `local_search`、`byted` |
 | `local_code` | `local_search` | `local_search`、`github`、`anysearch` |

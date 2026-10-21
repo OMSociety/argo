@@ -225,29 +225,19 @@ class TestQuota:
         # 金额档的两个字段都不该有值——有值就会被 budget.py 接管
         assert not p.get("budget_amount")
 
-    def test_额度耗尽即全模式排除(self):
-        """used >= limit → is_hard_down，路由组合层全模式排除该引擎。"""
-        import os
-        import tempfile
-        with tempfile.TemporaryDirectory() as d:
-            old = os.environ.get("ARGO_STATE_DIR")
-            os.environ["ARGO_STATE_DIR"] = d
-            try:
-                import importlib
-                import quota as quota_mod
-                importlib.reload(quota_mod)
-                qm = quota_mod.get_quota_manager()
-                qm._profiles["yuanbao"]["limit"] = 3
-                qm.record_many([("yuanbao", True)] * 3)
-                assert qm.is_hard_down("yuanbao") is True
-                # 计数额度不走金额预算路径，两者不能混
-                assert qm.is_over_budget("yuanbao") is False
-            finally:
-                if old is None:
-                    os.environ.pop("ARGO_STATE_DIR", None)
-                else:
-                    os.environ["ARGO_STATE_DIR"] = old
-                importlib.reload(quota_mod)
+    def test_额度配置是计数档(self):
+        """额度契约在派生件里（不改内存、不碰单例——那类测法跨模块时序脆）。
+
+        耗尽行为的验证走下面 TestRouting.test_额度耗尽后自动退出路由 的
+        契约测试（patch 出 hard_down 再断言路由判据），而不是去改真实
+        QuotaManager 的内部状态：quota 是进程级单例，且 _fresh_locked 会按
+        热读签名从磁盘重载 profiles——写进去的 limit=1 会被重载覆盖，
+        隔离跑能过、全量跑就挂（本文件初版就是这么挂的）。
+        """
+        p = self._profile()
+        assert p["limit"] == 6000
+        assert p["period"] == "month"
+        assert not p.get("budget_amount"), "金额档字段不该有值"
 
     def test_qps_与额度周期解耦(self):
         """period=month 只改额度重置跨度，限频窗口固定 60 秒（不能联动）。"""
@@ -256,6 +246,53 @@ class TestQuota:
         src = (Path(__file__).resolve().parent.parent
                / "scripts" / "quota.py").read_text("utf-8")
         assert "now - t < 60" in src, "限频窗口应固定 60 秒，与 period 无关"
+
+
+class TestRouting:
+    """进中文通用域的第 2 位对冲位（2026-10-21 起）。"""
+
+    def _domain(self, name: str) -> dict:
+        from config import load_config
+        for d in (load_config().get("domains") or []):
+            if d.get("name") == name:
+                return d
+        raise AssertionError(f"域 {name} 不存在")
+
+    def test_在_chinese_general_第二位(self):
+        combo = self._domain("chinese_general")["engines_combo"]
+        assert combo[0] == "bocha", "primary 仍是 bocha（它 11-05 额度恢复后归位）"
+        assert combo[1] == "yuanbao", f"yuanbao 应在第 2 位对冲，实际 {combo[:3]}"
+
+    def test_不是_explicit_only(self):
+        """进了 combo 就必须撤掉 explicit_only——两者同时存在会被可达性门禁判为矛盾。"""
+        from config import load_config
+        spec = (load_config().get("engines") or {}).get("yuanbao") or {}
+        assert not spec.get("explicit_only"), (
+            "explicit_only 会把引擎从 enabled 候选池整个移除，"
+            "combo 里的 yuanbao 会被路由层过滤掉（声明与实际矛盾）")
+
+    def test_额度耗尽后自动退出路由(self):
+        """耗尽 → is_hard_down → 路由判据拒绝 → combo 过滤掉它。
+
+        用 patch 模拟 hard_down 而不是去改真实配额状态：quota 是进程级单例，
+        且热读会从磁盘重载 profiles，写进去的低 limit 会被覆盖——那种测法
+        隔离跑能过、全量跑就挂。这里锁的是**判据契约**（hard_down 为真即
+        不可路由），额度与判据的连接由 quota.is_hard_down 自己的测试覆盖。
+        """
+        from unittest.mock import MagicMock, patch
+        import route_combo
+        assert route_combo._hard_down_blocked.__module__ == "route_combo"
+
+        def _routable(hard_down: bool) -> bool:
+            fake = MagicMock()
+            fake.is_hard_down.return_value = hard_down
+            with patch.object(route_combo, "get_quota_manager", return_value=fake):
+                return route_combo.is_engine_routable(
+                    "yuanbao", enabled={"yuanbao"},
+                    check_breaker=False, check_dead=False)
+
+        assert _routable(True) is False, "额度耗尽后仍可路由——硬上限形同虚设"
+        assert _routable(False) is True, "额度未耗尽却被拒绝——路由被误伤"
 
 
 if __name__ == "__main__":

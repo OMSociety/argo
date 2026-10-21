@@ -1506,9 +1506,20 @@ domains:
   - (?i)\b(company\s*registration|incorporation|registered\s+number|business\s+registry|company\s+search|corporate\s+records)\b
   - (?i)(会社|法人|登記|기업|법인|등록)
   primary: opencorporates
-- desc: 中文通用搜索（octen #3 作 bocha/byted 弱结果时的多语言救援）
+- desc: 中文通用搜索（octen #3 作 bocha/byted 弱结果时的多语言救援；yuanbao #2 为权威源对冲）
+  # yuanbao 放第 2 位（2026-10-21）：它不是「备选」而是**对冲位**。当月实测
+  # bocha/octen 报 403（账户余额不足）、byted 报 10406（免费额度耗尽），三个
+  # 主力同时被 is_hard_down 排除，combo 实际只剩 anysearch+zhihu_global；
+  # 而同 6 个中文查询对拍 anysearch 中位 2664ms、日期覆盖 0%，yuanbao 中位
+  # 699ms、日期覆盖 96%——放第 2 位意味着主力全挂时它直接顶上。
+  #
+  # 额度可耗尽（月 6000 次，活动结束回落 2000 次），但耗尽后 is_hard_down 会
+  # 自动把它从 combo 摘掉，组合回落到 anysearch/zhihu_global 形态，不报错、
+  # 不留半截状态。改档位只改 engines/specs/yuanbao.yaml 的 limit，改完跑
+  # scripts/sync_backends.py。
   engines_combo:
   - bocha
+  - yuanbao
   - byted
   - octen
   - anysearch
