@@ -70,15 +70,18 @@ def _load_yaml(path: Path) -> dict:
 
 
 def load_engines() -> dict[str, dict[str, Any]]:
-    """读取运行时合并后的全部引擎声明（含禁用）。
+    """读取**公共**配置里的全部引擎声明（含禁用）。
 
     与运行时同一入口（config.load_config 合并 config.yaml + engines/*.yaml +
-    engines/specs/*.yaml）；config 模块不可用时（缺依赖/语法错）退回只读
-    config.yaml，并在 stderr 明示——静默退回会让派生件少一批引擎却不报错。
+    engines/specs/*.yaml），但 **include_local=False**：派生件（engine_registry.yaml /
+    quota_profiles.json）随公开仓发版，本机覆盖层 config.local.yaml 是本机状态，
+    不该进来——否则本机跑一次 sync 就把「parallel 已停用」这类本机状态写进了
+    公开仓。config 模块不可用时（缺依赖/语法错）退回只读 config.yaml，并在
+    stderr 明示——静默退回会让派生件少一批引擎却不报错。
     """
     try:
         from config import load_config
-        merged = load_config().get("engines", {})
+        merged = load_config(include_local=False).get("engines", {})
         if merged:
             return {n: s for n, s in merged.items() if isinstance(s, dict)}
     except Exception as e:  # noqa: BLE001 — 退回单源并留痕，不吞错误

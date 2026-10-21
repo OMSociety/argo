@@ -1,0 +1,43 @@
+# config.local.yaml — 本机配置覆盖层（**不进公开仓**）
+#
+# 用法：复制本文件为同目录的 config.local.yaml，只写「要改的键」。
+#   cp config.local.yaml.example config.local.yaml
+#
+# config.local.yaml 已在 .gitignore 里，不会被提交/推送。它存在的意义是：
+# 本机状态（账户欠费临时停用某引擎、本机路径、本机调优）不该写进 config.yaml
+# ——config.yaml 是随 argo 发版的公共配置，写了就会推给所有用户。
+#
+# 合并语义：**深度合并**，本文件优先级最高（config.yaml → engines/*.yaml 外置
+# 声明 → 本文件）。所以只需写要改的键，不用整份抄引擎声明。dict 逐键递归，
+# list 整体替换。
+#
+# 生效范围：所有读取 load_config() 的地方（引擎表、域规则、cache、execution…）。
+# 改完立即生效（config_stamp / 磁盘缓存键都认它）；本文件损坏时静默忽略，
+# 退化为「只用 config.yaml」，不会让命令崩掉。
+
+# ── 例 1：本机临时停用某引擎（如账户欠费、额度耗尽）──────────────────────────
+# 注意：本文件同样受 tests/test_engine_catalog.py 的「停用必须写原因」约束，
+# 所以停用时顺手写一行 disabled_reason，便于日后回想为什么关着。
+#
+# engines:
+#   parallel:
+#     enabled: false
+#     disabled_reason: "本机账户欠费，临时停用，路由走 parallel_free；充值生效后删掉这段"
+
+# ── 例 2：本机路径与调优（不影响任何人的默认值）─────────────────────────────
+#
+# cache:
+#   max_size_mb: 50
+#   ttl: 1800
+#
+# execution:
+#   default_timeout: 15
+
+# ── 例 3：本机强制关掉某类引擎（覆盖 config.yaml 的开关）────────────────────
+#
+# engines:
+#   some_engine:
+#     enabled: false
+
+# ── 不想用覆盖层时 ───────────────────────────────────────────────────────────
+# 直接删掉或改名 config.local.yaml 即可，config.yaml 的行为完全不受影响。

@@ -7,6 +7,8 @@ __pycache__/
 *.db
 cache/
 installs.local.yaml
+# 本机配置覆盖层（只写「要改的键」，深度合并进 config.yaml；本机状态不进公开仓）
+config.local.yaml
 *.bak-before-link
 *.bak
 *.before-*

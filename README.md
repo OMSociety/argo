@@ -555,6 +555,31 @@ python3 sub-skills/ego-search/scripts/ego_search.py enable
 
 登录态搜到的结果**不写**公共搜索缓存（避免污染共享缓存），需要融合时用 `merge` 命令把常规结果和登录态结果放一起分析。
 
+### 本机配置覆盖层（`config.local.yaml`）
+
+`config.yaml` 是随 argo 一起发版的**公共配置**。本机状态（某个引擎账户欠费要临时停用、本机路径、本机调优）不该写进去——写了就会随升级推给所有用户。本机覆盖层解决这件事：复制示例文件，只写要改的键。
+
+```bash
+cp config.local.yaml.example config.local.yaml
+```
+
+```yaml
+# 例：本机临时停用某引擎（路由自动改用别的源）
+engines:
+  parallel:
+    enabled: false
+    disabled_reason: "本机账户欠费，路由走 parallel_free；充值后删掉这段"
+```
+
+- **深度合并**：只写要改的键，不用整份抄引擎声明（`engines.parallel.enabled: false` 只翻一个布尔，其余字段原样保留）。
+- **优先级最高**：`config.yaml` → `engines/*.yaml` 外置声明 → `config.local.yaml`。
+- **改完立即生效**：进程内缓存与跨进程磁盘缓存都认它。
+- **不进公开仓**：`config.local.yaml` 已在 `.gitignore` 里，不会被提交或推送。
+- **损坏不影响使用**：文件写坏时静默忽略，退化为只用 `config.yaml`。
+- **派生件不含本机状态**：`engine_registry.yaml` / `quota_profiles.json` 等随仓发布的派生文件按公共配置生成，本机跑 `sync_backends` 不会把本地状态写进公开仓。
+
+不想用时删掉或改名即可，`config.yaml` 的行为完全不受影响。
+
 ---
 
 ## 使用示例

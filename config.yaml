@@ -1,3 +1,6 @@
+# 本机状态（临时停用某引擎、本机路径、本机调优）不要写在这里——config.yaml 随
+# argo 发版，写了会推给所有用户。改用同目录的 config.local.yaml（已 gitignore，
+# 见 config.local.yaml.example）：只写要改的键，深度合并，优先级最高。
 cache:
   # db_path 刻意不写默认值：路径由 argo_paths 按平台惯例派生（Windows
   # %LOCALAPPDATA%/unified-search；POSIX 遵循 $XDG_CACHE_HOME，已存在的历史目录

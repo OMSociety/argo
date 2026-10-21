@@ -7,6 +7,8 @@ config.py — Unified Search v2 配置加载器
   - 支持热加载（按 mtime 缓存）
   - 使用 PyYAML 解析（缺失时给出明确安装提示）
   - 将 ~ 展开为实际用户目录
+  - 合并 engines/*.yaml 外置引擎声明
+  - 合并 config.local.yaml 本机覆盖层（gitignore，本机状态不进公开仓）
   - 提供类型化访问接口（引擎列表、域规则、成本分级、预算配置）
 """
 
@@ -30,6 +32,10 @@ from typing import Any, Callable
 # 由模块 __getattr__ 保持（见文件末尾）——惰性导入与可打桩性不再二选一。
 
 CONFIG_PATH = Path(__file__).parent.parent / "config.yaml"
+# 本机覆盖层：与 config.yaml 同目录的 config.local.yaml（**gitignore**）。
+# 只写「要改的键」，深度合并进最终配置——本机状态（账户欠费临时停用某引擎、
+# 本机路径、本机调优）落在这里，不随公开仓发版。详见 _merge_local_config。
+LOCAL_CONFIG_PATH = Path(__file__).parent.parent / "config.local.yaml"
 # 外置引擎声明目录：engines/*.yaml（不含 plugins/、templates/、_ 前缀）
 ENGINES_DIR = Path(__file__).parent.parent / "engines"
 
@@ -258,6 +264,51 @@ def _merge_external_engines(config: dict[str, Any]) -> dict[str, Any]:
     return config
 
 
+def _load_local_config() -> dict[str, Any]:
+    """读本机覆盖层 config.local.yaml；不存在 / 读不动 / 损坏一律返回 {}。
+
+    fail-open 是刻意的：覆盖层是可选的加速器，它的缺失或损坏不该让整条配置链
+    崩掉（与 cache 的降级、config 的 DEFAULT_CONFIG 回退同一口径）。损坏时
+    静默忽略而不是抛，是为了不把「本机一个手滑的 YAML」升级成「所有命令都跑
+    不了」——真要排查时看 last_load_error 之外没有提示，所以这里连告警都不发，
+    保持与「覆盖层不存在」完全同一条路径（区分它们没有运维价值）。
+    """
+    if not LOCAL_CONFIG_PATH.is_file():
+        return {}
+    try:
+        text = LOCAL_CONFIG_PATH.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    try:
+        data = _load_yaml(text)
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """override **深度**覆盖 base：dict 逐键递归，其余（含 list）整体替换。
+
+    与 _merge_external_engines 的**浅**覆盖（`base.update(spec)`）刻意不同：
+    外置 spec 是「整份引擎声明」（浅覆盖才能整份换掉），本机覆盖层是「只写要
+    改的键」（深合并才能让 `engines.parallel.enabled: false` 只翻一个布尔而不
+    把整个 parallel 声明换成三行）。两种覆盖语义不同，各留一处实现，别合并。
+    """
+    out = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(out.get(key), dict):
+            out[key] = _deep_merge(out[key], value)
+        else:
+            out[key] = value
+    return out
+
+
+def _merge_local_config(config: dict[str, Any]) -> dict[str, Any]:
+    """把本机覆盖层并进配置；无覆盖层时原样返回（不复制，省一份 220 引擎的拷贝）。"""
+    local = _load_local_config()
+    return _deep_merge(config, local) if local else config
+
+
 _ext_scan_cache: tuple[float, tuple[float, int, int, str]] | None = None  # (monotonic 时刻, 指纹)
 
 
@@ -384,18 +435,37 @@ def config_stamp() -> float:
     return value
 
 
+def _local_config_mtime() -> float:
+    """本机覆盖层 config.local.yaml 的 mtime（不存在 → 0.0）。
+
+    与 config_stamp 的 TTL 记忆同一口径：覆盖层也是「会变的输入」，不进 stamp
+    就会出现「改了本机覆盖层、1 秒内不生效」（load_config 的 _config_mtime 与
+    config_stamp 是两条独立的失效判据，都必须认它）。
+    """
+    try:
+        return LOCAL_CONFIG_PATH.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
 def _stamp_uncached() -> float:
     try:
         combined = CONFIG_PATH.stat().st_mtime
     except OSError:
         combined = 0.0
-    return max(combined, _external_engines_mtime())
+    return max(combined, _external_engines_mtime(), _local_config_mtime())
 
 
 
 
-def load_config(force: bool = False) -> dict[str, Any]:
-    """加载配置，支持热加载；合并 engines/*.yaml 外置声明。"""
+def _load_config_public(force: bool = False) -> dict[str, Any]:
+    """加载**公共**配置（config.yaml + engines/*.yaml 外置声明），含全部缓存逻辑。
+
+    刻意不含本机覆盖层：公共配置要能被「派生随公开仓发版的产物」复用
+    （sync_backends 生成 engine_registry.yaml / quota_profiles.json），本机状态
+    不该进那两份派生件——否则本机跑一次 sync 就把本地覆盖层写进了公开仓。
+    本机覆盖层由 load_config 按需并入（见那边的说明）。
+    """
     global _config_cache, _config_mtime, _config_load_error, _stamp_cache
     try:
         st = CONFIG_PATH.stat()
@@ -411,7 +481,7 @@ def load_config(force: bool = False) -> dict[str, Any]:
     scan = (_external_engines_scan_uncached() if force
             else _external_engines_scan())
     ext_mtime = scan[0]
-    combined_mtime = max(mtime, ext_mtime)
+    combined_mtime = max(mtime, ext_mtime, _local_config_mtime())
 
     if force:
         # force 语义必须贯穿**所有**同级缓存，否则重读与快照脱节：外置声明
@@ -452,8 +522,7 @@ def load_config(force: bool = False) -> dict[str, Any]:
             expanded = _expand_value(parsed)
             resolved = _resolve_relative_paths(expanded)
             resolved = _merge_external_engines(resolved)
-            # 外置 spec 的 cmd 是相对路径 → 合并后必须再解析一次，
-            # 否则它们永远保持相对（且校验随 CWD 漂移）
+            # 外置 spec 的 cmd 是相对路径 → 合并后必须再解析一次
             resolved = _resolve_relative_paths(resolved)
             _save_config_disk_cache(st, scan, _config_content_digest(st), resolved)
             _config_cache = _validate_engine_paths(resolved)
@@ -476,6 +545,20 @@ def load_config(force: bool = False) -> dict[str, Any]:
             base = _validate_engine_paths(_resolve_relative_paths(_expand_value(json.loads(json.dumps(DEFAULT_CONFIG)))))
             _config_cache = _merge_external_engines(base)
     return _config_cache
+
+
+def load_config(force: bool = False, *, include_local: bool = True) -> dict[str, Any]:
+    """加载配置；默认并入 config.local.yaml 本机覆盖层（见该文件与 _merge_local_config）。
+
+    include_local=False 用于派生**随公开仓发版**的产物（sync_backends 生成
+    engine_registry.yaml / quota_profiles.json）：本机状态不该进那两份派生件。
+
+    覆盖层在缓存**之后**并入：磁盘/进程缓存存的是公共配置（本机状态不进缓存
+    键），覆盖层每次调用现并——它是小文件、深合并只碰重叠键，代价可忽略。这样
+    「本机状态」与「可缓存的公共配置」两层彻底分开，缓存才能被派生件安全复用。
+    """
+    cfg = _load_config_public(force)
+    return _merge_local_config(cfg) if include_local else cfg
 
 
 def last_load_error() -> str | None:

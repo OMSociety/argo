@@ -147,12 +147,24 @@ class TestNewEngineRegistration(unittest.TestCase):
     # ── parallel / you.com 通用引擎（v2.8.0）──────────────────────────────
 
     def test_parallel_you_registered(self) -> None:
-        avail = set(available_engines())
-        self.assertIn("parallel", avail, "registry 缺少 parallel")
-        self.assertIn("you", avail, "registry 缺少 you")
+        """parallel / you 必须在**声明层**注册。
+
+        断言「可用」会在本机覆盖层停用该引擎时误红——停用的是本机状态
+        （config.local.yaml，gitignore），不该让公共契约测试失败。契约是
+        「config.yaml 里有声明且 type 正确」；可用性由 test_registry_available
+        等用例覆盖，这里只在未被停用时才顺带钉一下。
+        """
         raw = load_config(force=True).get("engines", {})
+        self.assertIn("parallel", raw, "config 缺少 parallel 声明")
+        self.assertIn("you", raw, "config 缺少 you 声明")
         self.assertEqual(raw["parallel"].get("type"), "parallel")
         self.assertEqual(raw["you"].get("type"), "you")
+        # 未被本机覆盖层停用时，注册表里应可见；停用了就跳过，不误红
+        avail = set(available_engines())
+        if raw["parallel"].get("enabled", True):
+            self.assertIn("parallel", avail, "registry 缺少 parallel")
+        if raw["you"].get("enabled", True):
+            self.assertIn("you", avail, "registry 缺少 you")
 
     def test_parallel_you_no_key_graceful(self) -> None:
         """无 API key 时返回空列表不崩（免费/降级路径）。"""

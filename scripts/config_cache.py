@@ -39,6 +39,38 @@ def _config_path() -> Path:
     return CONFIG_PATH
 
 
+def _local_config_path() -> Path:
+    """config.local.yaml 路径：同样延迟取（与 _config_path 同一成环约束）。"""
+    from config import LOCAL_CONFIG_PATH
+    return LOCAL_CONFIG_PATH
+
+
+def _local_cache_db_path() -> str | None:
+    """本机覆盖层里的 cache.db_path（没有则 None）。
+
+    db_path 是状态目录的源头，本机覆盖层**可以**改它；peek 只读缓存里的公共
+    值会让 load_config 与 argo_paths 算出两个状态目录（见 _peek_disk_cache_db_path
+    的说明）。这里自包含地读那个小文件，刻意不依赖 config 的帮助函数——peek 会
+    在 config 模块初始化早期（DEFAULT_CONFIG 的 db_path）被 argo_paths 调到，
+    那时 config 的 _load_local_config 还没定义。
+    """
+    try:
+        path = _local_config_path()
+        if not path.is_file():
+            return None
+        from yaml_load import loads
+        data = loads(path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    cache_cfg = data.get("cache")
+    if not isinstance(cache_cfg, dict):
+        return None
+    db_path = cache_cfg.get("db_path")
+    return os.path.expanduser(str(db_path)) if db_path else None
+
+
 # ── 跨进程配置缓存（写入文件 JSON）─────────────────────────────────────────────────
 #
 # 为什么需要：每条命令都是一次新进程，config.yaml + 63 个外置声明的解析合并
@@ -270,27 +302,34 @@ def _peek_disk_cache_db_path(st: os.stat_result,
     平台上失效保真度不同）。外置声明摘要不在此校验：db_path 只由 config.yaml
     本身决定。
 
+    **本机覆盖层**：db_path 是本机覆盖层**可以**改的键（见 config._merge_local_config），
+    而缓存里存的是**公共**配置（覆盖层在缓存之后才并入，见 config.load_config）。
+    所以缓存命中与否都要用 _local_cache_db_path() 覆盖一次，否则本机改了
+    db_path 之后，load_config 拿新路径、argo_paths 拿旧路径，两处分裂。
+
     返回的路径与走 YAML 时**同为展开后的形式**（~ 已展开）：两条分支计算方式必须
     一致，否则同一个进程里先命中缓存、后走解析会拿到两种形态，给未来的调用者
     埋雷（当前唯一消费者 argo_paths 会再 expanduser 一次，所以现在看不出来）。
     """
+    local_db = _local_cache_db_path()
     if digest is None:
-        return False, None
+        return False, local_db
     raw = _disk_cache_payload()
     if raw is None:
-        return False, None
+        return False, local_db
     key = raw.get("key") or {}
     if (key.get("config_path"), key.get("config_digest")) != (
             str(_config_path()), digest):
-        return False, None
+        return False, local_db
     cfg = raw.get("config")
     if not _looks_like_config(cfg):
-        return False, None
+        return False, local_db
     cache_cfg = cfg.get("cache")
     if not isinstance(cache_cfg, dict):
-        return True, None
+        return True, local_db
     db_path = cache_cfg.get("db_path")
-    return True, (os.path.expanduser(str(db_path)) if db_path else None)
+    cached = os.path.expanduser(str(db_path)) if db_path else None
+    return True, (local_db or cached)
 
 
 def _save_config_disk_cache(st: os.stat_result, scan: tuple[float, int, int, str],
