@@ -143,12 +143,13 @@ python3 scripts/search.py "查询词" \
     "wall_ms": 394, "engines_run": 1, "engine_sum_ms": 365,
     "parallel_efficiency": 0.93,    // 引擎各自耗时之和 ÷ 墙钟。多数值大 = 并行有效
     // useful_ms：最后一个有效引擎完成的时刻（答案从这一刻起已在手里）。
-    // wasted_ms：**被编排主动弃置的引擎已经花掉的墙钟之和**——早停收工时仍在
-    //   跑、结果被扔掉的那部分。它不拖住返回，所以 useful+wasted 不再等于
-    //   wall（早停时函数当刻就返回，被弃置的线程还在后台跑）。数值大说明对冲
-    //   排得太靠前 / tail_grace 太宽 / 并发上限太小，三者都可直接调。
+    // tail_wait_ms：结果已可交付之后仍在等的墙钟——早停时刻成立就用早停时刻算，
+    //   no_early 域退回首条结果时刻。它才是「收工早一点能省多少」的量。
+    // abandoned_engine_ms：早停时被弃置的引擎已花墙钟之和（并行资源浪费，
+    //   不拖住返回，所以不等于用户多等）。wasted_ms 是它的旧别名。
     //   仍被等到超时的引擎**不算**浪费：那是引擎不健康，看 engine_latency 与熔断。
-    "useful_ms": 394, "wasted_ms": 143, "early_stopped": true
+    "useful_ms": 394, "tail_wait_ms": 0, "abandoned_engine_ms": 143,
+    "first_sufficient_ms": 394, "wasted_ms": 143, "early_stopped": true
   },
   "import_ms": 49.4,                // 加载模块占的时间
   "overhead_ms": 61.5,              // 除各阶段外的开销（import + 解析参数 + 收尾）
@@ -583,12 +584,13 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 | `ARGO_YDC_API_KEY` | 对应引擎/服务的凭据（you.com） | 缺密钥=该源跳过或降级 |
 | `ARGO_ZHIHU_ACCESS_SECRET` | 对应引擎/服务的凭据 | 缺密钥=该源跳过或降级 |
 
-### 行为调参（22）
+### 行为调参（23）
 
 | 变量 | 作用 | 默认/备注 |
 |------|------|----------|
 | `ARGO_ADAPTIVE_GRACE` | 对冲宽限窗按主引擎历史 P75 自适应收窄（只缩不放） | 默认开；=0 关闭（回固定 base 窗，作消融对照）。v2 冻结期 A/B 曾判未证实收益，c52b7d4 起转默认启用 |
 | `ARGO_GENERAL_FALLBACK_LEGACY` | 通用兜底链退回旧顺序（anysearch → local_bing，不含 octen） | 默认关；=1 开启。2026-10-17 交错 A/B：octen 第二顺位在 anysearch 抖动窗口把 p90 3273→1614ms、max 6266→1928ms、错误 9→0，健康窗口中位无差 |
+| `ARGO_GENERAL_FALLBACK_LEAD` | 通用兜底链领队覆盖（传引擎名，提到首位） | 默认空=按 engine_policy 常量（octen 领队）；=anysearch 复现 2026-10-21 之前的顺位。用于交错 A/B，不改默认值即可对拍 |
 | `ARGO_ADAPTIVE_TAIL` | 尾宽按 backup 引擎历史 P75 分层（快源等满/慢源早收工） | 默认关；=1 开启（2026-10-16 三轮交错 A/B 未证实收益，对拍记录在本机 docs-local/调度对拍_尾宽分层与并发_2026-10-16.md，属本地归档不随发布件分发） |
 | `ARGO_ADMISSION_TTL_S` | 行为阈值/预算调参 | 默认经实测校准，勿轻动 |
 | `ARGO_DAEMON` | 允许 search 在 daemon 不在位时自动后台拉起（显式 opt-in） | 默认关；=1 开启。`argo daemon start` 手动启动的实例不受此开关影响；`ARGO_NO_DAEMON=1` 优先 |

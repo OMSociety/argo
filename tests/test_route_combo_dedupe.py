@@ -50,21 +50,21 @@ class TestTfidfLeadCombo(unittest.TestCase):
 
 
 class TestGeneralFallbackOrder(unittest.TestCase):
-    """2026-10-17 A/B 结论：octen 顶到第二顺位做 anysearch 的早停对冲。
+    """2026-10-21 A/B 结论：octen 领队，anysearch 退到对冲位。
 
-    健康窗口里中位延迟无差（双引擎的早停由领队宽限窗决定）；anysearch
-    抖动窗口里 octen（996ms / 100% 成功）先交出足够结果，把 p90 从
-    3273ms 收到 1614ms、错误 9→0。local_bing 退第三位，仍是快速补充源。
+    交错对拍（6 对，seed 11）：octen 领队 5:1 胜，中位快 804ms，
+    p90 1643→716ms，结果数中位同为 8。生产日志同向：general_search
+    的 346 条里 324 条最后一棒是 anysearch（p50 1932ms）。local_bing 仍第三。
     """
 
-    def test_octen_is_second(self):
+    def test_octen_is_first(self):
         self.assertEqual(GENERAL_FREE_FALLBACK[:3],
-                         ("anysearch", "octen", "local_bing"))
+                         ("octen", "anysearch", "local_bing"))
 
     def test_general_fallback_preserves_order(self):
         enabled = {"anysearch", "octen", "local_bing", "local_search", "wikipedia"}
         combo = _general_fallback(enabled)
-        self.assertEqual(combo[:3], ["anysearch", "octen", "local_bing"])
+        self.assertEqual(combo[:3], ["octen", "anysearch", "local_bing"])
         self.assertEqual(combo[-1], "local_search")
 
     def test_missing_engines_are_filtered(self):

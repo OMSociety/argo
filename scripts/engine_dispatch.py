@@ -32,6 +32,7 @@ from cache_guard import (
     is_state_failure_outcome,
 )
 from time_utils import is_time_capable
+from dispatch_result import DispatchResult, summarize_dispatch
 from query_signals import (
     cumulative_sufficient,
     results_sufficient,
@@ -212,39 +213,6 @@ def classify_engine_outcome(eng: str, res: list[dict[str, Any]],
         "engine": eng, "status": "ok",
         "results_count": len(goods), "latency_ms": latency_ms,
     }
-
-
-class DispatchResult:
-    """编排产出 + 两个钩子（融合后仍要补搜的路径用）。
-
-    `run_one` / `ingest` 必须外露：macro_data 域的 D6 证据下限补搜在融合之后，
-    它要跑单个引擎并把结果并进同一份账（raw_results / engine_outcomes /
-    engine_latency / wasted 计数），另起一份会让 engines_used 与配额记账对不上。
-
-    `budget_used_ms` / `budget_total_ms`：本次编排的实际墙钟消耗与总预算
-    （deep 等无预算模式 total 为 None）。搜索输出把它挂进 timing.budget，
-    让「这次离预算上限还有多远」可观测，而不必反推 process_ms。
-
-    """
-
-    __slots__ = ("raw_results", "engine_outcomes", "engine_latency",
-                 "wasted_ms", "early_stopped", "run_one", "ingest",
-                 "budget_used_ms", "budget_total_ms", "useful_ms")
-
-    def __init__(self, raw_results, engine_outcomes, engine_latency,
-                 wasted_ms, early_stopped, run_one, ingest,
-                 budget_used_ms=None, budget_total_ms=None,
-                 useful_ms: int = 0) -> None:
-        self.raw_results = raw_results
-        self.engine_outcomes = engine_outcomes
-        self.engine_latency = engine_latency
-        self.wasted_ms = wasted_ms
-        self.early_stopped = early_stopped
-        self.run_one = run_one
-        self.ingest = ingest
-        self.budget_used_ms = budget_used_ms
-        self.budget_total_ms = budget_total_ms
-        self.useful_ms = useful_ms
 
 
 def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
@@ -630,6 +598,10 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
     # 有界并发下恒为 0（最后完成的引擎就是触发早停的那个，wall==useful），
     # 仪表盘因此永远显示 0，无法据此调 tail_grace / hedge / 并发上限。
     abandoned_ms: list[float] = []
+    # 首个「可交付」与首个「够用」的时刻（相对本次编排起点）。前者在 no_early
+    # 域里就是唯一能算出尾等待的锚点；后者是早停判据真正成立的那一瞬。
+    first_result_at: float | None = None
+    first_sufficient_at: float | None = None
     # 配额批次的构造在调用方：flush 必须发生在**最后一个 _ingest 之后**，
     # 而那个点在融合后的 D6 补搜里（本模块之外）。在这里另建一个实例，
     # 调用方 flush 到的就是空批次——补搜引擎的记账永远落不了盘。
@@ -787,6 +759,7 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
         """
         if not engs:
             return False
+        nonlocal first_result_at, first_sufficient_at
         queue = list(engs)
         pending: list[tuple[dict[str, Any], Any, str]] = []
         deadline = _now() + max(0.0, wait_s)
@@ -817,7 +790,10 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
                 pending.remove(item)
                 progressed = True
                 goods = _holder_goods(holder)
+                if goods and first_result_at is None:
+                    first_result_at = _now()
                 if stop is not None and stop(eng, goods):
+                    first_sufficient_at = _now()
                     _settle_pending(pending, status="cancelled")
                     return True
                 if goods and tail_grace_s > 0.0:
@@ -988,32 +964,20 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
 
 
     budget_total_ms = int(budget_s * 1000) if budget_s is not None else None
-    # 墙钟账：`useful_ms` = 最后一个有效贡献引擎完成的时刻（答案从这一刻起
-    # 就已经在手里了）。`wasted_ms` 见下方口径说明。
-    #
-    # 此前的 wasted 是「所有非 ok 引擎的 latency 之和」——它根本不是时间量：
-    # 并行时必然大于墙钟（实测「世界杯 2026 主办国」wasted 2847ms > dispatch
-    # 2313ms），而且把「引擎如实返回了 0 条」也算成浪费。两个已知代价：
-    # ① 上一轮的优化盘点据此写下「早停与 hedge race 记账诚实、调度不用动」，
-    #    而实测调度是最大的单一浪费源；② 读者无法从它推出任何行动。
-    #
-    # 再往后改成 `wall - useful`（useful = 最后一个**贡献结果**的引擎的完成
-    # 时刻），并宣称口径是「答案就绪后还在等」。但有界并发下这仍是恒等式：
-    # 触发早停的引擎自己就是最后完成的那个，返回当刻 wall == useful，于是
-    # wasted 永远是 0——实测每轮皆 0。空转的仪表比没有仪表更糟：它让人以为
-    # 调度无浪费可调，于是谁都不会去调 tail_grace / hedge / 并发上限。
-    #
-    # 现在的口径：**被编排主动弃置的引擎已经花掉的墙钟之和**。
-    # 这些时间确实白花（没换来结果、也没拖住返回），是唯一既能算清、
-    # 又能指向具体动作的量；与 wall 无关（弃置不阻塞返回），故不再保证
-    # useful + wasted == wall。仍被等待的超时引擎不算浪费——那是引擎不健康，
-    # 在 engine_latency / 熔断里已可见。
+    # 墙钟账拆成两组量（真源与历史见 dispatch_result 模块注释）：tail 指向
+    # 收工时机，abandoned 指向并发/对冲预算。旧 wasted_ms 保留为别名。
     wall_ms = int((_now() - _budget_base) * 1000)
-    useful_ms = int(min(max(contributed_ms), wall_ms)) if contributed_ms else 0
+    _acc = summarize_dispatch(
+        wall_ms=wall_ms, contributed_ms=contributed_ms,
+        first_result_at=first_result_at, first_sufficient_at=first_sufficient_at,
+        base=_budget_base, abandoned_ms=abandoned_ms)
     return DispatchResult(
         raw_results, engine_outcomes, engine_latency,
-        int(sum(abandoned_ms)), early_stopped, _run_one, _ingest,
+        _acc["abandoned_engine_ms"], early_stopped, _run_one, _ingest,
         budget_used_ms=wall_ms,
         budget_total_ms=budget_total_ms,
-        useful_ms=useful_ms,
+        useful_ms=_acc["useful_ms"],
+        first_sufficient_ms=_acc["first_sufficient_ms"],
+        tail_wait_ms=_acc["tail_wait_ms"],
+        abandoned_engine_ms=_acc["abandoned_engine_ms"],
     )

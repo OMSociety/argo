@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from config import get_engines
@@ -101,6 +102,12 @@ def _general_fallback(enabled: set[str]) -> list[str]:
     except ImportError:
         GENERAL_FREE_FALLBACK = ("anysearch", "octen", "local_bing")
     order = list(GENERAL_FREE_FALLBACK)
+    # 领队覆盖（2026-10-21）：A/B 与线上回退都走这里，避免为了复测改常量。
+    # 传引擎名即把它提到首位（例：ARGO_GENERAL_FALLBACK_LEAD=anysearch 复现
+    # 2026-10-21 之前的顺位）；传空/未知值不生效。与下面的 LEGACY 开关正交。
+    lead_override = (os.environ.get("ARGO_GENERAL_FALLBACK_LEAD") or "").strip()
+    if lead_override and lead_override in order:
+        order = [lead_override] + [e for e in order if e != lead_override]
     # 逃生开关：A/B 与线上回退都走这条，避免为了复测改常量。
     # 2026-10-17 对拍（交错、随机序）：octen 入第二顺位后，anysearch 抖动
     # 窗口 p90 3273→1614ms、max 6266→1928ms、错误 9→0；健康窗口中位无差。

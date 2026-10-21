@@ -33,7 +33,8 @@ class TestGeneralFreeSingleSource(unittest.TestCase):
         # 截断（见 route_combo._general_fallback docstring 的实测）。
         enabled = {"local_search", "github"} | set(GENERAL_FREE_FALLBACK)
         fb = _general_fallback(enabled)
-        self.assertEqual(fb[0], "anysearch")
+        # 领队取自唯一来源，不写死引擎名（2026-10-21 领队从 anysearch 换到 octen）。
+        self.assertEqual(fb[0], GENERAL_FREE_FALLBACK[0])
         self.assertEqual(fb[:len(GENERAL_FREE_FALLBACK)], list(GENERAL_FREE_FALLBACK))
         self.assertEqual(fb[-1], "local_search")
         self.assertNotIn("local_search", fb[:2],

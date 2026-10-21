@@ -51,12 +51,12 @@ FORCE_DAILY_CORE: frozenset[str] = frozenset({
 # 排在通用检索源末位 + spec 的 tier=daily_support，日常 fast/auto 的 combo 预算
 # （2/3 个）够不到它，只在 deep/research 无截断时参战，共享免费层不被烧穿。
 GENERAL_FREE_FALLBACK: tuple[str, ...] = (
-    # 2026-10-17 A/B：octen 顶到第二顺位（anysearch 之后）。健康窗口里
-    # 双引擎的早停由领队的宽限窗决定，中位延迟无差；anysearch 抖动/超时
-    # 的窗口里 octen（实测 996ms / 100% 成功）先把足够结果交出来，早停把
-    # 尾延迟从 3273ms 收到 1725ms（p90 3273→1614，max 6266→1928，错误
-    # 9→0）。local_bing 退到第三位，仍是 570ms 级的快速补充源。
-    "anysearch", "octen", "local_bing", "uapi", "local_baidu", "firecrawl",
+    # 2026-10-21 A/B：octen 顶到第一位。交错对拍（ab_eval，4 对/查询、
+    # --no-cache）里 octen 对 anysearch 8:0 全胜：露营 天幕 p90 6313→835ms、
+    # asyncio p90 2769→963ms，结果数中位同为 8。生产日志同向：general_search
+    # 346 条查询里 324 条的最后一棒是 anysearch（p50 1932ms），octen 同域
+    # p50 776ms。anysearch 退到对冲位，能力面不变（仍在 combo 内）。
+    "octen", "anysearch", "local_bing", "uapi", "local_baidu", "firecrawl",
     "parallel_free", "wikipedia",
 )
 

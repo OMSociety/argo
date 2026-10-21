@@ -219,7 +219,8 @@ def format_timing(t: dict[str, Any]) -> str:
             f"  引擎并发        墙钟 {d.get('wall_ms')} ms / 引擎合计 "
             f"{d.get('engine_sum_ms')} ms → 并发效率 "
             f"{d.get('parallel_efficiency')}（跑了 {d.get('engines_run')} 个，"
-            f"早停={d.get('early_stopped')}，浪费 {d.get('wasted_ms')} ms）")
+            f"早停={d.get('early_stopped')}，尾等待 {d.get('tail_wait_ms')} ms，"
+            f"弃置 {d.get('abandoned_engine_ms')} ms）")
     if "overhead_ms" in t:
         lines.append(
             f"  固定开销        {t['overhead_ms']} ms"

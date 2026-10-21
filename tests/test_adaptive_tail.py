@@ -27,12 +27,18 @@ engine_dispatch 的收尾等待真的按「仍在等待的引擎」的 P75 收�
 
 from __future__ import annotations
 
+import os
 import sys
 import time
 import unittest
 from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+# 直接 `python3 tests/test_adaptive_tail.py` 跑时不会加载 conftest.py，本用例
+# 会真的写生产 usage_log（2026-10-16 实测留下 17 条 quick_primary 记录）。
+# 模块级兜底：只在本文件被单独执行时生效，pytest 路径由 conftest 统一管。
+os.environ.setdefault("ARGO_USAGE_LOG", "0")
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "scripts"

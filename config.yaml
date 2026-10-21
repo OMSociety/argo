@@ -1201,7 +1201,11 @@ domains:
   name: zhihu_content
   parallel: true
   patterns:
-  - (?i)(知乎|怎么看待|如何评价|体验|评测|对比|推荐|哪个好|值得买|好不好|要不要|推荐吗|求推荐|有什么)
+  # 2026-10-21：只认「明确指向知乎/站内观点」的词。此前的 体验|评测|对比|
+  # 推荐|哪个好|值得买|好不好|要不要|求推荐|有什么 是中文查询的通用词，
+  # 实测把「蓝牙耳机推荐」「新能源汽车对比」这类通用消费查询锁到知乎单源
+  # （21 条样本里至少 9 条）。泛意图交给通用保底，覆盖更宽。
+  - (?i)(知乎|怎么看待|如何评价|站内|知友)
   primary: zhihu
 - desc: 学术论文搜索
   # openreview/biorxiv 曾长期是「已实现但无域引用」的孤儿源：只能靠
@@ -1287,7 +1291,10 @@ domains:
   parallel: true
   patterns:
   # 注意：不要用裸 \bbest\b / review / comparison，会误伤 "best practices" 等技术查询
-  - (?i)(评测|推荐|哪个好|值得买|选购|入手|踩坑|避雷|种草|拔草|海淘)
+  # 2026-10-21：泛购物意图（评测/推荐/哪个好/值得买/选购/入手）不再由本域
+  # 独占——它们占中文查询的很大一块，锁到知乎单源等于用问答站替代全网。
+  # 这里只留「购物动作」本身；泛意图落通用保底（octen/anysearch），覆盖更宽。
+  - (?i)(踩坑|避雷|种草|拔草|海淘|好物|开箱|平替)
   - (?i)\b(product\s+review|buyer's?\s+guide|worth\s+buying|best\s+buy|shopping)\b
   primary: zhihu
 - desc: 语义发现/开放式调研（Exa 语义引擎）
@@ -1472,12 +1479,12 @@ domains:
   - (?i)\b(company\s*registration|incorporation|registered\s+number|business\s+registry|company\s+search|corporate\s+records)\b
   - (?i)(会社|法人|登記|기업|법인|등록)
   primary: opencorporates
-- desc: 中文通用搜索（anysearch #3 作 bocha/byted 弱结果时的多语言救援）
+- desc: 中文通用搜索（octen #3 作 bocha/byted 弱结果时的多语言救援）
   engines_combo:
   - bocha
   - byted
-  - anysearch
   - octen
+  - anysearch
   - zhihu_global
   - wechat_sogou
   - local_search

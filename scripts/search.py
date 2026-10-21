@@ -785,13 +785,13 @@ def super_search(query: str, engine: str = "auto", n: int = 5, explain: bool = F
                   file=sys.stderr)
         if search_query != original_query:
             print(f"[改写] {original_query} → {search_query}", file=sys.stderr)
-    # L1 并行化：include_local 时把 _run_local_seek 提前提交到线程池，
-    # 与主搜索并行执行。主搜索完成时本地搜索通常已就绪，零额外墙钟。
+    # L1 并行化：本地搜索与主搜索并行提交（仅显式开启时在宽根下提示）。
+    _local_seek_explicit = include_local is not None
     include_local = _resolve_include_local(include_local, mode)
     _local_seek_future = None
     if include_local:
         _local_seek_future = _get_local_seek_executor().submit(
-            _run_local_seek, query, n)
+            _run_local_seek, query, n, warn=_local_seek_explicit)
 
     result = execute_search(
         query=search_query, decision=decision, max_results=n,

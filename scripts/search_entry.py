@@ -361,6 +361,11 @@ def dispatch(req: _SearchRequest, run: _SearchRun, hooks: _SearchHooks) -> _Sear
     engine_latency = _dispatch.engine_latency
     wasted_ms = _dispatch.wasted_ms
     useful_ms = _dispatch.useful_ms
+    dispatch_tail = {
+        "first_sufficient_ms": _dispatch.first_sufficient_ms,
+        "tail_wait_ms": _dispatch.tail_wait_ms,
+        "abandoned_engine_ms": _dispatch.abandoned_engine_ms,
+    }
     early_stopped = _dispatch.early_stopped
     budget_used_ms = _dispatch.budget_used_ms
     budget_total_ms = _dispatch.budget_total_ms
@@ -378,6 +383,7 @@ def dispatch(req: _SearchRequest, run: _SearchRun, hooks: _SearchHooks) -> _Sear
         engine_latency=engine_latency,
         wasted_ms=wasted_ms,
         useful_ms=useful_ms,
+        dispatch_tail=dispatch_tail,
         early_stopped=early_stopped,
         budget_used_ms=budget_used_ms,
         budget_total_ms=budget_total_ms,

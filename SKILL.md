@@ -110,7 +110,7 @@ argo watch add|check|list|remove   # 观察模式（--json 供 cron）
 
 - **`--envelope` 与 `--fields agent` 别同给**：后者把 envelope 增量剥成 0 字节；要 provenance 就去掉 `--fields agent`。
 - **结果异常少**：看 `funnel` 六格阶段计数，哪格归零即塌陷点。
-- **慢查询**：看 `timing.dispatch` 的 `useful_ms`/`wasted_ms`，区分「等答案」与「白等」。
+- **慢查询**：看 `timing.dispatch` 的 `tail_wait_ms`（就绪后还在等）/`abandoned_engine_ms`。
 - **`--list-engines` 别直接 `--all`**：全量 ~54 KB 灌爆版面，默认摘要够用。
 - **`-n` 超 10 无收益**。
 

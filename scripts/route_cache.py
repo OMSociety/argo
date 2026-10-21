@@ -19,6 +19,7 @@ route_cache → route → route_cache 的循环导入。
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Any
 
@@ -100,6 +101,9 @@ def _route_state_fingerprint() -> str:
         parts.append("cb=" + ",".join(sorted(get_breaker().auto_disabled())))
     except Exception:
         return ""
+    # 路由旋钮的 env 覆盖必须参与指纹：否则「设了 ARGO_GENERAL_FALLBACK_LEAD
+    # 却因缓存命中不生效」，逃生开关与 A/B 臂都变成摆设（2026-10-21 实测踩中）。
+    parts.append("lead=" + (os.environ.get("ARGO_GENERAL_FALLBACK_LEAD") or ""))
     return "|".join(parts)
 
 

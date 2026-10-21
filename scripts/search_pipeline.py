@@ -153,6 +153,7 @@ class _SearchRun:
     engine_latency: dict[str, float] = field(default_factory=dict)
     wasted_ms: int = 0
     useful_ms: int = 0
+    dispatch_tail: dict[str, int] = field(default_factory=dict)
     early_stopped: bool = False
     budget_used_ms: int | None = None
     budget_total_ms: int | None = None
@@ -886,6 +887,7 @@ def finalize(req: _SearchRequest, run: _SearchRun, hooks: Any) -> dict[str, Any]
     funnel = run.funnel
     result_payload = run.result_payload
     wasted_ms, useful_ms = run.wasted_ms, run.useful_ms
+    dispatch_tail = run.dispatch_tail
     early_stopped = run.early_stopped
     budget_used_ms, budget_total_ms = run.budget_used_ms, run.budget_total_ms
     elapsed = run.elapsed
@@ -1054,19 +1056,16 @@ def finalize(req: _SearchRequest, run: _SearchRun, hooks: Any) -> dict[str, Any]
         out["timing"] = timing.summary()
         out["timing"]["elapsed_ms"] = elapsed
         out["timing"]["dispatch"] = {
-            # 用 dispatch 自己那口单调钟量出来的墙钟（budget_used_ms），不用外层
-            # 这笔 time.time() 差值：useful/wasted 都是单调钟算的，混用两种钟会
-            # 对不上账。注意 2026-10-10 记账改版起 useful + wasted 与 wall 没有
-            # 恒等式关系，别再按恒等式读仪表（口径真源：engine_dispatch 记账注释）。
+            # 墙钟/尾等待/弃置的口径真源见 dispatch_result.py；useful + wasted 与
+            # wall 没有恒等式（2026-10-10 起），不要再按恒等式读仪表。
             "wall_ms": budget_used_ms,
             "engines_run": len(engine_latency),
             "engine_sum_ms": eng_sum,
             "parallel_efficiency": (round(eng_sum / budget_used_ms, 2)
                                     if budget_used_ms else None),
-            # useful = 最后一个贡献结果引擎的完成时刻；wasted = 被编排主动弃置
-            # 的引擎已花墙钟之和。与 wall 无恒等式（真源：engine_dispatch 记账注释）。
             "useful_ms": useful_ms,
             "wasted_ms": wasted_ms,
+            **dispatch_tail,
             "early_stopped": early_stopped,
         }
         if budget_total_ms is not None:

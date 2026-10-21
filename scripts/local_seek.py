@@ -200,7 +200,8 @@ def _local_seek_dir() -> str | None:
 
 
 def _run_local_seek(query: str, max_n: int = 5,
-                    search_dir: str | None = None) -> list[dict[str, Any]]:
+                    search_dir: str | None = None,
+                    warn: bool = True) -> list[dict[str, Any]]:
     """本机文件命中（include-local 用）：进程内调 seek.run_query，JSON 并入。
 
     fast/budget 模式下由 super_search 自动调用（_resolve_include_local），
@@ -215,10 +216,14 @@ def _run_local_seek(query: str, max_n: int = 5,
         # 静默跳过会让用户以为本地没匹配，而事实是根本没查。返回一个
         # 占位「结果」又会污染 results（它只是个说明，不是命中），所以
         # 说明走 stderr：与 CLI 既有的 include-local 异常提示同一条通道。
-        sys.stderr.write(
-            "  [include-local] 当前目录不适合本地检索（home / 根目录过宽，或位于 argo "
-            "自身安装树内——只会命中自身源码），已跳过；"
-            "要搜本机文件请 cd 到目标目录后重试，或用 local-seek 的 seek.py --path <目录>\n")
+        # 只在**显式开启**时提示（warn=False 是 fast/budget 的自动路径）：
+        # 自动路径在 home 等宽根下每次 search 都会打印，Agent 会把它当成
+        # 输出的一部分，属于噪音而非归因。
+        if warn:
+            sys.stderr.write(
+                "  [include-local] 当前目录不适合本地检索（home / 根目录过宽，或位于 argo "
+                "自身安装树内——只会命中自身源码），已跳过；"
+                "要搜本机文件请 cd 到目标目录后重试，或用 local-seek 的 seek.py --path <目录>\n")
         return []
 
     # 缓存：同 query+target 在 TTL 内直接命中，避免重复冷启动 seek.py 子进程。
