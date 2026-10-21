@@ -18,7 +18,7 @@ FRED/worldbank 对人民币汇率返回 0 条 → 零结果恢复链拉来 local
 
 本文件三类检查：
 
-1. **路由正例**：六种 FX 问法命中 fx_query 且前两位是 fx_rate/eastmoney；
+1. **路由正例**：六种 FX 问法命中 fx_query 且前两位是 fx_rate/cfets（2026-10-21 接入官方中间价）；
 2. **路由负例**：宏观/美股/A股/财经新闻等相邻查询不得被 fx_query 抢走
    （域命中锁死 combo，误抢比漏接更难纠——precision 测试的同一论断）；
 3. **货币对解析**：单别名词、显式兑/斜杠、ISO 缩写污染（GDP/CPI）、
@@ -63,20 +63,20 @@ class TestFxQueryRouting(unittest.TestCase):
                 d.get("domain"), "fx_query",
                 f"{q!r} 应命中 fx_query，实际 {d.get('domain')}")
 
-    def test_fx_rate_lead_and_eastmoney_second(self):
-        """fx_rate 进位次 1（fast 预算窗 2 内可达）——事故根因①的回归锁。"""
+    def test_fx_rate_lead_and_cfets_second(self):
+        """fx_rate 位次 1、cfets 位次 2（官方中间价）——2026-10-21 接线后的契约。"""
         for q in self.CASES:
             combo = _route(q).get("engines_combo") or []
-            self.assertEqual(combo[:2], ["fx_rate", "eastmoney"],
-                             f"{q!r} 的 combo 前两位应为 fx_rate/eastmoney，实际 {combo[:3]}")
+            self.assertEqual(combo[:2], ["fx_rate", "cfets"],
+                             f"{q!r} 的 combo 前两位应为 fx_rate/cfets，实际 {combo[:3]}")
 
     def test_fast_budget_window_keeps_both(self):
-        """fast 档策略裁剪后，fx_rate 与 eastmoney 都还在（位次休眠锁）。"""
+        """fast 档策略裁剪后，fx_rate 与 cfets 都还在（位次休眠锁）。"""
         from engine_policy import filter_combo_by_policy
         combo = _route("人民币 汇率 中间价 今日").get("engines_combo") or []
         kept = filter_combo_by_policy(combo, mode="fast", depth="fast")
         self.assertIn("fx_rate", kept, f"fast 窗内应保留 fx_rate，实际 {kept}")
-        self.assertIn("eastmoney", kept, f"fast 窗内应保留 eastmoney，实际 {kept}")
+        self.assertIn("cfets", kept, f"fast 窗内应保留 cfets，实际 {kept}")
 
 
 class TestFxQueryDoesNotSteal(unittest.TestCase):

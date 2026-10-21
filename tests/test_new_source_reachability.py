@@ -263,6 +263,7 @@ _DORMANT_ALLOWLIST: dict[str, str] = {
     "obis": "待接线：species_search 位次 4（iplant 接入后顺延；既有债务，非本次引入）",
     "cleveland": "art_museum 同质重复备份（与 artic 同能力，故意不加槽）",
     "cn_ai_news": "待接线：chinese_tech_deep 位次 4",
+    "frankfurter": "fx_query 位次 4：2026-10-21 接入 cfets 后顺延；ECB 参考价与 cfets 口径重叠，deep/恢复链可达",
     # 2026-10-06：macro_data 位次 6（fast 档 budget=2，位次 5+ 不参与自动
     # 路由）。汇率主路径由 fx_rate（位次 5，同窗口外但历史更久）承担；
     # frankfurter 的价值口径是 ECB 官方参考价，走 macro_data 零结果恢复链
@@ -294,7 +295,6 @@ _DORMANT_ALLOWLIST: dict[str, str] = {
     # 城市 wttr 语义无替代源，保留在本域 + fallback 链/显式 --engine 触达。
     "weather": "weather_query 位次 4（快源前置让位 weather_cn）：海外城市仍主用，fast 档靠 fallback 链兜底",
     "fxtwitter": "social 域位次 6：社交引擎另有专用通道，待核实是否真休眠",
-    "gleif": "待接线：org_entity 位次 6",
     "keenable": "待接线：english_tech 位次 4",
     "jikan": "anime_encyclopedia 位次 4：上游 /anime?q= 检索端点持续 504，"
              "spec enabled=false 暂停启用；恢复后改回 true 并接入加槽表",
