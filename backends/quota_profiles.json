@@ -2623,10 +2623,10 @@
   "yuanbao": {
     "label": "腾讯元宝搜索",
     "qps": 2,
-    "limit": null,
-    "period": "second",
+    "limit": 6000,
+    "period": "month",
     "cost_per_call": 0.0,
-    "cost_unit": "cny",
+    "cost_unit": "credit",
     "cost_tier": "api",
     "priority": 55
   },

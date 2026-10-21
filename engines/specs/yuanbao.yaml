@@ -37,7 +37,20 @@
 engine_id: yuanbao
 type: yuanbao
 enabled: true
-# 价格未知之前不进自动路由：只经 --engine 显式调用（同 deepseek_search 的口径）
+# 额度是**按次**的（月 6000），不是按钱的——用 limit + period 的计数档位，
+# 不用 budget.py 的金额档（金额档要单价，计数档不要；单价官方也没公布）。
+#
+# 「次数」的口径：quota.record_many 的 used 计的是**发出过的调用数（含失败）**，
+# 只有 cost_used 是成功才累加。对硬额度而言这是安全的一侧——本地宁可早停，
+# 不让远端 6000 次的硬上限被撞穿；反过来说，本地显示「已用 100 次」时上游
+# 可能只计了其中成功的那些。本轮不改这个口径（改它要动 record_many 的通用
+# 语义，影响全部引擎）。
+#
+# 额度用完即 is_hard_down（全模式排除，不是仅仅排除路由），到 30 天周期边界
+# 惰性自愈；想提前恢复用 `python3 scripts/quota.py reset yuanbao`。
+#
+# 仍不进自动路由：额度是可耗尽的资源，放进域 combo 会在无人察觉的情况下烧完，
+# 而烧完之后该域的覆盖是悄悄变窄的（不是报错，是少一个源）。
 explicit_only: true
 cost_tier: api
 method: POST
@@ -47,11 +60,18 @@ canary_query: 三星堆的由来
 label: 腾讯元宝搜索
 family: web_general
 priority: 55
-# 上游有 RequestLimitExceeded，但公开文档未给具体 QPS；保守取 2，避免撞限流
+# 上游有 RequestLimitExceeded，但公开文档未给具体 QPS；保守取 2，避免撞限流。
+# qps 的限频窗口是固定的 60 秒（quota.get_current_rpm），与下面的 period 无关。
 qps: 2
-period: second
+# 额度重置周期：month → 30 天（quota._period_elapsed）。**这是额度周期，
+# 不是限频周期**——写成 second/minute 只表示「本地按秒/分算限频」，不代表
+# 远端额度周期（见 quota.py:124 的注释）。
+period: month
+# 月度调用额度。体验额度为 2000 次/月，本机账号为 6000 次/月，按实际填。
+limit: 6000
+# 单价未知（官方未公布超额度后的计价），故不填金额，只由 limit 约束次数。
 cost_per_call: 0.0
-cost_unit: cny
+cost_unit: credit
 recommended: false
 
 # key 候选链：任一有值即视为就绪（解析见 engine_env.missing_env_for）

@@ -118,7 +118,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 | `tavily` | 需自备密钥 | 按调用计费 | 1000/月 | ARGO_TAVILY_API_KEY | 域 semantic_discovery、语义画像命中 | Tavily AI 搜索 API（免费层 1000 次/月，超出按美元计费；与 exa 同为 api 档） |
 | `tinyfish` | 需自备密钥 + 显式专用 | 免费 | 不限 | ARGO_TINYFISH_API_KEY | 显式调用（--engine） | TinyFish 实时网页搜索（免费，浏览器渲染，结果含原文摘要，X-API-Key 认证） |
 | `you` | 需自备密钥 | 按调用计费 | 不限 | YDC_API_KEY | 域 news_realtime | You.com 网页+新闻搜索（时效性强，官方一手源，web/news 合并） |
-| `yuanbao` | 需自备密钥 + 显式专用 | 按调用计费 | 不限 | ARGO_YUANBAO_API_KEY | 显式调用（--engine） | 腾讯元宝搜索 |
+| `yuanbao` | 需自备密钥 + 显式专用 | 按调用计费 | 6000/月 | ARGO_YUANBAO_API_KEY | 显式调用（--engine） | 腾讯元宝搜索 |
 | `zhihu_global` | 需自备密钥 | 按调用计费 | 5000/天 | ARGO_ZHIHU_ACCESS_SECRET | 域 chinese_general、域 news_realtime、域 zhihu_content | 知乎开放平台全网搜索（SearchDB=all 全网索引 + Filter host== 站点限定；需 ZHIHU_ACCESS_SECRET） |
 
 ### 学术文献（27）

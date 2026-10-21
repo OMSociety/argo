@@ -209,5 +209,54 @@ class TestKeyChain:
         assert set(yb._KEY_ENV) == set(KNOWN_ENV_ALIASES["yuanbao"])
 
 
+class TestQuota:
+    """按次的月度额度（不是金额预算）——用完即全模式排除。"""
+
+    def _profile(self):
+        import json
+        root = Path(__file__).resolve().parent.parent
+        return json.loads(
+            (root / "backends" / "quota_profiles.json").read_text("utf-8"))["yuanbao"]
+
+    def test_派生件是计数档不是金额档(self):
+        p = self._profile()
+        assert p["limit"] == 6000, "月度调用额度应为 6000 次"
+        assert p["period"] == "month", "period 是额度重置周期（month→30 天）"
+        # 金额档的两个字段都不该有值——有值就会被 budget.py 接管
+        assert not p.get("budget_amount")
+
+    def test_额度耗尽即全模式排除(self):
+        """used >= limit → is_hard_down，路由组合层全模式排除该引擎。"""
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            old = os.environ.get("ARGO_STATE_DIR")
+            os.environ["ARGO_STATE_DIR"] = d
+            try:
+                import importlib
+                import quota as quota_mod
+                importlib.reload(quota_mod)
+                qm = quota_mod.get_quota_manager()
+                qm._profiles["yuanbao"]["limit"] = 3
+                qm.record_many([("yuanbao", True)] * 3)
+                assert qm.is_hard_down("yuanbao") is True
+                # 计数额度不走金额预算路径，两者不能混
+                assert qm.is_over_budget("yuanbao") is False
+            finally:
+                if old is None:
+                    os.environ.pop("ARGO_STATE_DIR", None)
+                else:
+                    os.environ["ARGO_STATE_DIR"] = old
+                importlib.reload(quota_mod)
+
+    def test_qps_与额度周期解耦(self):
+        """period=month 只改额度重置跨度，限频窗口固定 60 秒（不能联动）。"""
+        p = self._profile()
+        assert p["qps"] == 2
+        src = (Path(__file__).resolve().parent.parent
+               / "scripts" / "quota.py").read_text("utf-8")
+        assert "now - t < 60" in src, "限频窗口应固定 60 秒，与 period 无关"
+
+
 if __name__ == "__main__":
     unittest.main()
