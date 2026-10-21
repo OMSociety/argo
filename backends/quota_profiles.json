@@ -1150,6 +1150,16 @@
     "cost_tier": "free",
     "priority": 50
   },
+  "keenable_free": {
+    "label": "Keenable (keyless)",
+    "qps": 1,
+    "limit": null,
+    "period": "second",
+    "cost_per_call": 0.0,
+    "cost_unit": "free",
+    "cost_tier": "free",
+    "priority": 57
+  },
   "know_your_meme": {
     "label": "Know Your Meme",
     "qps": 2,
@@ -2119,6 +2129,16 @@
     "cost_unit": "usd",
     "cost_tier": "api",
     "priority": 5
+  },
+  "tavily_free": {
+    "label": "Tavily (keyless)",
+    "qps": 1,
+    "limit": null,
+    "period": "second",
+    "cost_per_call": 0.0,
+    "cost_unit": "free",
+    "cost_tier": "free",
+    "priority": 56
   },
   "tencent_kline": {
     "label": "腾讯 K 线",

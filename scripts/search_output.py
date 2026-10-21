@@ -97,6 +97,13 @@ def _strip_for_agent(payload: dict[str, Any]) -> dict[str, Any]:
         # 剥掉它等于让 agent 自己交叉比对来源数/同站/聚合站/引擎失败——
         # 而那正是它最容易漏掉的一步。
         "meta",
+        # 结构化失败清单：类别 + 是否可重试 + 建议动作（≤6 条短字段）。
+        # 只有 errors 的整行文本时，agent 知道「坏了」但不知道「该重试、
+        # 换源还是去配 key」；这两件事的处置完全不同。
+        "failures",
+        # 信任级别：网页文本一律是不可信外部数据，随答案一起到达，
+        # 避免调用方把摘要里的指令当任务执行（输出层声明，非提示词）。
+        "content_trust",
     )
     out: dict[str, Any] = {k: payload[k] for k in keep_top
                            if payload.get(k) is not None}
@@ -415,6 +422,110 @@ def _hostname(url: Any) -> str:
     return host.lower().removeprefix("www.")
 
 
+# 失败类别 → (归一类别, 可执行建议, 是否可重试)。类别名与 dsh-free-search
+# 的 failureClass 对齐（quota/auth/bot-wall/transient/rate-limit/unknown），
+# 但归类依据是 argo 自己的 outcome.status（retry_policy.classify_error_status
+# 的唯一真源），不另写一套错误词表。
+_FAILURE_META: dict[str, tuple[str, str, bool]] = {
+    "timeout": ("transient", "超时；可重试或换源", True),
+    "quota-exhausted": ("quota", "配额耗尽；换源或等窗口重置", False),
+    "rate-limited": ("rate-limit", "被限流；稍后重试或换源", True),
+    "blocked": ("bot-wall", "被反爬拦截；稍后重试或换源", True),
+    "auth-failed": ("auth", "检查 API Key 是否有效、是否有该接口权限", False),
+    "error": ("unknown", "源端错误；可重试或换源", True),
+    "skipped-missing-env": ("missing-key", "未配置密钥；配置后即可参与", False),
+    "skipped-quota-exhausted": ("quota", "配额耗尽，本轮跳过", False),
+    "skipped-circuit-open": ("cooldown", "熔断冷却中，稍后自动恢复", True),
+    "skipped-budget": ("budget", "本轮预算不足，未执行", True),
+}
+_FAILURE_NON_ERROR = frozenset({
+    "ok", "ok-cached", "partial", "no-results", "no-results-cached", "cancelled",
+})
+
+
+def build_failures(result: dict[str, Any], limit: int = 6) -> list[dict[str, Any]]:
+    """把引擎 outcome 压成 Agent 可行动的结构化失败清单。
+
+    与 errors 的分工：errors 是给人看的整行文本（兼容旧契约），本字段是
+    给模型/宿主判断「要不要重试、换哪个源、是不是缺 key」的分类结果。
+    只收录没交出结果的 outcome；ok/no-results 不算失败（后者是「查了没有」，
+    不是「没查成」），与 uncertainty 的降级判据同源。
+    """
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for o in (result.get("engine_outcomes") or []):
+        if not isinstance(o, dict):
+            continue
+        engine = str(o.get("engine") or "")
+        status = str(o.get("status") or "")
+        if not engine or status in _FAILURE_NON_ERROR:
+            continue
+        key = (engine, status)
+        if key in seen:
+            continue
+        seen.add(key)
+        category, action, retryable = _FAILURE_META.get(
+            status, ("unknown", "源端异常；可重试或换源", True))
+        item: dict[str, Any] = {
+            "engine": engine,
+            "status": status,
+            "category": category,
+            "retryable": retryable,
+            "action": action,
+        }
+        # skipped-* 是「持续状态」而不是本次尝试失败：配额窗口/熔断冷却在
+        # 周期边界前不会因重试改变。标出来，避免 Agent 立刻重试同一个源。
+        if status.startswith("skipped-"):
+            item["persistent"] = True
+        detail = str(o.get("detail") or "").strip()
+        if detail:
+            item["detail"] = detail[:160]
+        out.append(item)
+        if len(out) >= max(1, limit):
+            break
+    return out
+
+
+def decorate_compact_payload(out: dict[str, Any],
+                             result: dict[str, Any]) -> None:
+    """精简响应（MCP/Agent 档）的收尾修饰：边界清洗 + 三件透明信息 + sources 投影。
+
+    为什么集中在这里：mcp_handlers 的分发表有行数上限，而这些是**输出契约**
+    （信任级别、失败可行动性、信源投影），本来就属于 search_output。
+    全部 fail-open：增强字段缺失不影响主结果。
+    """
+    try:
+        from content_boundary import (CONTENT_TRUST_UNTRUSTED,
+                                      strip_boundary_markers)
+        for item in out.get("results") or []:
+            if not isinstance(item, dict):
+                continue
+            for key in ("title", "snippet"):
+                if isinstance(item.get(key), str):
+                    item[key] = strip_boundary_markers(item[key])
+        out["content_trust"] = CONTENT_TRUST_UNTRUSTED
+    except Exception:
+        pass
+    failures = result.get("failures")
+    if isinstance(failures, list) and failures:
+        out["failures"] = failures[:6]
+    meta = result.get("meta")
+    if isinstance(meta, dict) and meta.get("uncertainty"):
+        out["meta"] = {"uncertainty": meta["uncertainty"]}
+    sources = result.get("sources")
+    if sources:
+        out["sources"] = [
+            {
+                "ref": s.get("ref"),
+                "title": s.get("title"),
+                "url": s.get("url"),
+                "engine": s.get("engine") or s.get("source"),
+            }
+            for s in sources
+            if isinstance(s, dict) and s.get("url")
+        ][:20]
+
+
 def build_uncertainty(result: dict[str, Any]) -> dict[str, Any]:
     """一次调用的综合可信度：`{"level": ..., "notes": [...]}`。
 
@@ -714,4 +825,19 @@ def shape_response(ctx: _ShapeContext, result: dict[str, Any]) -> dict[str, Any]
         result["meta"] = {"uncertainty": build_uncertainty(result)}
     except Exception as e:
         _log(f"可信度评估跳过: {type(e).__name__}")
+    # 结构化失败清单：与 meta 同一收口，读的 outcome 与漏斗/可信度同源。
+    # 失败时静默跳过（增强失败不得让一次搜索失败）。
+    try:
+        failures = build_failures(result)
+        if failures:
+            result["failures"] = failures
+    except Exception as e:
+        _log(f"失败清单跳过: {type(e).__name__}")
+    # 信任级别：所有入口（full/agent/MCP）共用同一个声明，避免只在 MCP 档
+    # 出现、CLI 档又漏掉的「同一事实两处口径」。
+    try:
+        from content_boundary import CONTENT_TRUST_UNTRUSTED
+        result["content_trust"] = CONTENT_TRUST_UNTRUSTED
+    except Exception:
+        pass
     return result

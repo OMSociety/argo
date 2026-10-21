@@ -1463,6 +1463,19 @@ engines:
   recommended: true
   explicit_only: false
   desc: Keenable 通用网页搜索（ranked results，含 published_at，按 credits 计费）
+- name: keenable_free
+  tier: T1
+  type: keenable_free
+  coverage:
+  - general
+  - english
+  - chinese
+  latency_ms: 2000
+  cost: free
+  status: ok
+  recommended: false
+  explicit_only: false
+  desc: Keenable 官方免 key 匿名通道（通用网页搜索，无需注册）
 - name: know_your_meme
   tier: T1
   type: html
@@ -2661,6 +2674,19 @@ engines:
   recommended: true
   explicit_only: false
   desc: Tavily AI 搜索 API（免费层 1000 次/月，超出按美元计费；与 exa 同为 api 档）
+- name: tavily_free
+  tier: T1
+  type: http
+  coverage:
+  - general
+  - english
+  - chinese
+  latency_ms: 2000
+  cost: free
+  status: ok
+  recommended: false
+  explicit_only: false
+  desc: Tavily 官方免 key 匿名通道（通用网页搜索，无需注册）
 - name: tencent_kline
   tier: T1
   type: tencent_kline

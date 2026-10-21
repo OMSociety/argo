@@ -79,7 +79,7 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "2026-10-17 +2：normalize_url 真正去掉 fragment（docstring 一直"
               "这么写，旧实现把它原样带回）"),
     "scripts/engines_builders_tech.py": (
-        1360, "技术社区源声明构建器（V2EX/StackExchange 等），逐源一段；"
+        1359, "技术社区源声明构建器（V2EX/StackExchange 等），逐源一段；"
               "2026-09-26 批次十增强净增 +402：sov2ex 一级全文来源（v2ex 就地升级）、"
               "tineye/bing_rss 新引擎、exa 免 key 匿名通道——与原逐源一段同性质，"
               "拆出只会把同一张表切碎（新引擎的下一站是 batch 模块）；"
@@ -104,7 +104,7 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "2026-10-06 A2 登录态车道 +11（auth_profile 判定与传参），"
               "同日浏览器档整级拆出 fetch_browser.py −36"),
     "scripts/mcp_handlers.py": (
-        1074, "MCP 工具 handler 分发（19 工具 → CLI 模块）；"
+        1058, "MCP 工具 handler 分发（19 工具 → CLI 模块）；"
               "2026-09-29 +8：661e0f1（H2 seek 进程内化）带入的增量，"
               "并行会话未登记即合入——本行补登记；同日 −1：路由预热改调 "
               "route_domains.warm_compiled_domains（原在此内联复刻同一句，"

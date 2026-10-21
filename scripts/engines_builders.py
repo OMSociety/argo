@@ -28,6 +28,9 @@ from engines_builders_batch9 import (
     _build_tle_mirror_engine,
     _build_nhtsa_vpic_engine,
 )
+from engines_builders_keyless import (
+    _build_keenable_free_engine,
+)
 from engines_builders_tech import (
     _build_exa_engine,
     _build_anysearch_engine,

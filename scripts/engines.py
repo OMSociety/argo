@@ -60,6 +60,7 @@ __all__ = [
     "_parse_semantic_scholar",
     "_ensure_engine_source",
 ]
+from engines_builders_keyless import _build_keenable_free_engine
 from engines_builders import (
     _build_who_don_engine,
     _build_who_gho_engine,
@@ -397,6 +398,7 @@ _BUILDERS = {
     "html": _build_html_engine,
     "local_search": _build_local_search_engine,
     "exa": _build_exa_engine,
+    "keenable_free": _build_keenable_free_engine,
     "anysearch": _build_anysearch_engine,
     "em_miaoxiang": _build_em_miaoxiang_engine,
     "cninfo": _build_cninfo_engine,

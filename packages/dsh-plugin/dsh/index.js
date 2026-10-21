@@ -507,14 +507,23 @@ function argoToolError(message) {
  * `payload` is `_compact_search_result` output: top-level meta plus
  * `results[]` with title/url/snippet/source/score.
  */
+// 与 argo 侧 scripts/content_boundary.py 同一纪律（不能跨语言 import）。
+const stripBoundary = (v) => typeof v === 'string'
+  ? v.replace(/<\s*\/?\s*untrusted-web-content\b[^>]*>/gi, '')
+  : v
+
 export function mapArgoToWebResult(payload, query) {
   const results = Array.isArray(payload?.results)
     ? payload.results.filter(r => r && typeof r.url === 'string' && r.url !== '')
     : []
+  // 上游正文里自带的边界标记必须先剥（stripBoundary 见模块级定义）：
+  // 否则网页可以用 </untrusted-web-content> 提前闭合宿主加的信任边界。
   const sources = results.map(r => {
     const source = { url: r.url }
-    if (typeof r.title === 'string' && r.title !== '') source.title = r.title
-    if (typeof r.snippet === 'string' && r.snippet !== '') source.snippet = r.snippet
+    const title = stripBoundary(r.title)
+    const snippet = stripBoundary(r.snippet)
+    if (typeof title === 'string' && title !== '') source.title = title
+    if (typeof snippet === 'string' && snippet !== '') source.snippet = snippet
     return source
   })
   return { content: undefined, sources, truncated: false, engine: payload?.engine ?? 'argo' }

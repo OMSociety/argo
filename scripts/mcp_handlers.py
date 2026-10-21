@@ -246,30 +246,14 @@ def _compact_search_result(result: dict[str, Any], summary: bool = False) -> dic
         out["early_stopped"] = True
     if result.get("minhash_removed"):
         out["minhash_removed"] = result.get("minhash_removed")
+    from search_output import decorate_compact_payload as _decorate
+    _decorate(out, result)
     if result.get("domain_filter"):
         out["domain_filter"] = result["domain_filter"]
     if result.get("rank_method"):
         out["rank_method"] = result.get("rank_method")
     if result.get("reranker"):
         out["reranker"] = result.get("reranker")
-    # sources 沉底同构（若已有）
-    sources = result.get("sources")
-    if sources:
-        out["sources"] = [
-            {
-                "ref": s.get("ref"),
-                "title": s.get("title"),
-                "url": s.get("url"),
-                "engine": s.get("engine") or s.get("source"),
-            }
-            for s in sources
-            if isinstance(s, dict) and s.get("url")
-        ][:20]
-    if result.get("errors"):
-        out["errors"] = result["errors"]
-    if result.get("limitations"):
-        out["limitations"] = result["limitations"]
-    # 语言偏好观测（精简：去掉 habit_counts 明细，保留决策用字段）
     lp = result.get("lang_pref")
     if isinstance(lp, dict):
         out["lang_pref"] = {

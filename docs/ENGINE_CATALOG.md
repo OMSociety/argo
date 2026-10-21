@@ -6,9 +6,9 @@
 
 ## 一、总量与口径
 
-- **收录 269 个源**（config.yaml + `engines/specs/*.yaml` 声明合并后的总数）
-- **开箱可用 232 个**：不需要你配任何密钥或装额外工具，自动路由就会用上
-- **需自备密钥 22 个**：`bocha`、`bocha_ai`、`byted`、`deepseek_search`、`em_miaoxiang`、`exa`、`keenable`、`octen`、`parallel`、`qweather`、`seltz`、`tavily`、`tinyfish`、`tinyfish_news`、`tinyfish_paper`、`unpaywall`、`weread`、`you`、`zhihu`、`zhihu_global`、`zhihu_hot`、`zhihu_user`（没配也不影响搜索，路由会跳过）
+- **收录 271 个源**（config.yaml + `engines/specs/*.yaml` 声明合并后的总数）
+- **开箱可用 235 个**：不需要你配任何密钥或装额外工具，自动路由就会用上
+- **需自备密钥 21 个**：`bocha`、`bocha_ai`、`byted`、`deepseek_search`、`em_miaoxiang`、`keenable`、`octen`、`parallel`、`qweather`、`seltz`、`tavily`、`tinyfish`、`tinyfish_news`、`tinyfish_paper`、`unpaywall`、`weread`、`you`、`zhihu`、`zhihu_global`、`zhihu_hot`、`zhihu_user`（没配也不影响搜索，路由会跳过）
 - **需装后端工具 3 个**：`reddit`、`twitter`、`xiaohongshu`（装好并登录后即可用）
 - **已停用 12 个**：`brave`、`digup`、`europeana`、`felo`、`jikan`、`local_goodreads`、`metaso`、`nbs_stats`、`realtime_index`、`searxng`、`soilgrids`、`wolframalpha`
 - **显式专用 16 个**：`bing_rss`、`datagov_uk`、`deepseek_search`、`doi`、`ecosia`、`gdelt`、`opencitations`、`qwant`、`tineye`、`tinyfish`、`tinyfish_news`、`tinyfish_paper`、`twitter_syndication`、`unpaywall`、`x_trending`、`zbmath`（设计上不进自动路由，按 `--engine` 或交接提示调用）
@@ -26,7 +26,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 
 ## 二、费用与密钥：哪些白用、哪些要钱
 
-- **免费档 255 个**（含已停用）：无需密钥，或只需免费注册的密钥；其中 13 个要自备密钥（免费额度）：em_miaoxiang、keenable、qweather、searxng、tinyfish、tinyfish_news、tinyfish_paper、unpaywall、weread、wolframalpha、zhihu、zhihu_hot、zhihu_user
+- **免费档 257 个**（含已停用）：无需密钥，或只需免费注册的密钥；其中 13 个要自备密钥（免费额度）：em_miaoxiang、keenable、qweather、searxng、tinyfish、tinyfish_news、tinyfish_paper、unpaywall、weread、wolframalpha、zhihu、zhihu_hot、zhihu_user
 - **计费档 14 个**（下表逐个列出，档位取自各源自己的 `cost_tier` 声明）
 
 | 引擎 | 档位 | 是否进自动路由 | 需自备密钥 |
@@ -38,7 +38,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 | `brave` | 低价计费 | 是 | ARGO_BRAVE_API_KEY |
 | `byted` | 低价计费 | 是 | ARGO_BYTED_API_KEY |
 | `metaso` | 低价计费 | 是 | ARGO_METASO_API_KEY |
-| `exa` | 按调用计费 | 是 | ARGO_EXA_API_KEY |
+| `exa` | 按调用计费 | 是 | — |
 | `octen` | 按调用计费 | 是 | ARGO_OCTEN_API_KEY |
 | `parallel` | 按调用计费 | 是 | PARALLEL_API_KEY |
 | `seltz` | 按调用计费 | 是 | SELTZ_API_KEY |
@@ -77,12 +77,14 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 
 状态含义：**可直接用** = 自动路由会用上；**需自配密钥 / 需装后端工具** = 配好后即可用；**被上游封锁** = 源站当前拒绝；**已停用** = 配置层面关闭。
 
-### 全网搜索（35）
+### 全网搜索（37）
 
 | 引擎 | 状态 | 费用 | 频率上限 | 需自备密钥 | 什么时候用到 | 说明 |
 |---|---|---|---|---|---|---|
 | `anysearch` | 可直接用 | 免费 | 1000/天 | — | 域 ai_model、域 book_search、域 chinese_general、域 claim_check、域 code_search、域 crypto_search、域 dataset_search、域 earth_science、域 energy_grid、域 english_tech、域 financial_news、域 fund_query、域 futures_market、域 fx_query、域 game_search、域 hackernews_search、域 hk_filings、域 image_search、域 japan_law、域 kor_law、域 law_text、域 legal、域 lifecycle_search、域 local_code、域 local_general、域 macro_data、域 medical、域 meme_slang、域 outbreak_health、域 package_intel、域 prediction_market、域 redskill_search、域 rfc_search、域 sec_filings、域 security_search、域 semantic_discovery、域 shopping、域 skill_search、域 soil_agri、域 sports_search、域 stackoverflow_search、域 stock_query、域 ths_hot_search、域 trade_stats、域 transport_rt、域 us_fundamentals、域 us_legal、域 us_stock、域 v2ex_search、域 vehicle_data、域 wechat_search、域 wenshu_query、域 world_news、域 zhihu_content、深度研究 boost、语义画像命中、通用兜底链 | 通用搜索主力，进程内 JSON-RPC（HttpClient），零 token |
+| `exa` | 可直接用 | 按调用计费 | 1000/月 | — | 域 english_tech、域 semantic_discovery、域 us_stock、深度研究 boost | Exa 语义搜索（embedding 匹配 + 内容摘要，新户 $20 赠金 + 每月 $10 赠金） |
 | `firecrawl` | 可直接用 | 免费 | 1000/月 | — | 域 semantic_discovery、通用兜底链 | Firecrawl 云搜索（search+全文markdown，JS渲染/学术/PDF垂直，keyless 免费层 1000 credits/月） |
+| `keenable_free` | 可直接用 | 免费 | 不限 | — | 通用兜底链 | Keenable 官方免 key 匿名通道（通用网页搜索，无需注册） |
 | `lieu` | 可直接用 | 免费 | 不限 | — | 域 semantic_discovery、语义画像命中 | webring 专用搜索（只索引加入 webring 的小众站点，HTML 解析） |
 | `local_baidu` | 可直接用 | 免费 | 不限 | — | 语义画像命中、通用兜底链 | 百度本地 |
 | `local_bing` | 可直接用 | 免费 | 不限 | — | 深度研究 boost、通用兜底链 | Bing本地 |
@@ -94,6 +96,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 | `shenma` | 可直接用 | 免费 | 不限 | — | 域 chinese_general | 神马搜索（m.sm.cn/s 移动端 HTML 解析），中文通用网页 |
 | `so` | 可直接用 | 免费 | 不限 | — | 域 chinese_general | 360 搜索（so.com/s HTML 解析），中文通用网页 |
 | `sogou_weixin_browser` | 可直接用 | 免费 | 不限 | — | 域 wechat_search | 搜狗微信搜索·浏览器兜底通道（ego-browser 真实会话，HTTP 车道被反爬时保底；中间链会话内解析为微信真实链接） |
+| `tavily_free` | 可直接用 | 免费 | 不限 | — | 通用兜底链 | Tavily 官方免 key 匿名通道（通用网页搜索，无需注册） |
 | `uapi` | 可直接用 | 免费 | 不限 | — | 域 semantic_discovery、语义画像命中、通用兜底链 | UAPI 聚合搜索 |
 | `wechat_sogou` | 可直接用 | 免费 | 不限 | — | 域 chinese_general、域 wechat_search | 搜狗微信搜索引擎（公众号文章，免登录，中间链自动解析为微信真实链接可引用；fast 跳过解析） |
 | `wiby` | 可直接用 | 免费 | 不限 | — | 域 semantic_discovery、语义画像命中 | Wiby 老式手工网页索引（专收非商业化页面，JSON 免认证） |
@@ -104,7 +107,6 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 | `deepseek_search` | 需自备密钥 + 显式专用 | 付费 | 不限 | DEEPSEEK_API_KEY | 显式调用（--engine） | DeepSeek Search |
 | `digup` | 已停用 | 免费 | 不限 | — | 已停用 | DigUp（EmbeddingGemma 2 本地多模态嵌入，全程离线）——照片/截图/PDF/文档/音视频按内容检索 |
 | `ecosia` | 显式专用 | 免费 | 不限 | — | 显式调用（--engine） | Ecosia（ecosia.org HTML 解析），环保隐私取向通用网页 |
-| `exa` | 需自备密钥 | 按调用计费 | 1000/月 | ARGO_EXA_API_KEY | 域 english_tech、域 semantic_discovery、域 us_stock、深度研究 boost | Exa 语义搜索（embedding 匹配 + 内容摘要，新户 $20 赠金 + 每月 $10 赠金） |
 | `felo` | 已停用 | 付费 | 不限 | ARGO_FELO_API_KEY | 域 semantic_discovery、语义画像命中 | Felo AI 搜索 API |
 | `keenable` | 需自备密钥 | 免费 | 不限 | ARGO_KEENABLE_API_KEY | 域 english_tech | Keenable 通用网页搜索（ranked results，含 published_at，按 credits 计费） |
 | `metaso` | 已停用 | 低价计费 | 不限 | ARGO_METASO_API_KEY | 域 chinese_general | 秘塔搜索 API（中文 AI 搜索） |
@@ -563,7 +565,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 ## 七、怎么自己查当前状态
 
 ```bash
-argo search --list-engines --detail | python3 -m json.tool | less   # 全部 269 个源的详情
+argo search --list-engines --detail | python3 -m json.tool | less   # 全部 271 个源的详情
 argo search --list-engines --detail --routable-only              # 只看现在能用的
 python3 scripts/matrix_search_eval.py --offline                   # 可达性门：有没有死源
 python3 scripts/engine_validate.py --engine <名> --stage all       # 单个源的健康+质量双阶段体检

@@ -2602,5 +2602,17 @@
     "documents": [],
     "boost_keywords": {},
     "boost_combos": {}
+  },
+  "keenable_free": {
+    "label": "Keenable (keyless)",
+    "documents": [],
+    "boost_keywords": {},
+    "boost_combos": {}
+  },
+  "tavily_free": {
+    "label": "Tavily (keyless)",
+    "documents": [],
+    "boost_keywords": {},
+    "boost_combos": {}
   }
 }

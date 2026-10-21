@@ -1357,4 +1357,3 @@ def _build_bing_rss_engine(spec: dict[str, Any]) -> Any:
             out.append(r)
         return out
     return _engine
-

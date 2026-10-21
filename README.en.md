@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/readme/hero.svg" width="100%" alt="Argo: search and deep research for agents — 269 search sources, routing by domain and language, absorbable evidence output">
+  <img src="assets/readme/hero.svg" width="100%" alt="Argo: search and deep research for agents — 271 search sources, routing by domain and language, absorbable evidence output">
 </p>
 
 <p align="center">
@@ -25,7 +25,7 @@
   <img alt="license" src="https://img.shields.io/badge/license-Apache_2.0-blue">
   <img alt="python" src="https://img.shields.io/badge/python-3.9+-green">
   <img alt="version" src="https://img.shields.io/badge/version-2.9.7-informational">
-  <img alt="engines" src="https://img.shields.io/badge/engines-269-orange">
+  <img alt="engines" src="https://img.shields.io/badge/engines-271-orange">
   <img alt="mcp" src="https://img.shields.io/badge/MCP-19%20tools-purple">
 </p>
 
@@ -35,7 +35,7 @@
 
 ## What it is
 
-**Argo is a search and deep-research tool that lives inside your agent, and can also pull information from the relevant web pages. It connects to 269 search sources across 97 business domains, and also covers basic local file search. Among open-source search projects, its search capability is exceptionally strong.**
+**Argo is a search and deep-research tool that lives inside your agent, and can also pull information from the relevant web pages. It connects to 271 search sources across 97 business domains, and also covers basic local file search. Among open-source search projects, its search capability is exceptionally strong.**
 
 API keys are optional and improve quality (keyed sources are usually better; unkeyed ones are skipped automatically), with free engines and local engines as an automatic fallback. It covers 18 languages including Chinese, English, Japanese and Korean, and supports vertical scenarios such as finance, academia, film, sports, code and macro data.
 
@@ -118,7 +118,7 @@ Saving takes effect immediately (all volatile config): the native tool set is re
 
 ## Core strengths
 
-**269 sources, 232 keyless and ready out of the box.** Runs without any API key; free and local engines fall back automatically. Keyed sources are usually better, and unkeyed ones are skipped automatically. One install covers every scenario.
+**271 sources, 235 keyless and ready out of the box.** Runs without any API key; free and local engines fall back automatically. Keyed sources are usually better, and unkeyed ones are skipped automatically. One install covers every scenario.
 
 **Local and web search in one.** This is a capability only Argo has. Local file search is built on the same tools developers use daily, rg and mdfind: code symbols, filenames, document text and file structure. Flip one switch and local hits join the same web search results, labelled with the local file as the source. When you remember writing something six months ago but forget where, this beats digging through folders.
 
@@ -200,7 +200,7 @@ All four forms run the same Python code underneath; CLI and MCP tools map one to
 1. **From links to evidence.** Agents need structured material they can rank, verify and fit in context — Argo returns credibility-decomposed JSON, not SERP lists.
 2. **Context is the first cost.** A single page scrape can burn 10k+ tokens; Argo's agent profile is ~3.7KB per call, with field sets and byte budgets pinned by gates.
 3. **Sites now prepare content for AI.** llms.txt and `.md` direct-out are spreading across major doc sites — Argo's fetch chain probes them at level 0, with an r.jina.ai reader fallback.
-4. **The free/open ecosystem is enough.** Government, academic, standards and security open APIs plus keyless engines cover most domains (232 keyless sources).
+4. **The free/open ecosystem is enough.** Government, academic, standards and security open APIs plus keyless engines cover most domains (235 keyless sources).
 5. **Quality is measurable.** Ranking golden floors, fusion-ablation gates and negative routing controls — "is this version better" is now a number, not a vibe.
 
 > v2.9.3 ships all of the above: 264 sources, 95 domains, 227 keyless. Details in [docs/为什么选择argo.md](docs/为什么选择argo.md).
@@ -416,7 +416,7 @@ python3 scripts/search.py --list-engines
 
 ### Rough capability set (v2.9.7)
 
-What Argo does, in one sentence: it sends each question to the right sources by domain and language, ranks what comes back by credibility, and hands the agent material it can sort and verify. Search, fetch, evidence checking and local file search share one pipeline, the 19 MCP tools map one-to-one onto CLI commands, so nothing is missing whichever form you install. A few standalone commands round it out: argo tweet packs an X post, argo auth handles login state, argo job aggregates job listings. The full catalog, with cost, key and status per source, sits in docs/ENGINE_CATALOG.md: **269 sources (232 usable with no key), 97 domains**.
+What Argo does, in one sentence: it sends each question to the right sources by domain and language, ranks what comes back by credibility, and hands the agent material it can sort and verify. Search, fetch, evidence checking and local file search share one pipeline, the 19 MCP tools map one-to-one onto CLI commands, so nothing is missing whichever form you install. A few standalone commands round it out: argo tweet packs an X post, argo auth handles login state, argo job aggregates job listings. The full catalog, with cost, key and status per source, sits in docs/ENGINE_CATALOG.md: **271 sources (235 usable with no key), 97 domains**.
 
 Installed as a DSH plugin, these capabilities become native host tools: the hot-path search and fetch are on by default, the long-tail forensics tools toggle on in the settings page, and argo's own 28 behaviour switches (cache, rerank, dedup, guard, proxy, TTLs and the rest) moved out of environment variables and into the panel. Keys go into the host credential store, are never echoed, and every change takes effect on save.
 
@@ -437,7 +437,7 @@ Per-version detail lives in "Recent updates"; release notes for each version are
 
 ## Engines & routing
 
-Config currently has **269** sources (**232** usable with no key) and **97** domains (see `config.yaml` and `--list-engines`).
+Config currently has **271** sources (**235** usable with no key) and **97** domains (see `config.yaml` and `--list-engines`).
 
 ### Direct & vertical (excerpt)
 
@@ -720,14 +720,14 @@ argo/
 
 - **Leaner**: default output −66% (the same results are no longer written three times); repeated queries −30% (routing-decision cache); slow-network waits −36% (backup sources auto-dispatched when the primary stalls past 0.8s)
 - **Richer**: recall +35%, fetch latency −30%; body-structure fidelity 0/6 → 6/6 (headings, lists and tables no longer flattened); Chinese content no longer systematically judged low-quality
-- **New**: sources 232 → 237 (keyless 194 → 198, all free — The Guardian, France 24, DW, fact-checkers FactCheck.org / Full Fact in US and UK editions); dead source gdelt retired
+- **New**: sources 235 → 237 (keyless 194 → 198, all free — The Guardian, France 24, DW, fact-checkers FactCheck.org / Full Fact in US and UK editions); dead source gdelt retired
 - **More trustworthy**: six bookkeeping defects where numbers contradicted each other fixed; the six-stage funnel shows which layer a "0 results" collapse happened in; offline replay tools verify changes same-day; see [release notes](docs/RELEASE_NOTES_v2.8.9.md)
 
-### v2.8.8: real-user bug fixes + across-the-board speedups + 232 sources
+### v2.8.8: real-user bug fixes + across-the-board speedups + 235 sources
 
 - **Fixes**: engines silently returning nothing after a key was configured under its recommended name (#12); the fetch chain bypassed proxies so GitHub etc. always failed (#13) — `ARGO_PROXY`, config per-domain rules and standard proxy environment variables now all work, and `NO_PROXY` is respected
 - **Faster**: CLI cold start 2.1s → 0.55s; cross-process config cache 50–82ms → 16–18ms; every search reports per-stage timing and a budget bill, so there is no guessing where it is slow (`--no-timing` to disable)
-- **New**: sources 218 → 232 (keyless 184 → 194, all keyless: domestic trending boards, security vulnerabilities, open-access scholarship, skill directories, agent search), `argo answer` direct answers, `argo watch` page watching, CLI/MCP tool-surface alignment
+- **New**: sources 218 → 235 (keyless 184 → 194, all keyless: domestic trending boards, security vulnerabilities, open-access scholarship, skill directories, agent search), `argo answer` direct answers, `argo watch` page watching, CLI/MCP tool-surface alignment
 - **More robust**: platform-conventional paths on all three OSes (new `argo paths` introspection), Python 3.9 supported, silent degradations now reported; see [release notes](docs/RELEASE_NOTES_v2.8.8.md)
 
 ### v2.8.7: sources expanded to 218 + a batch of fixes
@@ -771,8 +771,8 @@ argo/
 | **v2.9.2** | **DSH 0.2.1-alpha.1 compatibility verified + routing/guard fixes + js-run sub-skill**: the DSH plugin's three forms verified enabled on the latest DSH 0.2.1-alpha.1; `argo mcp inject` adds WorkBuddy, covering a 7th host; TF-IDF weak-evidence demotion to auxiliary sources, dead-source floor + breaker slot backfill, quota-exhausted engine routing isolation, serp_guard collateral false-positive fixes; engines/evidence lazy imports (import −50%) and admission existence-set short-circuit (open 261→99); MCP entry and numeric-argument guards tightened; new js-run sub-skill (browser-free web JS, P50 ≈1ms). |
 | **v2.9.1** | **Content-quality optimization + content-farm resistance + latest-version adaptation**: improved content-quality assessment with better identification and filtering of low-quality bulk-generated content; adapted to the latest version for seamless operation; local search gained a self-install-tree guard so results are not polluted by argo's own source. |
 | **v2.9.0** | **Source optimization + plugin/CLI parity + minor languages**: sources 237→253 (keyless 198→219), adding 14 minor-language news sources, the CORE full-text source, TinEye reverse image search, Bing RSS and more; Baidu and Sogou revived; 18 CLI commands map one-to-one to 19 MCP tools; import chain −79%, rerank 33ms→1.5ms, cache hit rate greatly improved; cross-process quota write-path safety fix; new `argo stats` local usage ledger. See [release notes](docs/RELEASE_NOTES_v2.9.0.md) |
-| **v2.8.9** | **Output slimming + richer, faster retrieval + 5 international & fact-check sources**: default output 15.5KB→5.2KB (−66%, `--envelope` restores the full envelope); routing decision cache cuts repeated queries −30%; slow-network dispatch −36% (serial domains auto-hedge past 0.8s); five-round fetch-chain overhaul (recall +35%, fetch latency −30%, long-tail P90 −8%) + body structure restoration (headings/lists/tables fidelity 0/6→6/6) + CJK quality-score fix; new keyless sources Guardian RSS / France 24 / DW / FactCheck.org / Full Fact (232→237, keyless 194→198, domains 90→92), dead gdelt retired; six self-consistency defects fixed + six-stage funnel attribution + offline replay tool (`scripts/replay_eval.py`) + post-policy deployment gates & scenario-threshold contracts. See [release notes](docs/RELEASE_NOTES_v2.8.9.md) |
-| **v2.8.8** | **Real-user fixes (#12 key-alias silence, #13 proxy-less fetch) + across-the-board speedups + sources 218 → 232**: unified egress dispatch (`ARGO_PROXY` / per-domain rules / standard proxy env, `NO_PROXY` respected); 16 key-read sites unified on the alias chain; command cold start 2.1s→0.55s, cross-process config cache 50–82ms→16–18ms, QPP flatness-gated early stop, `--list-engines --detail` slimmed 152KB→51KB; new `argo answer` (cited direct answers) and `argo watch` (webpage change watching), 14 keyless sources (CN trending & lifestyle / security advisories / open-access scholarship / skill directories / agent search), 69 engines re-classified (`web_general` fallback share 41%→20%, new security domain); platform-conventional paths (`argo paths`) + Python 3.9 + bounded concurrency making timeouts real; search.py split into modules 3351→2526 lines, relevance golden over 22 engines, static-defect & output-contract gates. See [release notes](docs/RELEASE_NOTES_v2.8.8.md) |
+| **v2.8.9** | **Output slimming + richer, faster retrieval + 5 international & fact-check sources**: default output 15.5KB→5.2KB (−66%, `--envelope` restores the full envelope); routing decision cache cuts repeated queries −30%; slow-network dispatch −36% (serial domains auto-hedge past 0.8s); five-round fetch-chain overhaul (recall +35%, fetch latency −30%, long-tail P90 −8%) + body structure restoration (headings/lists/tables fidelity 0/6→6/6) + CJK quality-score fix; new keyless sources Guardian RSS / France 24 / DW / FactCheck.org / Full Fact (235→237, keyless 194→198, domains 90→92), dead gdelt retired; six self-consistency defects fixed + six-stage funnel attribution + offline replay tool (`scripts/replay_eval.py`) + post-policy deployment gates & scenario-threshold contracts. See [release notes](docs/RELEASE_NOTES_v2.8.9.md) |
+| **v2.8.8** | **Real-user fixes (#12 key-alias silence, #13 proxy-less fetch) + across-the-board speedups + sources 218 → 235**: unified egress dispatch (`ARGO_PROXY` / per-domain rules / standard proxy env, `NO_PROXY` respected); 16 key-read sites unified on the alias chain; command cold start 2.1s→0.55s, cross-process config cache 50–82ms→16–18ms, QPP flatness-gated early stop, `--list-engines --detail` slimmed 152KB→51KB; new `argo answer` (cited direct answers) and `argo watch` (webpage change watching), 14 keyless sources (CN trending & lifestyle / security advisories / open-access scholarship / skill directories / agent search), 69 engines re-classified (`web_general` fallback share 41%→20%, new security domain); platform-conventional paths (`argo paths`) + Python 3.9 + bounded concurrency making timeouts real; search.py split into modules 3351→2526 lines, relevance golden over 22 engines, static-defect & output-contract gates. See [release notes](docs/RELEASE_NOTES_v2.8.8.md) |
 | **v2.8.7** | **218 sources / 89 domains + three fetch direct-out channels + routing trigger discipline + macro zero-result fix**: 50 new sources across batches 7/8/9 (statutes, standards, security intel, academia, news, entertainment, energy/transport, legal), stackexchange & doi engines; fetch chain level-0 llms.txt and `.md` variant probing plus r.jina.ai reader level; `--engine` comma-list fix, tfidf scope & route_reason, negative routing-control matrix, ranking golden & fusion-ablation gates; China macro queries promote national statistics first, zero-result recovery unlocks L3, rescue engines recorded. See [release notes](docs/RELEASE_NOTES_v2.8.7.md) |
 | **v2.8.6** | **Hedged racing + Zhihu three-source split + declarative language dispatch + reachability gate + academic search protocol**: first-engine grace-window racing (fast engines pay 1 call), Zhihu global-search/personal-data onboarding with starvation fix, per-sub-query language/academic dispatch (English + 17 academic sources in research collection), engine language metadata & reachability gate (dead sources surface), geo tail −56%, academic query-construction protocol. See [release notes](docs/RELEASE_NOTES_v2.8.6.md) |
 | **v2.8.5** | **Native DSH plugin tools + MCP off by default + Windows compat + quota self-healing + fetch deadline**: `argo_search`/`argo_fetch` as first-class native tools (CLI one-shot, same engine & guards as MCP, schema single-source + drift gate); three plugin shapes, MCP on-demand; Windows compatibility (temp paths / GBK / interpreter resolution / junction / `install.ps1`, PR #11); quota self-healing loop (HTTP 200 envelope detection + route exclusion + period self-heal); global fetch deadline (`ARGO_FETCH_DEADLINE_S`) + tinyfish rendering + `.md` variant probes; hot-reload env & state-dir single source. See [release notes](docs/RELEASE_NOTES_v2.8.5.md) |

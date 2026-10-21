@@ -57,7 +57,7 @@ GENERAL_FREE_FALLBACK: tuple[str, ...] = (
     # 346 条查询里 324 条的最后一棒是 anysearch（p50 1932ms），octen 同域
     # p50 776ms。anysearch 退到对冲位，能力面不变（仍在 combo 内）。
     "octen", "anysearch", "local_bing", "uapi", "local_baidu", "firecrawl",
-    "parallel_free", "wikipedia",
+    "parallel_free", "tavily_free", "keenable_free", "wikipedia",
 )
 
 

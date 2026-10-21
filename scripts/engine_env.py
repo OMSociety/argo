@@ -215,6 +215,7 @@ _NON_SECRET_PLACEHOLDERS = {"QUERY", "N", "TIMESTAMP", "MODE", "DEPTH", "UUID"}
 
 # 可选密钥：有则更好，缺失不阻断自动路由
 OPTIONAL_ENV_ENGINES: set[str] = {
+    "exa",          # 无 key 走官方 MCP 匿名通道（engines_builders_tech._exa_mcp_keyless）
     "github",       # GITHUB_TOKEN 仅提高限频
     "anysearch",    # ANYSEARCH_API_KEY 可选
     "firecrawl",    # FIRECRAWL_API_KEY 可选：官方免费层匿名（keyless）即可搜索
