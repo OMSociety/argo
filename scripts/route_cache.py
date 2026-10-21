@@ -103,7 +103,9 @@ def _route_state_fingerprint() -> str:
         return ""
     # 路由旋钮的 env 覆盖必须参与指纹：否则「设了 ARGO_GENERAL_FALLBACK_LEAD
     # 却因缓存命中不生效」，逃生开关与 A/B 臂都变成摆设（2026-10-21 实测踩中）。
+    # LEGACY 是同一类开关（改通用兜底链的成员），一并入指纹，避免只修一个入口。
     parts.append("lead=" + (os.environ.get("ARGO_GENERAL_FALLBACK_LEAD") or ""))
+    parts.append("legacy=" + (os.environ.get("ARGO_GENERAL_FALLBACK_LEGACY") or ""))
     return "|".join(parts)
 
 
