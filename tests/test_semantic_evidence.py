@@ -61,6 +61,21 @@ class TestGate(unittest.TestCase):
 
 
 class TestClassifyFailOpen(unittest.TestCase):
+    """classifier.dev 通道（/v1/classify 形状）的 fail-open 契约。
+
+    **必须显式钉住通道**：`_transport()` 现读 config（默认 jev）。这些桩是按
+    classifier.dev 的响应形状写的（`{"results": [...]}`），不钉的话会打到 JEV
+    路径上——而那取决于本机 env 文件里有没有 JEV key，于是同一份代码在开发机
+    与 CI 上表现不同（实测：写进 key 后 test_threshold_gate 静默改道而挂）。
+    要测 JEV 通道请去 tests/test_semantic_evidence_jev.py。
+    """
+
+    def setUp(self):
+        _cfg = patch.object(sem, "_config",
+                            return_value={"transport": "classify"})
+        _cfg.start()
+        self.addCleanup(_cfg.stop)
+
     def test_non_200_returns_none(self):
         with patch("http_client.HttpClient.post",
                    return_value={"status": 429, "text": "", "headers": {}}):

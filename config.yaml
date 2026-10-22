@@ -5191,10 +5191,25 @@ output:
 # 发布出去的默认值就从「关闭」变成「开启」了。
 semantic_evidence:
   enabled: false
+  # 通道：jev（TypeSafe System One）| classify（classifier.dev）。
+  # **纯配置驱动，不做「按键就绪自动选」**——那会让同一份代码在开发机与 CI
+  # 上走不同分支（本机 env 文件里有没有 key 决定路径），既有测试会静默改道。
+  # 未声明时默认 jev：classifier.dev 的匿名路径 2026-10-22 起回
+  # 403 proxy_requires_payment（「Anonymous proxy traffic requires a funded
+  # API key」），要 workspace key 才能用；JEV 是当前可用的那条。
+  transport: jev
+  # JEV 端点与模型。**独立于下方 endpoint 字段**——两个通道的请求体形状不同
+  # （JEV 是 state+questions，classify 是 inputs+labels），共用一个 endpoint 会
+  # 把 System One 的体发到 classifier.dev，拿回指向错误方向的 401。
+  jev_endpoint: "https://api.typesafe.ai/v1/systemone"
+  jev_model: "jev-latest"
+  # classify 通道（classifier.dev）的端点；JEV 通道不读它。
   endpoint: "https://classifier.dev"
-  # 单次批量分类的超时（秒）。服务不可达时核验链路最多多等这么久，然后静默降级。
+  # 单次请求的超时（秒）。服务不可达时核验链路最多多等这么久，然后静默降级。
+  # JEV 通道下这是**每条正文**的超时（每条一个请求，并发 4）。
   timeout_s: 5
-  # fast：决策模型一次往返；smart：低置信度条目转推理模型复核（慢，配额小 10 倍）
+  # fast：决策模型一次往返；smart：低置信度条目转推理模型复核（慢，配额小 10 倍）。
+  # 仅 classify 通道认这个字段。
   tier: fast
 
 # ── 网络出口调度（issue #13，2026-09-14）────────────────────────────────

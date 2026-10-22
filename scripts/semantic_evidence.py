@@ -43,6 +43,31 @@ logger = logging.getLogger("unified_search.semantic_evidence")
 
 DEFAULT_ENDPOINT = "https://classifier.dev"
 DEFAULT_TIMEOUT_S = 5.0
+# 未声明 transport 时的默认通道。jev = TypeSafe System One（当前唯一可用）；
+# classifier.dev 的匿名路径 2026-10-22 起回 403 proxy_requires_payment。
+DEFAULT_TRANSPORT = "jev"
+
+# ── JEV / System One 通道（TypeSafe）──────────────────────────────────────
+# 官方 API：POST https://api.typesafe.ai/v1/systemone，Bearer 鉴权
+# （docs.typesafe.ai/api/system-one）。与 classifier.dev 的 /v1/classify 是
+# **两种形状**：那边一次发 N 条文本 + 一组标签；这边一次发一个 state + 若干
+# 具名问题，每题独立作答（文档原话：questions are evaluated in parallel and
+# in isolation）。所以接过来要做的是形状转换，不是换个 URL。
+DEFAULT_JEV_ENDPOINT = "https://api.typesafe.ai/v1/systemone"
+DEFAULT_JEV_MODEL = "jev-latest"
+# key 候选链：argo 推荐名在前；TYPESAFE_API_KEY 是官方 SDK 与 JEV 插件
+# （dsh-verbatim-compaction）用的名字，照文档配的人直接可用。
+JEV_KEY_ENV = ("ARGO_JEV_API_KEY", "TYPESAFE_API_KEY")
+# state 超过这个长度就带长上下文头。实测（2026-10-22 本机）：
+#   不带 TypeSafe-Danger-Zone-Long-Context：32K tokens 通过（32350）、
+#     40K 中文字（≈40K tokens）回 `max_tokens_exceeded`（400）
+#   带上：40K 字（40358 tokens）与 80K 字（80358 tokens）均通过
+# 24000 字是保守拐点（正常路径不带头也稳），不是实测上限。
+JEV_LONG_CONTEXT_CHARS = 24000
+# 并发上限。官方 cookbook（classifying_rag_passages）取 4，理由是端点限流；
+# 429/529 要求指数退避，所以不铺大。
+JEV_MAX_WORKERS = 4
+
 # conf ≥ 0.7 才给结论：低于此值的判定不可信（B 实测 4 个严格错误全部 ≤0.67）
 SUPPORT_THRESHOLD = 0.7
 # 单条文本上限：核验链路取回的正文 ≤8000 字，再高无收益（A 实测 400→7798 字
@@ -100,20 +125,167 @@ def _timeout() -> float:
         return DEFAULT_TIMEOUT_S
 
 
+def jev_api_key() -> str:
+    """JEV（TypeSafe）key：os.environ 优先，~/.config/argo/env 热读保底。"""
+    try:
+        from engine_env import get_env
+        return (get_env(list(JEV_KEY_ENV)) or "").strip()
+    except Exception:  # pragma: no cover - 环境层不可用时不冒险
+        import os
+        for _n in JEV_KEY_ENV:
+            _v = (os.environ.get(_n) or "").strip()
+            if _v:
+                return _v
+        return ""
+
+
+def _transport() -> str:
+    """通道选择：`jev`（TypeSafe System One）或 `classify`（classifier.dev）。
+
+    **纯配置驱动，不做「按键就绪自动选」**。初版按 jev_api_key() 是否就绪自动
+    选，结果是通道取决于本机 ~/.config/argo/env 里有没有那把 key——同一份代码
+    在开发机与 CI 上走不同分支，既有测试在开发机上会静默改道（实测：写进 key
+    后 test_semantic_evidence 的 5 条 HttpClient 桩里 1 条改走 JEV 路径而挂）。
+    机器状态不该改变代码路径。
+
+    未声明时的默认是 jev：classifier.dev 的匿名路径 2026-10-22 起回 403
+    proxy_requires_payment，JEV 是当前可用的那条。
+    """
+    declared = str(_config().get("transport") or "").strip().lower()
+    return declared if declared in ("jev", "classify") else DEFAULT_TRANSPORT
+
+
+def _jev_endpoint() -> str:
+    """JEV 端点：**独立于 classify 通道的 endpoint 字段**。
+
+    不共用是刻意的坑修：config.yaml 里 `endpoint` 长期写的是
+    https://classifier.dev，JEV 通道若读同一个字段，就会把 System One 的
+    请求体发到 classifier.dev，拿回「Invalid API key / Create a workspace
+    key at /app/keys」这种指向完全错误方向的 401（2026-10-22 实测踩中）。
+    每个通道自带端点，杜绝「换 transport 忘了换 endpoint」。
+    """
+    return str(_config().get("jev_endpoint") or DEFAULT_JEV_ENDPOINT).rstrip("/")
+
+
+def _jev_model() -> str:
+    return str(_config().get("jev_model") or _config().get("model")
+               or DEFAULT_JEV_MODEL)
+
+
+def _jev_post(path_state: Any, questions: dict[str, Any], *,
+              timeout: float) -> Optional[dict[str, Any]]:
+    """一次 System One 请求；失败返回 None（fail-open 的全部出口都在这里）。"""
+    key = jev_api_key()
+    if not key:
+        logger.debug("JEV key 未配置（%s），语义层跳过", " / ".join(JEV_KEY_ENV))
+        return None
+    body = {
+        "model": _jev_model(),
+        "state": path_state,
+        "questions": questions,
+    }
+    # Content-Type 必须显式给：HttpClient.post 会把 dict 做 json.dumps，
+    # 但**从不设 Content-Type**（头只来自浏览器 UA 模板 + extra_headers）。
+    # 缺它时 FastAPI 侧把 body 当字符串，回
+    #   422 {"loc":["body"],"msg":"Input should be a valid dictionary…"}
+    # ——报错指向「请求体不是对象」，而真因是少了一个头（2026-10-22 实测踩中）。
+    headers = {"Authorization": f"Bearer {key}",
+               "Content-Type": "application/json"}
+    # 长上下文要显式带头，否则 state 一过 32K tokens 就 400 max_tokens_exceeded
+    if len(json.dumps(path_state, ensure_ascii=False)) > JEV_LONG_CONTEXT_CHARS:
+        headers["TypeSafe-Danger-Zone-Long-Context"] = "true"
+    try:
+        from http_client import HttpClient
+        resp = HttpClient(timeout=timeout, max_retries=1, jitter=False).post(
+            _jev_endpoint(), body, extra_headers=headers)
+        if resp.get("status") != 200:
+            logger.debug("JEV 非 200: %s %s", resp.get("status"),
+                         str(resp.get("text") or resp.get("error") or "")[:200])
+            return None
+        return json.loads(resp.get("text") or "{}")
+    except Exception as e:  # fail-open：语义层任何问题都不阻断核验
+        logger.debug("JEV 请求失败: %s", type(e).__name__)
+        return None
+
+
+def _jev_choice(text: str, labels: tuple[str, ...] | list[str],
+                instructions: str | None, timeout: float
+                ) -> Optional[dict[str, Any]]:
+    """单条文本 → 一个 Choice 问题。
+
+    **每条一个请求**，不是「多段一个 state、每段一问」。理由在官方文档里：
+    jaggedness 那篇明写「state 里塞与决策无关的细节会降低准确率（context
+    rot）」，而判第 i 段时其余各段就是无关细节；cookbook 的
+    classifying_rag_passages 也是「One request per passage」。（我们试过 3 段
+    合一，结果全对，但样本太小，不拿它赌准确率。）
+    """
+    out = _jev_post(text, {
+        "cls": {
+            "type": "choice",
+            "instructions": instructions or "Classify the state into one of the criteria.",
+            # criteria 的**值**是描述：jaggedness 说 instructions 与 criteria
+            # 不一致时模型会困惑，所以两边用同一句话，不给它两个版本。
+            "criteria": {str(lab): str(lab) for lab in labels},
+        },
+    }, timeout=timeout)
+    if not isinstance(out, dict):
+        return None
+    ans = (out.get("answers") or {}).get("cls")
+    if not isinstance(ans, dict) or not ans.get("choice"):
+        if isinstance(ans, dict):
+            logger.debug("JEV 答案缺 choice: %s", str(ans)[:120])
+        return None
+    return {
+        "label": str(ans.get("choice")),
+        "confidence": ans.get("confidence"),
+        "scores": ans.get("probabilities"),
+    }
+
+
+def _classify_jev(texts: list[str], labels: tuple[str, ...] | list[str], *,
+                  instructions: str | None, keep: list[tuple[int, str]],
+                  timeout: float) -> Optional[list[dict[str, Any]]]:
+    """JEV 通道：每条文本一个请求，并发 4。
+
+    任一条失败就在该位留 None（与 classifier.dev 通道「整批失败即 None」
+    不同）：一次核验有几条正文，坏一条不该把其余判定的价值也丢掉。全部失败
+    时仍返回 None，调用方行为与未开启时一致。
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    texts_kept = [t[:MAX_TEXT_CHARS] for _i, t in keep]
+    with ThreadPoolExecutor(max_workers=min(JEV_MAX_WORKERS, len(texts_kept))) as pool:
+        results = list(pool.map(
+            lambda t: _jev_choice(t, labels, instructions, timeout), texts_kept))
+    if not any(r for r in results):
+        return None
+    out: list[Optional[dict[str, Any]]] = [None] * len(texts)
+    for (idx, _t), r in zip(keep, results):
+        if isinstance(r, dict):
+            out[idx] = r
+    return out  # type: ignore[return-value]
+
+
 def classify(texts: list[str], labels: tuple[str, ...] | list[str], *,
              instructions: str | None = None,
              timeout: float | None = None,
              tier: str | None = None) -> Optional[list[dict[str, Any]]]:
-    """一次批量分类（≤1000 条）。任何异常/非 200/条数不匹配 → None。
+    """一次批量分类。任何异常/非 200/条数不匹配 → None。
 
     返回按输入顺序排列的 [{label, confidence, scores}]；调用方负责判定阈值。
     空文本会被过滤后再发（空串会让整批 400），返回列表与输入等长、空缺位为 None。
+
+    两个通道的实现分居 _classify_jev（TypeSafe，每条一请求）与下方内联的
+    classifier.dev 路径（一次发 N 条）；开关判定见 _transport。
     """
     if not texts or len(labels) < 2:
         return None
     keep = [(i, t) for i, t in enumerate(texts) if (t or "").strip()]
     if not keep:
         return None
+    to = timeout or _timeout()
+    if _transport() == "jev":
+        return _classify_jev(texts, labels, instructions=instructions,
+                             keep=keep, timeout=to)
     body: dict[str, Any] = {
         "labels": [str(x) for x in labels],
         "inputs": [t[:MAX_TEXT_CHARS] for _i, t in keep],
@@ -123,8 +295,12 @@ def classify(texts: list[str], labels: tuple[str, ...] | list[str], *,
         body["instructions"] = instructions
     try:
         from http_client import HttpClient
-        resp = HttpClient(timeout=timeout or _timeout(), max_retries=1,
-                          jitter=False).post(_endpoint(), body)
+        # Content-Type 同 JEV 通道：HttpClient.post 不设它，缺了会被服务端
+        # 当字符串解析。这条路径此前只在 403（匿名要付费 key）处止步，没走到
+        # body 校验，所以同一个坑没暴露——配了有效 workspace key 就会现形。
+        resp = HttpClient(timeout=to, max_retries=1, jitter=False).post(
+            _endpoint(), body,
+            extra_headers={"Content-Type": "application/json"})
         if resp.get("status") != 200:
             logger.debug(f"语义分类非 200: {resp.get('status')} {resp.get('error')}")
             return None

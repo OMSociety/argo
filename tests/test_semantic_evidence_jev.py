@@ -1,0 +1,284 @@
+#!/usr/bin/env python3
+"""test_semantic_evidence_jev — JEV/TypeSafe 通道的门禁（2026-10-22）。
+
+## 背景：接入时实测踩中的三个坑
+
+1. **两个通道的端点必须各管各的**。config.yaml 的 `endpoint` 长期写的是
+   classifier.dev；JEV 通道若读同一个字段，会把 System One 的请求体
+   （state+questions）发到 classifier.dev，拿回
+   `401 Invalid API key / Create a workspace key at /app/keys`——报错指向
+   「你的 key 不对」，真因是「打错站了」。
+2. **HttpClient.post 不设 Content-Type**。它会把 dict 做 json.dumps，但请求
+   头只来自浏览器 UA 模板 + extra_headers。缺这个头时 FastAPI 把 body 当
+   字符串，回 `422 Input should be a valid dictionary…`——同样指向「请求体
+   不是对象」，真因是少一个头。
+3. **长度上限是 token 不是字符**。不带
+   `TypeSafe-Danger-Zone-Long-Context` 时 32350 tokens 通过、40K 中文字
+   （≈40K tokens）回 `max_tokens_exceeded`；带上则 80K 字通过。
+
+## 锁什么
+
+- 通道选择：显式声明优先，未声明按键就绪自动选
+- JEV 请求形状：端点、Content-Type、body 的 state/questions/criteria
+- 长上下文头的触发阈值
+- **每条文本一个请求**（不是多段合一）——官方 jaggedness 明写「state 里塞
+  无关细节会降准确率」，官方 cookbook 也是 one request per passage
+- 失败路径：无 key / 非 200 / 缺 choice → None；部分失败留位不整体丢弃
+
+全部离线（patch 掉 HTTP 层，不发网络）。
+"""
+from __future__ import annotations
+
+import sys
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parent.parent
+SCRIPTS = ROOT / "scripts"
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+
+import semantic_evidence as se  # noqa: E402
+
+
+def _ok(label: str = "supports the query", conf: float = 0.9) -> dict:
+    return {"answers": {"cls": {"type": "choice", "choice": label,
+                                "confidence": conf,
+                                "probabilities": {label: 0.9}}}}
+
+
+class TestTransport(unittest.TestCase):
+    """通道选择必须**纯配置驱动**——不能读本机状态。
+
+    初版按 jev_api_key() 是否就绪自动选，结果通道取决于本机
+    ~/.config/argo/env 里有没有那把 key：同一份代码在开发机与 CI 上走不同
+    分支，既有测试在开发机上静默改道。机器状态不该改变代码路径。本类把
+    「不依赖 key」钉死。
+    """
+
+    def test_显式声明优先(self):
+        with patch.object(se, "_config", return_value={"transport": "classify"}):
+            assert se._transport() == "classify"
+        with patch.object(se, "_config", return_value={"transport": "jev"}):
+            assert se._transport() == "jev"
+
+    def test_未声明时用默认且与_key_无关(self):
+        for key in ("", "k"):
+            with patch.object(se, "_config", return_value={}), \
+                    patch.object(se, "jev_api_key", return_value=key):
+                assert se._transport() == se.DEFAULT_TRANSPORT, (
+                    f"key={key!r} 时通道变了——又依赖本机状态了")
+
+    def test_非法声明回落默认(self):
+        with patch.object(se, "_config", return_value={"transport": "typo"}):
+            assert se._transport() == se.DEFAULT_TRANSPORT
+
+
+class TestEndpointsAreSeparate(unittest.TestCase):
+    """两个通道各管各的端点——共用会把 System One 的体发到错误的站。"""
+
+    def test_jev_端点独立于_classify_端点(self):
+        cfg = {"endpoint": "https://classifier.dev"}
+        with patch.object(se, "_config", return_value=cfg):
+            assert se._jev_endpoint() == se.DEFAULT_JEV_ENDPOINT
+            assert "typesafe.ai" in se._jev_endpoint()
+            assert se._endpoint() == "https://classifier.dev"
+
+    def test_jev_端点可被_jev_endpoint_覆盖(self):
+        with patch.object(se, "_config",
+                          return_value={"jev_endpoint": "https://x.test/v1/"}):
+            assert se._jev_endpoint() == "https://x.test/v1"
+
+    def test_默认模型(self):
+        with patch.object(se, "_config", return_value={}):
+            assert se._jev_model() == "jev-latest"
+        with patch.object(se, "_config", return_value={"jev_model": "jev-1.13"}):
+            assert se._jev_model() == "jev-1.13"
+
+
+class TestRequestShape(unittest.TestCase):
+    """patch 掉 HttpClient，看真正发出去的 URL / 头 / body。"""
+
+    def _capture(self, state, questions, cfg=None, key="k",
+                 state_chars=0):
+        sent: dict = {}
+
+        class _FakeClient:
+            def __init__(self, **kw):
+                pass
+
+            def post(self, url, body=None, extra_headers=None, **kw):
+                sent["url"] = url
+                sent["body"] = body
+                sent["headers"] = extra_headers or {}
+                return {"status": 200, "text": __import__("json").dumps(_ok())}
+
+        with patch.object(se, "_config", return_value=cfg or {}), \
+                patch.object(se, "jev_api_key", return_value=key), \
+                patch("http_client.HttpClient", _FakeClient):
+            out = se._jev_post(state, questions, timeout=5.0)
+        return out, sent
+
+    def test_url_与鉴权头(self):
+        _, sent = self._capture("文本", {"q": {"type": "choice", "criteria": {}}})
+        assert sent["url"] == se.DEFAULT_JEV_ENDPOINT
+        assert sent["headers"]["Authorization"] == "Bearer k"
+
+    def test_必须带_content_type(self):
+        """缺它 → 服务端当字符串 → 422；这条钉死那个实测踩中的坑。"""
+        _, sent = self._capture("文本", {"q": {"type": "choice", "criteria": {}}})
+        assert sent["headers"].get("Content-Type") == "application/json"
+
+    def test_body_形状(self):
+        _, sent = self._capture("正文", {"q": {"type": "choice", "criteria": {}}},
+                                cfg={"jev_model": "jev-1.13"})
+        assert sent["body"]["model"] == "jev-1.13"
+        assert sent["body"]["state"] == "正文"
+        assert "q" in sent["body"]["questions"]
+        assert "labels" not in sent["body"], "JEV 体里不该混入 classify 通道的字段"
+
+    def test_长上下文头按长度触发(self):
+        _, sent = self._capture("x" * (se.JEV_LONG_CONTEXT_CHARS + 10),
+                                {"q": {"type": "choice", "criteria": {}}})
+        assert sent["headers"].get("TypeSafe-Danger-Zone-Long-Context") == "true"
+
+    def test_短文本不带长上下文头(self):
+        _, sent = self._capture("短文本", {"q": {"type": "choice", "criteria": {}}})
+        assert "TypeSafe-Danger-Zone-Long-Context" not in sent["headers"]
+
+    def test_无_key_不发请求(self):
+        sent: dict = {}
+
+        class _FakeClient:
+            def __init__(self, **kw):
+                pass
+
+            def post(self, *a, **kw):
+                sent["called"] = True
+                return {"status": 200, "text": "{}"}
+
+        with patch.object(se, "_config", return_value={}), \
+                patch.object(se, "jev_api_key", return_value=""), \
+                patch("http_client.HttpClient", _FakeClient):
+            out = se._jev_post("x", {"q": {}}, timeout=5.0)
+        assert out is None
+        assert "called" not in sent
+
+
+class TestChoiceShape(unittest.TestCase):
+    def test_criteria_用标签本身当描述(self):
+        """instructions 与 criteria 说同一件事（jaggedness：两者不一致会困惑）。"""
+        captured: dict = {}
+
+        def _fake_post(state, questions, *, timeout):
+            captured.update(questions)
+            return _ok()
+
+        with patch.object(se, "_jev_post", _fake_post):
+            r = se._jev_choice("正文", se.SUPPORT_LABELS, "判定立场。", 5.0)
+        q = captured["cls"]
+        assert q["type"] == "choice"
+        assert set(q["criteria"]) == set(se.SUPPORT_LABELS)
+        assert r["label"] == "supports the query"
+        assert r["confidence"] == 0.9
+
+    def test_缺_choice_返回_None(self):
+        with patch.object(se, "_jev_post",
+                          lambda *a, **k: {"answers": {"cls": {"type": "choice"}}}):
+            assert se._jev_choice("x", se.SUPPORT_LABELS, None, 5.0) is None
+
+    def test_非_200_返回_None(self):
+        with patch.object(se, "_jev_post", lambda *a, **k: None):
+            assert se._jev_choice("x", se.SUPPORT_LABELS, None, 5.0) is None
+
+
+class TestPerTextRequests(unittest.TestCase):
+    """每条文本一个请求——不是多段合一。"""
+
+    def test_每条一次请求(self):
+        calls: list = []
+
+        def _fake_post(state, questions, *, timeout):
+            calls.append(state)
+            return _ok()
+
+        with patch.object(se, "_jev_post", _fake_post):
+            out = se._classify_jev(["a", "b", "c"], se.SUPPORT_LABELS,
+                                   instructions=None,
+                                   keep=[(0, "a"), (1, "b"), (2, "c")], timeout=5.0)
+        assert len(calls) == 3, f"应每条一请求，实际 {len(calls)} 次"
+        assert sorted(calls) == ["a", "b", "c"]
+        assert len(out) == 3
+
+    def test_部分失败留位不整体丢弃(self):
+        def _fake_post(state, questions, *, timeout):
+            return _ok() if state == "good" else None
+
+        with patch.object(se, "_jev_post", _fake_post):
+            out = se._classify_jev(["good", "bad", "good"], se.SUPPORT_LABELS,
+                                   instructions=None,
+                                   keep=[(0, "good"), (1, "bad"), (2, "good")],
+                                   timeout=5.0)
+        assert out[0] is not None and out[1] is None and out[2] is not None, (
+            "一条坏不该让整批判定作废")
+
+    def test_全部失败返回_None(self):
+        with patch.object(se, "_jev_post", lambda *a, **k: None):
+            assert se._classify_jev(["a"], se.SUPPORT_LABELS, instructions=None,
+                                    keep=[(0, "a")], timeout=5.0) is None
+
+    def test_空文本位保持_None_且不发请求(self):
+        calls: list = []
+
+        def _fake_post(state, questions, *, timeout):
+            calls.append(state)
+            return _ok()
+
+        with patch.object(se, "_jev_post", _fake_post):
+            out = se._classify_jev(["a", "", "c"], se.SUPPORT_LABELS,
+                                   instructions=None,
+                                   keep=[(0, "a"), (2, "c")], timeout=5.0)
+        assert calls == ["a", "c"]
+        assert out[1] is None
+
+
+class TestGateTeeth(unittest.TestCase):
+    def test_去掉_content_type_会被抓到(self):
+        """把 Content-Type 从请求头里拿掉，TestRequestShape 那条必须失败。
+
+        只断言「变异版本确实缺头」——因为真门禁断的是「有头」，两者取反就
+        证明它能被抓住。不把真门禁的逻辑抄一遍（抄一遍的实现回退时照样绿）。
+        """
+        import json as _json
+
+        sent: dict = {}
+
+        class _Spy:
+            def __init__(self, **kw):
+                pass
+
+            def post(self, url, body=None, extra_headers=None, **kw):
+                sent.clear()
+                sent.update(extra_headers or {})
+                return {"status": 200, "text": _json.dumps(_ok())}
+
+        def _stripped(state, questions, *, timeout):
+            """变异版 _jev_post：其余完全相同，只少一个头。"""
+            from http_client import HttpClient
+            return HttpClient(timeout=timeout, max_retries=1, jitter=False).post(
+                se._jev_endpoint(),
+                {"model": se._jev_model(), "state": state, "questions": questions},
+                extra_headers={"Authorization": "Bearer k"})
+
+        with patch.object(se, "_config", return_value={}), \
+                patch("http_client.HttpClient", _Spy):
+            _stripped("x", {"q": {}}, timeout=5.0)
+
+        assert sent.get("Authorization") == "Bearer k", "变异未生效：鉴权头也没了"
+        assert "Content-Type" not in sent, (
+            "变异版仍带头——说明真门禁断的不是这个差异，失去意义")
+
+
+if __name__ == "__main__":
+    unittest.main()
