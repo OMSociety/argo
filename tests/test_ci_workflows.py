@@ -129,3 +129,17 @@ def test_repo_entrypoint_reaches_path():
     found = shutil.which("argo")
     assert found, "repo/bin 没上 PATH"
     assert Path(found).resolve().as_posix().endswith("/bin/argo")
+
+
+def test_extras_reuses_cached_venv_but_self_heals():
+    """extras 的 9 件依赖约 5 分钟安装；缓存整个 venv 前提是 key 覆盖两份
+    requirements，且不能只信 cache-hit（镜像换 Python 补丁版后旧 venv 会失效，
+    而 cache-hit 仍为 true）。这里锁这两个约束。"""
+    raw = (WORKFLOWS / "ci.yml").read_text(encoding="utf-8")
+    assert "actions/cache@v4" in raw
+    assert "hashFiles('requirements-dev.txt', 'requirements-optional.txt')" in raw
+    extras = _load("ci.yml")["jobs"]["extras"]
+    text = _steps_text(extras)
+    assert ".venv/bin/python -c" in text, "缺依赖探针：缓存坏了会整轮红"
+    assert "steps.deps.outputs.ready != 'true'" in raw, "探针结论没接到安装步骤的 if"
+    assert "rm -rf .venv" in text, "旧 venv 失效时必须重建"
