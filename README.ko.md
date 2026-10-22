@@ -81,15 +81,15 @@ dsh plugin --profile web add "github:taxueseek/argo"
 플러그인에는 브라우저 측 설정 페이지가 내장되어 있고 입구는 두 곳입니다: 설정 팝업(`Cmd+,`)의 왼쪽 메뉴 항목 "Argo", 또는 설정 > 플러그인 > Argo(같은 패널의 요약 카드, 클릭하면 열립니다).
 
 <p align="center">
-  <img src="assets/readme/settings-tools.png" width="100%" alt="Argo 설정 페이지 '도구' 구역: 고빈도 경로는 argo_search / argo_fetch가 기본으로 켜져 있고, 롱테일 포렌식 16개는 필요에 따라 체크, 아래에 단발 호출 타임아웃과 반환 텍스트 상한">
+  <img src="assets/readme/settings-tools.webp" width="100%" alt="Argo 설정 페이지 '도구': 네이티브 18개 도구 체크 — 고빈도 경로는 argo_search / argo_fetch 기본 on, 롱테일 16개는 필요 시. 아래에 단발 타임아웃과 반환 상한">
 </p>
 
 <p align="center">
-  <img src="assets/readme/settings-engines.png" width="100%" alt="Argo 설정 페이지 '엔진' 구역: argo 본체의 28개 동작 스위치를 환경 변수에서 패널로 이동 — 캐시·정렬 그룹(테스트 모드 / TF-IDF 리랭크 / 수치 교차 검증 / MinHash 중복 제거 / SERP 가드 / 중복 임계값) 표시, 미설정 행은 기본값 유지, 스위치류는 저장 즉시 적용">
+  <img src="assets/readme/settings-engines.webp" width="100%" alt="Argo 설정 페이지 '엔진': argo 본체의 28개 동작 스위치를 패널로 — 캐시 / TF-IDF 리랭크 / 수치 교차 검증 / MinHash 중복 제거 / SERP 가드와 중복 임계값. 미설정 행은 기본값, 저장 즉시 적용">
 </p>
 
 <p align="center">
-  <img src="assets/readme/settings-keys.png" width="100%" alt="Argo 설정 페이지 '키' 구역: DeepSeek 공식 검색은 '설정됨 · 자격 증명 저장소'로 표시되고 호스트 web_search와 같은 키를 공유; Tencent Yuanbao / Tavily / Exa 등 주요 엔진 키 입력·갱신·삭제, 평문 미표시, 각 행에 '전달' 체크박스">
+  <img src="assets/readme/settings-keys.webp" width="100%" alt="Argo 설정 페이지 '키': DeepSeek 공식 검색은 '설정됨 · 자격 증명 저장소'로 호스트 web_search와 같은 키를 공유. Tencent Yuanbao / Tavily 등 주요 엔진 키 입력·갱신·삭제, 평문 미표시">
 </p>
 
 | 구역 | 관리 내용 |

@@ -81,15 +81,15 @@ Para una pregunta cotidiana usa `argo_search`; para forense con un solo agente u
 El plugin incluye una página de ajustes del lado del navegador con dos entradas: el elemento "Argo" del menú izquierdo del popup de ajustes (`Cmd+,`), o Ajustes > Plugins > Argo (una tarjeta de resumen del mismo panel: clic para abrir).
 
 <p align="center">
-  <img src="assets/readme/settings-tools.png" width="100%" alt="Ajustes de Argo, sección Herramientas: la ruta caliente trae argo_search / argo_fetch activos por defecto, 16 herramientas de forense de cola larga se activan bajo demanda, con el tiempo de espera por llamada y el límite de texto devuelto debajo">
+  <img src="assets/readme/settings-tools.webp" width="100%" alt="Ajustes de Argo, Herramientas: 18 herramientas nativas — argo_search / argo_fetch activos en la ruta caliente, 16 de cola larga bajo demanda, con tiempo de espera y límite de texto debajo">
 </p>
 
 <p align="center">
-  <img src="assets/readme/settings-engines.png" width="100%" alt="Ajustes de Argo, sección Motores: los 28 interruptores de comportamiento del núcleo argo pasan de variables de entorno al panel — se muestra el grupo de caché y ordenación (modo test / sin caché, rerank TF-IDF, cotejo numérico, dedup MinHash, guardia SERP, umbral de dedup); las filas sin configurar muestran el valor por defecto y los interruptores se aplican al guardar">
+  <img src="assets/readme/settings-engines.webp" width="100%" alt="Ajustes de Argo, Motores: los 28 interruptores de comportamiento del núcleo pasan al panel — caché / rerank TF-IDF / cotejo numérico / dedup MinHash / guardia SERP y umbral de dedup; las filas sin configurar muestran el valor por defecto y se aplican al guardar">
 </p>
 
 <p align="center">
-  <img src="assets/readme/settings-keys.png" width="100%" alt="Ajustes de Argo, sección Claves: la búsqueda oficial de DeepSeek aparece como «configurada · almacén de credenciales» y comparte una sola clave con el web_search del host; las claves de motores habituales (Tencent Yuanbao / Tavily / Exa) se definen, actualizan y borran sin mostrar el texto plano, con una casilla Reenviar por fila">
+  <img src="assets/readme/settings-keys.webp" width="100%" alt="Ajustes de Argo, Claves: la búsqueda oficial de DeepSeek aparece como «configurada · almacén de credenciales» y comparte una clave con el web_search del host; las claves de Tencent Yuanbao / Tavily se definen, actualizan o borran sin mostrar el texto plano">
 </p>
 
 | Sección | Qué controla |

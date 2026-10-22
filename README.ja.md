@@ -81,15 +81,15 @@ dsh plugin --profile web add "github:taxueseek/argo"
 プラグインにはブラウザ側の設定ページが同梱され、入口は 2 つあります：設定ポップアップ（`Cmd+,`）の左メニュー項目「Argo」、または 設定 > プラグイン > Argo（同じパネルの概要カード、クリックで開きます）。
 
 <p align="center">
-  <img src="assets/readme/settings-tools.png" width="100%" alt="Argo 設定ページ「ツール」分区：高頻度パスは argo_search / argo_fetch が既定でオン、長尾フォレンジック 16 個は必要に応じてチェック、下に単発呼び出しタイムアウトと返却テキスト上限">
+  <img src="assets/readme/settings-tools.webp" width="100%" alt="Argo 設定ページ「ツール」：ネイティブ 18 ツールのチェック——高頻度パスは argo_search / argo_fetch が既定でオン、長尾 16 個は必要時に。下に単発タイムアウトと返却上限">
 </p>
 
 <p align="center">
-  <img src="assets/readme/settings-engines.png" width="100%" alt="Argo 設定ページ「エンジン」分区：argo 本体の 28 個の挙動スイッチを環境変数からパネルへ移設——キャッシュと並び替えグループ（テストモード / TF-IDF 再ランク / 数値クロスチェック / MinHash 重複排除 / SERP ガード / 重複しきい値）を表示、未設定行は既定値のまま、スイッチ類は保存で即時有効">
+  <img src="assets/readme/settings-engines.webp" width="100%" alt="Argo 設定ページ「エンジン」：argo 本体の 28 個の挙動スイッチをパネルへ——キャッシュ / TF-IDF 再ランク / 数値クロスチェック / MinHash 重複排除 / SERP ガードと重複しきい値。未設定行は既定値、保存で即時有効">
 </p>
 
 <p align="center">
-  <img src="assets/readme/settings-keys.png" width="100%" alt="Argo 設定ページ「キー」分区：DeepSeek 公式検索は「設定済み・資格情報ストア」と表示され、ホストの web_search と同一キーを共用。Tencent Yuanbao / Tavily / Exa など常用エンジンのキー入力・更新・クリアができ、平文は非表示、各行に「転送」チェックボックス">
+  <img src="assets/readme/settings-keys.webp" width="100%" alt="Argo 設定ページ「キー」：DeepSeek 公式検索は「設定済み・資格情報ストア」で、ホスト web_search と同一キーを共用。Tencent Yuanbao / Tavily などのキー入力・更新・クリア、平文は非表示">
 </p>
 
 | 分区 | 管理内容 |

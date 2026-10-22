@@ -81,15 +81,15 @@ For an everyday question use `argo_search`; for single-agent forensics use `argo
 The plugin ships a browser-side settings page with two entries: the settings popup (`Cmd+,`) left-hand menu item "Argo", or Settings > Plugins > Argo (a summary card for the same panel — click to open).
 
 <p align="center">
-  <img src="assets/readme/settings-tools.png" width="100%" alt="Argo settings, Tools section: hot path has argo_search / argo_fetch on by default, 16 long-tail forensics tools toggle on demand, with per-call timeout and returned-text cap below">
+  <img src="assets/readme/settings-tools.webp" width="100%" alt="Argo settings, Tools: 18 native tools to toggle — argo_search / argo_fetch on in the hot path, 16 long-tail tools on demand, with per-call timeout and returned-text cap">
 </p>
 
 <p align="center">
-  <img src="assets/readme/settings-engines.png" width="100%" alt="Argo settings, Engines section: argo's 28 behaviour switches moved from environment variables into the panel — the cache & ranking group is shown (test mode / cache off, TF-IDF rerank, numeric cross-check, MinHash dedup, SERP guard, dedup threshold); unconfigured rows show the default and switch-type changes apply immediately">
+  <img src="assets/readme/settings-engines.webp" width="100%" alt="Argo settings, Engines: argo's 28 behaviour switches moved into the panel — cache / TF-IDF rerank / numeric cross-check / MinHash dedup / SERP guard and dedup threshold; unconfigured rows show the default and changes apply immediately">
 </p>
 
 <p align="center">
-  <img src="assets/readme/settings-keys.png" width="100%" alt="Argo settings, Keys section: DeepSeek official search shows configured · credential store and shares one key with the host's web_search; common engine keys (Tencent Yuanbao / Tavily / Exa) can be set, updated and cleared, plaintext is never echoed, each row has a Forward checkbox">
+  <img src="assets/readme/settings-keys.webp" width="100%" alt="Argo settings, Keys: DeepSeek official search shows configured · credential store and shares one key with the host's web_search; common engine keys (Tencent Yuanbao / Tavily) can be set, updated or cleared, plaintext never echoed">
 </p>
 
 | Section | What it controls |

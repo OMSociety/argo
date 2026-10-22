@@ -81,15 +81,15 @@ dsh plugin --profile web add "github:taxueseek/argo"
 插件自带浏览器端设置页，两个入口：设置弹窗（`Cmd+,`）左侧一级菜单「Argo」，或 设置 > 插件 > Argo（同一面板的摘要卡片，点开即用）。
 
 <p align="center">
-  <img src="assets/readme/settings-tools.png" width="100%" alt="Argo 设置页「工具」分区：高频路径默认开 argo_search / argo_fetch，长尾取证 16 个按需勾选，下方是单次调用超时与返回文本上限">
+  <img src="assets/readme/settings-tools.webp" width="100%" alt="Argo 设置页「工具」：18 个原生工具的勾选——高频路径默认开 argo_search / argo_fetch，长尾 16 个按需，下方是单次调用超时与返回文本上限">
 </p>
 
 <p align="center">
-  <img src="assets/readme/settings-engines.png" width="100%" alt="Argo 设置页「引擎」分区：argo 本体 28 个行为开关从环境变量搬进面板，缓存与排序组在列——测试模式（关缓存）/ TF-IDF 重排 / 数值交叉校验 / MinHash 去重 / SERP 守卫 / 去重阈值，未配置行显示默认态，开关类改完即时生效">
+  <img src="assets/readme/settings-engines.webp" width="100%" alt="Argo 设置页「引擎」：argo 本体 28 个行为开关移进面板——缓存 / TF-IDF 重排 / 数值交叉校验 / MinHash 去重 / SERP 守卫与去重阈值，未配置行显示默认态，改完即时生效">
 </p>
 
 <p align="center">
-  <img src="assets/readme/settings-keys.png" width="100%" alt="Argo 设置页「密钥」分区：DeepSeek 官方搜索显示「已配置 · 凭证库」并与宿主 web_search 共用同一把 key；腾讯元宝 / Tavily / Exa 等常用引擎 key 可填写、更新、清除，明文不回显，每行可勾选「转发」">
+  <img src="assets/readme/settings-keys.webp" width="100%" alt="Argo 设置页「密钥」：DeepSeek 官方搜索显示「已配置 · 凭证库」并与宿主 web_search 共用同一把 key；腾讯元宝 / Tavily 等常用引擎 key 可填写、更新、清除，明文不回显">
 </p>
 
 | 分区 | 管什么 |
