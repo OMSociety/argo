@@ -1491,8 +1491,17 @@ domains:
   - (?i)\b(API|api)\b
   - (?i)\b(Rust|Python|JavaScript|TypeScript|React|Vue|Node|Docker|Kubernetes|asyncio)\b
   primary: octen
-- desc: 公司注册/尽调（GLEIF 法人主数据 + OpenCorporates 注册库）
+- desc: 公司注册/尽调（GLEIF 法人主数据 + OpenCorporates 注册库；元宝补中文企业信息）
+  # 元宝放第 1 位（2026-10-22）：本域 patterns 含「股东/法人/注册资本/工商信息」，
+  # 但 combo 原本只有国际法人库（gleif/opencorporates）+ 百科（baidu_baike），
+  # 对中国**非上市**企业全废——实测「长亭科技 股东 持股比例」被路由到本域后，
+  # opencorporates 熔断 + baidu_baike 只返回同名「XX科技有限公司」干扰，5 条无一命中
+  # （2026-10-22 实测复现 2026-10-14 的老问题）。元宝实测能返回天眼查/企查查/
+  # 爱企查的结构化股东表（长亭未来 100% 控股、阿里巴巴 17.7685%），是本域唯一能
+  # 交付中文企业信息的源，放第 1 位确保进 budget=2 窗口（combo_budget 只按声明
+  # 顺序取前 2，见 engine_policy.combo_budget）。
   engines_combo:
+  - yuanbao
   - gleif
   - opencorporates
   - cninfo

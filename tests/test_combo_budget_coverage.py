@@ -89,7 +89,10 @@ _NARROW_TOP2_DEBT = {
     #     公司注册库），其数据不存在「网页搜索保底」的等价物——硬塞 anysearch
     #     进前 2 位反而会拿二手页面挤掉一手数据。
     # 留在清单里的意义：前 2 位一旦变动，仍会被强制显式复核。
-    "anime_encyclopedia", "art_museum", "astro_space", "company_search",
+    # 2026-10-22：company_search 移除——元宝（family=web_general）已提到 combo 第 1 位，
+    # 前 2 位不再是「纯窄源」，本域从债务形态毕业（判据见 _has_general_fallback：
+    # local_* 或 family_of(e)=="web_general"；缘由见 config.yaml 该域注释）。
+    "anime_encyclopedia", "art_museum", "astro_space",
     "dataset_search", "earth_science", "energy_grid", "film_search",
     "global_event", "outbreak_health", "patent_search", "soil_agri",
     "standards", "transport_rt",
