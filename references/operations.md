@@ -123,7 +123,7 @@ export TINYFISH_API_KEY="sk-tinyfish-..."   # 去 agent.tinyfish.ai/api-keys 申
 | `gates` | push/PR | `bash scripts/pre-commit` 七道门（与本地完全一致） | 12s |
 | `unit` | push/PR | 全量用例按历史耗时切 4 片（`tests/.test_durations`） | 4 片并行 71s（单片 54–70s） |
 | `smoke` | push/PR | `node --check`、`npm pack --dry-run`、CLI/MCP 入口、状态目录可写 | 2s（runner 上含 npm 约 15s） |
-| `extras` | push main / 手动 | 装全 `requirements-optional.txt` 九件后再跑一遍 | 装 4m46s + 跑 4m28s |
+| `extras` | push main / 手动 | 装全 `requirements-optional.txt` 九件后再跑一遍（与 unit 同样切 4 片，共用 venv 缓存） | 缓存命中后四片各 ≤3min |
 | `nightly:replay` | 每日 | `replay_eval --check`（离线，带下限） | 0s |
 | `nightly:drift` | 每日 | 重录 `tests/golden/drift_queries.txt` 并比基线报告 | 8s |
 | `nightly:ledger` | 每日 | `argo stats` 的时延/结果率落曲线 | <1s |

@@ -87,13 +87,17 @@ jobs:
           if-no-files-found: warn
 
   extras:
-    name: extras（可选依赖装全）
-    # 本地实测：装九件 4 分 46 秒 + 全量 4 分 28 秒 = 9 分钟，一旦进 PR 就成为
-    # 关键路径，把「2 分钟反馈」变成「9 分钟反馈」。可选依赖的漂移是周级别的，
-    # 所以只在 push main 与手动触发时跑，PR 上由 gates/unit/smoke 负责。
+    name: extras（可选依赖装全 · 分片 ${{ matrix.group }}/4）
+    # 实测：装九件约 5 分钟（已用 venv 缓存压掉），全量用例在 2 核 runner 上约 8 分钟。
+    # 8 分钟进 PR 会把「2 分钟反馈」变成「8 分钟」，所以只在 push main 与手动触发时跑；
+    # 与 unit 同样切 4 片，四片并行后关键路径回到 3 分钟内（Actions 计费按实际秒数，不额外翻倍）。
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -103,6 +107,7 @@ jobs:
       # 缓存整个 venv，而不是 pip 的下载缓存：九件里 pymupdf/rapidocr 体积大，
       # 命中下载缓存仍要解包安装约 3 分钟；直接复用装好的 .venv 只花解压时间。
       # key 里带两个 requirements 的 hash：任一份变了就重建，不会装上旧版本。
+      # 四个分片共用同一个 key，各自并行解压（实测命中后安装步骤整体跳过）。
       - name: 恢复 venv（命中则跳过安装）
         id: venv
         uses: actions/cache@v4
@@ -135,12 +140,17 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
 
       - name: 装全之后仍要全绿（unit 只装测试所需的三件）
-        run: .venv/bin/python -m pytest --timeout=120 -m "not live and not slow" --junitxml=junit-extras.xml
+        run: >
+          .venv/bin/python -m pytest
+          --splits 4 --group ${{ matrix.group }}
+          --durations-path tests/.test_durations
+          --timeout=120 -m "not live and not slow"
+          --junitxml=junit-extras-${{ matrix.group }}.xml
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: junit-extras
-          path: junit-extras.xml
+          name: junit-extras-${{ matrix.group }}
+          path: junit-extras-${{ matrix.group }}.xml
           if-no-files-found: warn
 
   smoke:

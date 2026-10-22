@@ -122,6 +122,16 @@ def test_unit_installs_rg_for_local_seek():
     assert "ripgrep" in _steps_text(extras)
 
 
+def test_extras_is_sharded_like_unit():
+    """装全依赖后的全量在 2 核 runner 上约 8 分钟：不切片就还是「8 分钟任务」。
+    四片共用同一个 venv 缓存（key 相同），所以并行不增加安装成本。"""
+    extras = _load("ci.yml")["jobs"]["extras"]
+    assert (extras.get("strategy") or {}).get("matrix", {}).get("group") == [1, 2, 3, 4]
+    text = _steps_text(extras)
+    assert "--splits 4" in text and "--group" in text
+    assert "--durations-path tests/.test_durations" in text
+
+
 def test_repo_entrypoint_reaches_path():
     """一批用例 subprocess 跑 `argo …`：conftest 必须把 repo/bin 放上 PATH，
     否则在没装过 argo 的机器（CI）上红成 FileNotFoundError: 'argo'。"""

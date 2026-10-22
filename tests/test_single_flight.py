@@ -118,20 +118,24 @@ class TestEnginesCoalesce(unittest.TestCase):
 
         def fake_fn(query, n, timeout, depth="fast", mode="fast", **kw):
             calls.append((query, n))
-            time.sleep(0.1)
+            time.sleep(0.2)  # 给四个线程留出真正重叠的窗口
             return [{"title": f"t{i}", "url": f"https://x/{i}", "snippet": "s"}
                     for i in range(n)]
 
         import engines as E
+        # 四线程必须同时起跑：串行 start 会让「第一个已经跑完、第四个才到」
+        # 变成合法行为，用例随机器负载时红时绿（2026-10-22 在 CI extras 上实测
+        # 出现过 2 != 1）。Barrier 把「同一个窗口内并发」这件事变成确定的。
+        barrier = threading.Barrier(4)
+
+        def call():
+            barrier.wait()
+            results.append(engine_search("q", "fake", n=5))
+
         with unittest.mock.patch.object(E, "get_registry",
                                         return_value={"fake": fake_fn}):
             results = []
-            threads = [
-                threading.Thread(
-                    target=lambda: results.append(
-                        engine_search("q", "fake", n=5)))
-                for _ in range(4)
-            ]
+            threads = [threading.Thread(target=call) for _ in range(4)]
             for t in threads:
                 t.start()
             for t in threads:
