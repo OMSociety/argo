@@ -92,19 +92,22 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "_LazyLogger 代理类，省 ~10ms/次冷启动；"
               "2026-10-14 7ca2f22 移除 OSV/CISA KEV 代码段（−261）"),
     "scripts/fetch_v3.py": (
-        1779, "抓取降级链（HTTP→md 变体→TLS 指纹→jina→Parallel→浏览器），"
+        1804, "抓取降级链（HTTP→md 变体→TLS 指纹→jina→Parallel→浏览器），"
               "每级都要保留顺序与超时语义，尚未找到能一次搬走且可验证的切面；"
               "2026-09-27 +10：identity memory 内存缓存（dirty flag + 30s 写盘节流）；"
               "2026-09-28 +2：_identity_mem 内存表 512 有界淘汰；"
               "2026-09-29 +10：llms-full.txt token 炸弹守卫（候选出口过滤）；"
               "2026-10-05 js-run 车道已拆出 fetch_jsrun.py（回撤一段），"
               "+4：deadline_s 参数级预算（verify 快道用）；"
+              "2026-10-22 +25：article_meta（links/byline/excerpt）接入 "
+              "_make_result；后续可把该段拆到 fetch_meta 再回调；"
               "2026-10-06 +1：jsrun 车道退避预算接线（backoff_budget_s，"
               "挑战重试不再越过链级 deadline——本体与测试都在 fetch_jsrun 侧）；"
               "2026-10-06 A2 登录态车道 +11（auth_profile 判定与传参），"
               "同日浏览器档整级拆出 fetch_browser.py −36"),
     "scripts/mcp_handlers.py": (
-        1058, "MCP 工具 handler 分发（19 工具 → CLI 模块）；"
+        1060, "MCP 工具 handler 分发（19 工具 → CLI 模块）；"
+              "2026-10-22 +2：argo_fetch include_links 输出开关；"
               "2026-09-29 +8：661e0f1（H2 seek 进程内化）带入的增量，"
               "并行会话未登记即合入——本行补登记；同日 −1：路由预热改调 "
               "route_domains.warm_compiled_domains（原在此内联复刻同一句，"

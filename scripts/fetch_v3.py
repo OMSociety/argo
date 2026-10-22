@@ -865,6 +865,14 @@ def _make_result(url: str, html: str, max_chars: int,
         "error": error,
         "fetch_method": method,
     }
+    # 元数据必须从**完整 HTML** 里提：delivered_html 已按 max_chars*2 截断，
+    # 链接通常在正文中后段，截断后再解析只剩 head 里的 meta（2026-10-22 实测）。
+    if ok and html:
+        try:
+            from article_meta import extract_article_meta
+            result.update(extract_article_meta(html, url))
+        except Exception:
+            pass
     result.update(extra)
     return result
 
@@ -1530,6 +1538,17 @@ def fetch_v3(url: str, max_chars: int = 8000, timeout: float = 8.0,
     # 第三级：质量评估
     result = _assess_quality(result)
 
+    # 文章级元数据（链接/作者/站点名/摘要）：与正文同源于本次 HTML，一次解析
+    # 拿全；调用方不必为了顺着引用继续取证而重抓页面。缓存一起存（链接上限
+    # 30 条，体积可控），输出侧由 CLI/MCP 决定是否展示。
+    if result.get("success") and result.get("html"):
+        try:
+            from article_meta import extract_article_meta
+            for _mk, _mv in extract_article_meta(result["html"], url).items():
+                result.setdefault(_mk, _mv)
+        except Exception:
+            pass
+
     # 写 URL 缓存（不存大块 html，省空间）
     if not skip_cache and result.get("success"):
         try:
@@ -1693,6 +1712,8 @@ def build_parser():
                    help="从正文第 N 个字符开始输出（配合 --limit 翻页读长文）")
     p.add_argument("--limit", type=int, default=0,
                    help="本次输出字符数上限；0 表示不额外限制")
+    p.add_argument("--include-links", action="store_true",
+                   help="JSON 摘要附带正文链接（默认只给 links_count，省 token）")
     p.add_argument("--json", action="store_true",
                    help="只输出 JSON 摘要（缺省还会附人类可读的正文段；"
                         "Usage 一直把 --json 列为 Common flags，此前却报"
@@ -1740,6 +1761,10 @@ if __name__ == "__main__":
         summary["focus_applied"] = bool(r.get("focus_applied"))
     if r.get("error"):
         summary["error"] = r["error"]
+    if r.get("links"):
+        summary["links_count"] = len(r["links"])
+        if args.include_links:
+            summary["links"] = r["links"]
     print(dumps(summary))
     # __main__ 块是模块级代码，不能用 return 短路——用 if 包住人类可读段
     if not args.json:

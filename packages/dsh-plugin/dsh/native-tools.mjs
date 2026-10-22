@@ -375,6 +375,11 @@ export const NATIVE_TOOLS = {
           "type": "boolean",
           "description": "强制用反检测浏览器（HTTP 失败时已自动升级）",
           "default": false
+        },
+        "include_links": {
+          "type": "boolean",
+          "description": "附带正文内链接（最多 30 条；默认只回 links_count，省 token）",
+          "default": false
         }
       },
       "required": [
@@ -388,7 +393,8 @@ export const NATIVE_TOOLS = {
       "extract_mode",
       "focus",
       "max_chars",
-      "use_browser"
+      "use_browser",
+      "include_links"
     ]
   },
   "argo_screenshot": {

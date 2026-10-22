@@ -239,7 +239,10 @@ python3 scripts/clarify.py "有歧义的查询" --json
 argo fetch "https://example.com"                      # HTTP 优先，失败自动升级浏览器
 argo fetch "https://example.com/long-article" --focus "关键词"   # BM25 聚焦，省 token
 argo fetch "https://cloudflare-protected.com" --use-browser     # 强制反检测浏览器
+argo fetch "https://example.com/post" --json --include-links    # 附带正文链接（默认只给 links_count）
 ```
+
+- **文章级元数据**：同一份 HTML 里顺带提取 `byline` / `excerpt` / `site_name` / `published_at`，不额外联网；`--include-links` 时附带 `<article>/<main>` 内的链接（最多 30 条，相对链接已解析）。没有语义容器时宁可不给，也不把导航链接当正文引用。
 
 - **降级链顺序**：HTTP（带内容协商；桌面/移动 UA，抖音等分流站移动优先）→ `{url}.md` 直出探测（主请求没拿到 Markdown 才回探）→ TLS 指纹 → jina/Parallel 免费云渲染 → Wayback/浏览器 自动降级 + BM25 聚焦提取 + 质量信号 + 内容安全引擎
 - **内容协商**：HTTP 那一级带 `Accept: text/markdown`，站点愿意给 Markdown 就直接拿走（`fetch_method=http_md`），既省下整条反爬降级链，也保住了站点自己的标题/表格/代码块结构。文档站实测约四成支持；不支持的站点原样返回 HTML，行为不变，故默认常开（`ARGO_FETCH_MD_NEGOTIATE=0` 关闭）。声称 `text/markdown` 却是占位页/错误页/404 的响应一律按 HTML 处理——实测这类假货约占五分之一

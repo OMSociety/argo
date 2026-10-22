@@ -949,6 +949,8 @@ def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             # 双保险：fetch_v3 公共返回已剥 html；这里再剥一次，防其他入口漏
             if isinstance(result, dict):
                 result.pop("html", None)
+                if not arguments.get("include_links", False):
+                    result.pop("links", None)
             return _ok(result, pretty=pretty)
 
         elif name == "argo_screenshot":
