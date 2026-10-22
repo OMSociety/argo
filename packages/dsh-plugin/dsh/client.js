@@ -240,6 +240,7 @@ window.__ModuleLoader__.load({
 
     const KEYS = [
       { ref: 'DEEPSEEK_API_KEY', common: true, zh: 'DeepSeek 官方搜索', en: 'DeepSeek official search' },
+      { ref: 'ARGO_YUANBAO_API_KEY', common: true, zh: '腾讯元宝搜索', en: 'Tencent Yuanbao' },
       { ref: 'TAVILY_API_KEY', common: true, zh: 'Tavily', en: 'Tavily' },
       { ref: 'EXA_API_KEY', common: true, zh: 'Exa', en: 'Exa' },
       { ref: 'BOCHA_API_KEY', common: true, zh: '博查', en: 'Bocha' },

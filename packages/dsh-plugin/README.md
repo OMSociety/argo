@@ -8,7 +8,25 @@ DeepSeek Harness 插件：一行同时挂上 [Argo](https://github.com/taxueseek
 dsh plugin --profile web add "github:taxueseek/argo#main&path:packages/dsh-plugin"
 ```
 
-重启 `dsh web` 后生效。本 bundle 提供 **三形态接入**——同一套 argo 检索能力（同引擎、同压缩、同守卫），三种调用通道互为冗余，按宿主能力自动降级：
+重启 `dsh web` 后生效。
+
+### 本地开发：改完源码必须同步进 profile
+
+profile 里的依赖是 `file:` / `github:`，pnpm 安装时**复制**进
+`node_modules/@taxueseek/argo-dsh`，不是软链。只改本仓源码、不跑同步，
+DSH 设置页读到的仍是旧 bundle（2026-10-22 实测：缓存开关与付费额度已改，
+面板仍显示旧版）。
+
+```bash
+packages/dsh-plugin/scripts/sync-local.sh --check    # 比对源码与已安装 bundle
+packages/dsh-plugin/scripts/sync-local.sh            # 同步 web/desktop
+packages/dsh-plugin/scripts/sync-local.sh --restart  # 同步并重启 dsh web
+```
+
+同步会先备份到 `~/.dsh/backups/argo-dsh-sync-<时间>-<profile>`；浏览器如仍显示
+旧面板，做一次硬刷新（Cmd+Shift+R）。
+
+本 bundle 提供 **三形态接入**——同一套 argo 检索能力（同引擎、同压缩、同守卫），三种调用通道互为冗余，按宿主能力自动降级：
 
 - **原生一等工具**（默认开）：`argo_search` / `argo_fetch`（`ctx.tools.register`），走 CLI 单发（`--call`）复用 MCP 同一套引擎与守卫，**不依赖 MCP 连接、零常驻 token 开销**；`nativeTools: []` 关闭
 - **原生 web seam**（默认开）：注册 `argo` 搜索与抓取两个 provider，宿主内置 `web_search` 路由到 argo 引擎链、`web_fetch` 走 argo 抓取链（HTTP 优先，遇 Cloudflare/JS 渲染自动升级反检测浏览器）；`searchProviderEnabled: false` / `fetchProviderEnabled: false` 时对应 provider 注册但不可选

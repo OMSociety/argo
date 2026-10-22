@@ -196,6 +196,13 @@ test('Exa uses a monthly USD budget, not a call count', () => {
     'Exa 是金额额度，不应再暴露成次数上限')
 })
 
+test('keys tab exposes the Yuanbao credential ref', () => {
+  // KEYS 是面板「密钥」页的清单；元宝已成为中文通用域第 2 位对冲源，
+  // key 不在清单里就只能手改 ~/.config/argo/env（2026-10-22 用户反馈）。
+  const src = readFileSync(new URL('../dsh/client.js', import.meta.url), 'utf8')
+  assert.match(src, /ref: 'ARGO_YUANBAO_API_KEY'/, '密钥页缺腾讯元宝')
+})
+
 test('ArgoPanel renders every tab without undefined references', () => {
   // node --check 只查语法，查不出渲染路径里的未定义引用；注册测试又不跑组件。
   // 这里用带状态的 React 替身把六个 tab 各完整渲染一遍：任何 tab 的渲染函数
