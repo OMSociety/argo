@@ -2001,7 +2001,9 @@ engines:
     priority: 14
     limit: 1000
     period: month
-    cost_per_call: 0.0
+    # 每月 $10 赠金按 1000 次折算 → $0.01/次。此前写 0 表示「赠金不计成本」，
+    # 结果是 $10 预算永远不消耗、面板上的额度无法参与调度（2026-10-22 修正）。
+    cost_per_call: 0.01
     cost_unit: usd
     coverage:
     - semantic

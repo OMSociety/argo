@@ -42,8 +42,7 @@ _QUOTA_LIMIT_ENV: tuple[tuple[str, str], ...] = (
     ("ARGO_QUOTA_ANYSEARCH_LIMIT", "anysearch"),   # 日
     ("ARGO_QUOTA_ZHIHU_LIMIT", "zhihu"),           # 日
     ("ARGO_QUOTA_YUANBAO_LIMIT", "yuanbao"),       # 月
-    ("ARGO_QUOTA_BOCHA_LIMIT", "bocha"),           # 月
-    ("ARGO_QUOTA_EXA_LIMIT", "exa"),               # 月
+    ("ARGO_QUOTA_BOCHA_LIMIT", "bocha"),           # 月（按量付费的调度上限）
     ("ARGO_QUOTA_TAVILY_LIMIT", "tavily"),         # 月
 )
 
@@ -135,6 +134,16 @@ def _prune_foreign_engines(state: dict, protect: set[str]) -> dict:
         return state
     return {name: st for name, st in state.items()
             if name in known or name in protect}
+
+
+def _at_or_over_budget(cost_used: float, budget: float) -> bool:
+    """预算是否用完：按 6 位小数比较，消掉单价累加的浮点漂移。
+
+    实测：Exa $0.01 × 1000 次 = 9.999999999999831，直接 `>= 10` 会判「还没
+    用完」，额度显示 10.0 却还能再打一次。预算是对外承诺的数字，比较口径
+    必须与展示口径一致（budget_status 也是 round 6）。
+    """
+    return round(float(cost_used), 6) >= round(float(budget), 6)
 
 
 class QuotaManager:
@@ -387,9 +396,12 @@ class QuotaManager:
                 ratios.append(max(0.0, (limit - state.get("used", 0)) / limit))
             budget = profile.get("budget_amount")
             if budget:
-                ratios.append(max(0.0,
-                                  (float(budget) - float(state.get("cost_used", 0.0)))
-                                  / float(budget)))
+                cost_used = float(state.get("cost_used", 0.0))
+                if _at_or_over_budget(cost_used, budget):
+                    ratios.append(0.0)
+                else:
+                    ratios.append(max(0.0,
+                                      (float(budget) - cost_used) / float(budget)))
             return min(ratios) if ratios else 1.0
 
     @staticmethod
@@ -551,7 +563,7 @@ class QuotaManager:
             if budget is None:
                 return False
             st = self._state.get(engine) or {}
-            return float(st.get("cost_used", 0.0)) >= float(budget)
+            return _at_or_over_budget(st.get("cost_used", 0.0), budget)
 
     def budget_status(self, engine: str) -> dict[str, Any]:
         """单引擎预算快照（O(1)，避免 over_budget_error 为拼错误文案扫全表 280 引擎）。"""
@@ -619,7 +631,8 @@ class QuotaManager:
             if qr <= 0:
                 return False
         budget = profile.get("budget_amount")
-        if budget is not None and float(state.get("cost_used", 0.0)) >= float(budget):
+        if budget is not None and _at_or_over_budget(
+                state.get("cost_used", 0.0), budget):
             return False
         # get_current_rpm 的内联版本（不重复获取锁）
         qps = profile.get("qps")

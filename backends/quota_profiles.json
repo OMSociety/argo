@@ -685,7 +685,7 @@
     "qps": 1,
     "limit": 1000,
     "period": "month",
-    "cost_per_call": 0.0,
+    "cost_per_call": 0.01,
     "cost_unit": "usd",
     "cost_tier": "api",
     "priority": 14

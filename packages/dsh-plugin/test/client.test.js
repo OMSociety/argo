@@ -163,7 +163,7 @@ test('paid quota switches distinguish daily and monthly limits', () => {
   const byName = new Map(ARGO_ENV_SPECS.map((s) => [s.name, s]))
   const daily = ['ARGO_QUOTA_ANYSEARCH_LIMIT', 'ARGO_QUOTA_ZHIHU_LIMIT']
   const monthly = ['ARGO_QUOTA_YUANBAO_LIMIT', 'ARGO_QUOTA_BOCHA_LIMIT',
-    'ARGO_QUOTA_EXA_LIMIT', 'ARGO_QUOTA_TAVILY_LIMIT']
+    'ARGO_QUOTA_TAVILY_LIMIT']
   for (const name of daily) {
     const spec = byName.get(name)
     assert.ok(spec, `${name} 不在白名单`)
@@ -180,6 +180,20 @@ test('paid quota switches distinguish daily and monthly limits', () => {
     assert.equal(spec.group, 'paid', `${name} 应归入付费搜索组`)
     assert.equal(spec.min, 0, `${name} 允许 0=不限制`)
   }
+  // 博查按量付费：次数项只是本地调度上限，文案必须写明，不能显示成预付额度
+  assert.match(byName.get('ARGO_QUOTA_BOCHA_LIMIT').zh, /按量付费/)
+})
+
+test('Exa uses a monthly USD budget, not a call count', () => {
+  const byName = new Map(ARGO_ENV_SPECS.map((s) => [s.name, s]))
+  const exa = byName.get('ARGO_BUDGET_EXA')
+  assert.ok(exa, 'ARGO_BUDGET_EXA 不在白名单')
+  assert.equal(exa.kind, 'num')
+  assert.equal(exa.group, 'paid')
+  assert.equal(exa.def, 10, 'Exa 默认 $10/月')
+  assert.match(exa.zh, /美元|USD/)
+  assert.equal(byName.has('ARGO_QUOTA_EXA_LIMIT'), false,
+    'Exa 是金额额度，不应再暴露成次数上限')
 })
 
 test('ArgoPanel renders every tab without undefined references', () => {

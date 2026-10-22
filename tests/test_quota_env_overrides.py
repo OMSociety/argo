@@ -76,3 +76,18 @@ def test_override_participates_in_availability(monkeypatch, tmp_path):
     mgr.record_many([("anysearch", True)] * 5)
     assert mgr.is_available("anysearch") is False
     assert mgr.get_remaining_ratio("anysearch") == 0.0
+
+
+def test_exa_budget_is_usd_and_drives_availability(monkeypatch, tmp_path):
+    """Exa 是 $10/月额度：币种必须是 USD，且花完参与调度判定。"""
+    monkeypatch.setenv("ARGO_BUDGET_EXA", "10")
+    mgr = _manager(monkeypatch, tmp_path)
+    profile = mgr._profiles["exa"]
+    assert profile["budget_amount"] == 10
+    assert profile["budget_currency"] == "USD"
+    assert profile["cost_per_call"] == 0.01
+    # 次数上限仍按 config 的 1000 存在；这里先摘掉，单测预算本身
+    profile["limit"] = None
+    mgr.record_many([("exa", True)] * 1000)
+    assert mgr.is_over_budget("exa") is True
+    assert mgr.is_available("exa") is False

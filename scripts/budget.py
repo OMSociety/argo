@@ -50,6 +50,14 @@ _ENV_JSON = "ARGO_BUDGETS_JSON"
 _ENV_FILE = "ARGO_BUDGET_FILE"
 _ENV_PREFIX = "ARGO_" + "BUDGET_"
 
+# 单引擎 env 覆盖的默认币种（金额单位必须与引擎 cost_unit 对齐，否则预算
+# 与 cost_used 是两个币种在比大小）。未列出的引擎按 CNY，与历史行为一致。
+_ENV_CURRENCY = {
+    "deepseek_search": "CNY",
+    "exa": "USD",
+    "tavily": "USD",
+}
+
 
 def budget_file() -> Path:
     """预算文件路径（不保证存在）。"""
@@ -126,9 +134,9 @@ def _read_env() -> dict[str, dict[str, Any]]:
             continue
         if amount < 0:
             continue
-        entry = {"amount": amount, "currency": "CNY", "period": "month"}
-        if engine in out and out[engine].get("currency"):
-            entry["currency"] = out[engine]["currency"]
+        currency = (out.get(engine) or {}).get("currency") \
+            or _ENV_CURRENCY.get(engine, "CNY")
+        entry = {"amount": amount, "currency": currency, "period": "month"}
         out[engine] = entry
     return out
 
@@ -145,6 +153,7 @@ def budget_signature() -> tuple[Any, ...]:
         f_sig,
         os.environ.get(_ENV_JSON, ""),
         os.environ.get("ARGO_BUDGET_DEEPSEEK_SEARCH", ""),
+        os.environ.get("ARGO_BUDGET_EXA", ""),
     )
 
 
