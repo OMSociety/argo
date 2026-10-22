@@ -592,7 +592,7 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 | `ARGO_YUANBAO_API_KEY` | 对应引擎/服务的凭据（腾讯元宝搜索，官方名 `TENCENTCLOUD_WSA_APIKEY` 同样识别） | 缺密钥=该源跳过或降级 |
 | `ARGO_ZHIHU_ACCESS_SECRET` | 对应引擎/服务的凭据 | 缺密钥=该源跳过或降级 |
 
-### 行为调参（35）
+### 行为调参（34）
 
 | 变量 | 作用 | 默认/备注 |
 |------|------|----------|
@@ -603,8 +603,7 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 | `ARGO_BUDGET_DEEPSEEK_SEARCH` | DeepSeek 月度预算（元） | 默认 5（≈1000 次成功调用）；0=关闭自动使用。也可用 `argo budget set deepseek_search 5` 写共享文件 |
 | `ARGO_QUOTA_ANYSEARCH_LIMIT` | 行为阈值/预算调参 | AnySearch 每日次数上限（默认 1000）；0=不限制；空=沿用 config.yaml |
 | `ARGO_QUOTA_ZHIHU_LIMIT` | 行为阈值/预算调参 | 知乎每日次数上限（默认 5000）；0=不限制；空=沿用 config.yaml |
-| `ARGO_QUOTA_YUANBAO_LIMIT` | 行为阈值/预算调参 | 元宝每月次数上限（默认 6000）；0=不限制；空=沿用 config.yaml |
-| `ARGO_QUOTA_BOCHA_LIMIT` | 行为阈值/预算调参 | 博查每月调用上限（默认 10000，按量付费的本地防失控上限）；0=不限制；空=沿用 config.yaml |
+| `ARGO_QUOTA_YUANBAO_LIMIT` | 行为阈值/预算调参 | 元宝每月次数上限（默认 2000）；0=不限制；空=沿用 config.yaml |
 | `ARGO_BUDGET_EXA` | Exa 月度预算（美元） | 默认 10（≈1000 次）；0=关闭自动使用；按成功调用计费 |
 | `ARGO_QUOTA_TAVILY_LIMIT` | 行为阈值/预算调参 | Tavily 每月次数上限（默认 1000）；0=不限制；空=沿用 config.yaml |
 | `ARGO_BUDGETS_JSON` | 预算整份 JSON 覆盖 | 高级/测试用；优先级高于预算文件，例 `{"deepseek_search":{"amount":5,"currency":"CNY","period":"month"}}` |

@@ -42,7 +42,6 @@ _QUOTA_LIMIT_ENV: tuple[tuple[str, str], ...] = (
     ("ARGO_QUOTA_ANYSEARCH_LIMIT", "anysearch"),   # 日
     ("ARGO_QUOTA_ZHIHU_LIMIT", "zhihu"),           # 日
     ("ARGO_QUOTA_YUANBAO_LIMIT", "yuanbao"),       # 月
-    ("ARGO_QUOTA_BOCHA_LIMIT", "bocha"),           # 月（按量付费的调度上限）
     ("ARGO_QUOTA_TAVILY_LIMIT", "tavily"),         # 月
 )
 

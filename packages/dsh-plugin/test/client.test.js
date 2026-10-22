@@ -162,8 +162,7 @@ test('cache switch defaults to cache enabled and never inverts', () => {
 test('paid quota switches distinguish daily and monthly limits', () => {
   const byName = new Map(ARGO_ENV_SPECS.map((s) => [s.name, s]))
   const daily = ['ARGO_QUOTA_ANYSEARCH_LIMIT', 'ARGO_QUOTA_ZHIHU_LIMIT']
-  const monthly = ['ARGO_QUOTA_YUANBAO_LIMIT', 'ARGO_QUOTA_BOCHA_LIMIT',
-    'ARGO_QUOTA_TAVILY_LIMIT']
+  const monthly = ['ARGO_QUOTA_YUANBAO_LIMIT', 'ARGO_QUOTA_TAVILY_LIMIT']
   for (const name of daily) {
     const spec = byName.get(name)
     assert.ok(spec, `${name} 不在白名单`)
@@ -180,8 +179,11 @@ test('paid quota switches distinguish daily and monthly limits', () => {
     assert.equal(spec.group, 'paid', `${name} 应归入付费搜索组`)
     assert.equal(spec.min, 0, `${name} 允许 0=不限制`)
   }
-  // 博查按量付费：次数项只是本地调度上限，文案必须写明，不能显示成预付额度
-  assert.match(byName.get('ARGO_QUOTA_BOCHA_LIMIT').zh, /按量付费/)
+  assert.equal(byName.get('ARGO_QUOTA_YUANBAO_LIMIT').def, 2000,
+    '元宝默认 2000/月')
+  // 博查按量付费：不应再有固定次数项（2026-10-22 用户更正）
+  assert.equal(byName.has('ARGO_QUOTA_BOCHA_LIMIT'), false,
+    '博查按量付费，不应暴露次数上限')
 })
 
 test('Exa uses a monthly USD budget, not a call count', () => {

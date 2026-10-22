@@ -1513,10 +1513,9 @@ domains:
   # 而同 6 个中文查询对拍 anysearch 中位 2664ms、日期覆盖 0%，yuanbao 中位
   # 699ms、日期覆盖 96%——放第 2 位意味着主力全挂时它直接顶上。
   #
-  # 额度可耗尽（月 6000 次，活动结束回落 2000 次），但耗尽后 is_hard_down 会
-  # 自动把它从 combo 摘掉，组合回落到 anysearch/zhihu_global 形态，不报错、
-  # 不留半截状态。改档位只改 engines/specs/yuanbao.yaml 的 limit，改完跑
-  # scripts/sync_backends.py。
+  # 额度可耗尽（默认 2000 次/月；更高套餐改 engines/specs/yuanbao.yaml 的 limit），
+  # 但耗尽后 is_hard_down 会自动把它从 combo 摘掉，组合回落到 anysearch/zhihu_global
+  # 形态，不报错、不留半截状态。改档位后跑 scripts/sync_backends.py。
   engines_combo:
   - bocha
   - yuanbao
@@ -1870,8 +1869,8 @@ engines:
     cost_tier: low
     qps: 5
     priority: 9
-    limit: 10000
-    period: month
+    # 按量付费：不设次数上限（2026-10-22 用户更正）。额度由博查控制台后付，
+    # argo 侧只在成本预算层可另设上限（argo budget set bocha ...）。
     cost_per_call: 0.0001
     cost_unit: credit
     coverage:
@@ -1897,8 +1896,7 @@ engines:
     cost_tier: low
     qps: 5
     priority: 9
-    limit: 10000
-    period: month
+    # 按量付费：同 bocha，不设次数上限。
     cost_per_call: 0.001
     cost_unit: credit
     coverage:

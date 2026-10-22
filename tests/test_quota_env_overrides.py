@@ -41,7 +41,7 @@ def test_default_limits_come_from_config(monkeypatch, tmp_path):
     mgr = _manager(monkeypatch, tmp_path)
     assert mgr._profiles["anysearch"]["limit"] == 1000
     assert mgr._profiles["anysearch"]["period"] == "day"
-    assert mgr._profiles["yuanbao"]["limit"] == 6000
+    assert mgr._profiles["yuanbao"]["limit"] == 2000
     assert mgr._profiles["yuanbao"]["period"] == "month"
 
 
@@ -66,7 +66,7 @@ def test_invalid_value_keeps_declared_limit(monkeypatch, tmp_path):
     monkeypatch.setenv("ARGO_QUOTA_YUANBAO_LIMIT", "-3")
     mgr = _manager(monkeypatch, tmp_path)
     assert mgr._profiles["anysearch"]["limit"] == 1000
-    assert mgr._profiles["yuanbao"]["limit"] == 6000
+    assert mgr._profiles["yuanbao"]["limit"] == 2000
 
 
 def test_override_participates_in_availability(monkeypatch, tmp_path):

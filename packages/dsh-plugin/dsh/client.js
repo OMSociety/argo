@@ -109,7 +109,8 @@ window.__ModuleLoader__.load({
         groupNet: '网络出口',
         groupLocal: '本机检索',
         groupMisc: '其他',
-        groupPaid: '付费搜索',
+        groupPaid: '额度与预算',
+        groupPaidHint: '免费与付费源统一管理：金额计费的源设月度预算，按次数限额的源设日/月次数上限；0=不限制。额度或预算用尽后该源自动跳过并回落免费源。改动对下一次新建连接生效。',
         envDefault: '默认',
         envRange: '需在 {min}–{max} 之间',
         keySourceFile: '凭证库',
@@ -203,7 +204,8 @@ window.__ModuleLoader__.load({
         groupNet: 'Network',
         groupLocal: 'Local search',
         groupMisc: 'Misc',
-        groupPaid: 'Paid search',
+        groupPaid: 'Quotas & budgets',
+        groupPaidHint: 'Free and paid sources share one manager: money-metered sources take a monthly budget, count-capped sources take daily/monthly call caps; 0 = unlimited. When a budget or cap is exhausted, that source is skipped and free fallbacks take over. Changes apply to the next new connection.',
         envDefault: 'default',
         envRange: 'must be between {min} and {max}',
         keySourceFile: 'credential store',
@@ -293,14 +295,13 @@ window.__ModuleLoader__.load({
       { name: 'ARGO_LOCAL_SEEK_PATH', kind: 'str', group: 'local', zh: 'seek.py 绝对路径', en: 'seek.py path', hintZh: '显式指定 seek.py，优先于根目录候选', hintEn: 'Explicit seek.py, wins over root candidates' },
       { name: 'ARGO_LOCAL_READ_DIRS', kind: 'list', group: 'local', zh: '本机读取白名单', en: 'Local read allowlist', hintZh: '逗号分隔；不配置则 local_read 一律不放行', hintEn: 'Comma-separated; empty means local_read allows nothing' },
       { name: 'ARGO_TEXT_LEXICON', kind: 'str', group: 'local', zh: '词表 JSON 路径', en: 'Lexicon JSON path', hintZh: '文本处理词表覆盖，默认用打包词表', hintEn: 'Text lexicon override; default uses the bundled one' },
-      { name: 'ARGO_PAID_SEARCH', kind: 'str', group: 'paid', def: 'auto', zh: '付费搜索对冲', en: 'Paid search hedge', hintZh: 'auto=优势域自动用 DeepSeek；off=关闭；预算见下一项', hintEn: 'auto = use DeepSeek in proven domains; off = disable' },
+      { name: 'ARGO_PAID_SEARCH', kind: 'str', group: 'paid', def: 'auto', zh: '付费源策略', en: 'Paid source policy', hintZh: 'auto=优势域自动使用付费源；off=只用免费源。额度见下方', hintEn: 'auto = use paid sources in proven domains; off = free sources only. See quotas below' },
       { name: 'ARGO_BUDGET_DEEPSEEK_SEARCH', kind: 'num', group: 'paid', def: 5, min: 0, max: 1000, step: 1, zh: 'DeepSeek 月度预算（元）', en: 'DeepSeek monthly budget (CNY)', hintZh: '0=关闭；¥5≈1000次成功调用（¥0.005/次）', hintEn: '0 = off; CNY 5 ≈ 1000 successful calls (CNY 0.005 each)' },
       { name: 'ARGO_BUDGET_EXA', kind: 'num', group: 'paid', def: 10, min: 0, max: 10000, step: 1, zh: 'Exa 每月预算（美元）', en: 'Exa monthly budget (USD)', hintZh: '默认 $10/月（约 1000 次）；0=关闭自动使用。按成功调用计费', hintEn: 'Default $10/month (~1000 calls); 0 = off. Billed per successful call' },
-      { name: 'ARGO_QUOTA_ANYSEARCH_LIMIT', kind: 'num', group: 'paid', def: 1000, min: 0, max: 1000000, step: 1, zh: 'AnySearch 每日次数', en: 'AnySearch daily calls', hintZh: '默认 1000/日；0=不限制。改动对下一次新建连接生效', hintEn: 'Default 1000/day; 0 = unlimited. Applies to new connections' },
-      { name: 'ARGO_QUOTA_ZHIHU_LIMIT', kind: 'num', group: 'paid', def: 5000, min: 0, max: 1000000, step: 1, zh: '知乎 每日次数', en: 'Zhihu daily calls', hintZh: '默认 5000/日；0=不限制。改动对下一次新建连接生效', hintEn: 'Default 5000/day; 0 = unlimited. Applies to new connections' },
-      { name: 'ARGO_QUOTA_YUANBAO_LIMIT', kind: 'num', group: 'paid', def: 6000, min: 0, max: 1000000, step: 1, zh: '元宝 每月次数', en: 'Yuanbao monthly calls', hintZh: '默认 6000/月；0=不限制。改动对下一次新建连接生效', hintEn: 'Default 6000/month; 0 = unlimited. Applies to new connections' },
-      { name: 'ARGO_QUOTA_BOCHA_LIMIT', kind: 'num', group: 'paid', def: 10000, min: 0, max: 1000000, step: 1, zh: '博查 每月调用上限（按量付费）', en: 'Bocha monthly call cap (pay-as-you-go)', hintZh: '按量计费；本项是 argo 侧防失控的调用上限，不是预付费额度；0=不限制', hintEn: 'Pay-as-you-go; this is a local safety cap, not prepaid quota; 0 = unlimited' },
-      { name: 'ARGO_QUOTA_TAVILY_LIMIT', kind: 'num', group: 'paid', def: 1000, min: 0, max: 1000000, step: 1, zh: 'Tavily 每月次数', en: 'Tavily monthly calls', hintZh: '默认 1000/月；0=不限制。改动对下一次新建连接生效', hintEn: 'Default 1000/month; 0 = unlimited. Applies to new connections' },
+      { name: 'ARGO_QUOTA_ANYSEARCH_LIMIT', kind: 'num', group: 'paid', def: 1000, min: 0, max: 1000000, step: 1, zh: 'AnySearch 每日次数上限', en: 'AnySearch daily call cap', hintZh: '默认 1000/日；0=不限制。改动对下一次新建连接生效', hintEn: 'Default 1000/day; 0 = unlimited. Applies to new connections' },
+      { name: 'ARGO_QUOTA_ZHIHU_LIMIT', kind: 'num', group: 'paid', def: 5000, min: 0, max: 1000000, step: 1, zh: '知乎 每日次数上限', en: 'Zhihu daily call cap', hintZh: '默认 5000/日；0=不限制。改动对下一次新建连接生效', hintEn: 'Default 5000/day; 0 = unlimited. Applies to new connections' },
+      { name: 'ARGO_QUOTA_YUANBAO_LIMIT', kind: 'num', group: 'paid', def: 2000, min: 0, max: 1000000, step: 1, zh: '元宝 每月次数上限', en: 'Yuanbao monthly call cap', hintZh: '默认 2000/月；0=不限制。改动对下一次新建连接生效', hintEn: 'Default 2000/month; 0 = unlimited. Applies to new connections' },
+      { name: 'ARGO_QUOTA_TAVILY_LIMIT', kind: 'num', group: 'paid', def: 1000, min: 0, max: 1000000, step: 1, zh: 'Tavily 每月次数上限', en: 'Tavily monthly call cap', hintZh: '默认 1000/月；0=不限制。改动对下一次新建连接生效', hintEn: 'Default 1000/month; 0 = unlimited. Applies to new connections' },
       { name: 'ARGO_NO_PREWARM', kind: 'bool', group: 'misc', def: false, zh: '关闭连接预热', en: 'Disable prewarm', hintZh: 'MCP 握手后预热引擎注册表，默认开；开启本项即关闭预热', hintEn: 'Prewarm the engine registry after handshake, on by default; enable this to turn it off' },
       { name: 'ARGO_USAGE_LOG', kind: 'bool', group: 'misc', def: true, zh: '使用日志', en: 'Usage log', hintZh: 'argo 侧 JSONL 使用账本，默认开', hintEn: 'argo JSONL usage ledger, on by default' },
       { name: 'ARGO_ENGINE_HTTP_CLIENT', kind: 'bool', group: 'misc', def: true, zh: 'HttpClient 连接池', en: 'HttpClient pool', hintZh: '引擎 HTTP 走连接池，默认开；=0 回退 urllib（诊断用）', hintEn: 'Pooled engine HTTP, on by default; =0 falls back to urllib' },
@@ -1038,6 +1039,9 @@ window.__ModuleLoader__.load({
           const bools = specs.filter((spec) => spec.kind === 'bool');
           const fields = specs.filter((spec) => spec.kind !== 'bool');
           const children = [];
+          if (group === 'paid') {
+            children.push(h('p', { key: 'groupHint', style: S.hint }, t('groupPaidHint')));
+          }
           for (const spec of bools) {
             // 未配置时显示 argo 默认态并标注「默认」，配置过的显示自定义值，
             // 让「这一行到底生不生效」在面板上一眼可辨。

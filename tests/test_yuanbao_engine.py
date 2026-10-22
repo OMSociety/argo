@@ -220,7 +220,7 @@ class TestQuota:
 
     def test_派生件是计数档不是金额档(self):
         p = self._profile()
-        assert p["limit"] == 6000, "月度调用额度应为 6000 次"
+        assert p["limit"] == 2000, "月度调用额度应为 2000 次"
         assert p["period"] == "month", "period 是额度重置周期（month→30 天）"
         # 金额档的两个字段都不该有值——有值就会被 budget.py 接管
         assert not p.get("budget_amount")
@@ -235,7 +235,7 @@ class TestQuota:
         隔离跑能过、全量跑就挂（本文件初版就是这么挂的）。
         """
         p = self._profile()
-        assert p["limit"] == 6000
+        assert p["limit"] == 2000
         assert p["period"] == "month"
         assert not p.get("budget_amount"), "金额档字段不该有值"
 

@@ -143,8 +143,8 @@
   "bocha": {
     "label": "博查搜索",
     "qps": 5,
-    "limit": 10000,
-    "period": "month",
+    "limit": null,
+    "period": "second",
     "cost_per_call": 0.0001,
     "cost_unit": "credit",
     "cost_tier": "low",
@@ -153,8 +153,8 @@
   "bocha_ai": {
     "label": "博查AI搜索",
     "qps": 5,
-    "limit": 10000,
-    "period": "month",
+    "limit": null,
+    "period": "second",
     "cost_per_call": 0.001,
     "cost_unit": "credit",
     "cost_tier": "low",
@@ -2623,7 +2623,7 @@
   "yuanbao": {
     "label": "腾讯元宝搜索",
     "qps": 2,
-    "limit": 6000,
+    "limit": 2000,
     "period": "month",
     "cost_per_call": 0.0,
     "cost_unit": "credit",
