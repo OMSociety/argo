@@ -20,6 +20,11 @@ if SCRIPTS_DIR not in sys.path:
 
 import fetch_v3  # noqa: E402
 
+# 全篇用 docs.example.com 这类假域名：DNS 解析结果随环境变（本地可能被
+# 劫持成公网 IP，CI 上是 NXDOMAIN），SSRF 会 fail-closed 成 blocked。
+# SSRF 自身由 test_tls_spoof 覆盖，这里只放行可达性。
+pytestmark = pytest.mark.usefixtures("allow_fake_hosts")
+
 
 @pytest.fixture(autouse=True)
 def isolated_identity(tmp_path, monkeypatch):

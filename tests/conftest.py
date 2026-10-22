@@ -71,6 +71,15 @@ os.environ["ARGO_STATE_DIR"] = _STATE_DIR
 # 文件；需要验证 env 文件行为的测试自行显式设置 ARGO_ENV_FILE。
 os.environ["ARGO_ENV_FILE"] = os.path.join(_STATE_DIR, "nonexistent-env")
 
+# 仓库自带入口上 PATH（2026-10-22，第一次在 CI 上跑全量才发现）：一批用例
+# subprocess 调用 `argo …`——开发机上它是 `~/.local/bin/argo` 的符号链接，
+# CI 上没有这层安装，于是 3 条用例红成 FileNotFoundError: 'argo'。
+# 这里把 repo/bin 放到 PATH 最前，等价于「装过」的环境；不改安装方式，
+# 也不把测试改成直接调 scripts/*.py（那会漏掉入口包装层的行为）。
+_BIN_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bin")
+if os.path.isdir(_BIN_DIR):
+    os.environ["PATH"] = _BIN_DIR + os.pathsep + os.environ.get("PATH", "")
+
 
 # HTTP 连接池（conn_pool）是**进程级**可变状态：某个用例期间建立的空闲连接
 # 会被后续用例复用，改变它们看到的网络形态。实测（2026-09-27）：
@@ -93,3 +102,19 @@ def _isolate_conn_pool():
     conn_pool.clear()
     yield
     conn_pool.clear()
+
+
+@pytest.fixture
+def allow_fake_hosts(monkeypatch):
+    """让「假域名」不再真的走 DNS：`docs.example.com` 这类地址在本地可能被
+    ISP 劫持解析成公网 IP（实测本机解析到 198.18.0.x），在 CI 上则是 NXDOMAIN，
+    SSRF 防护 fail-closed 后整条 fetch 链返回 `fetch_method="blocked"`
+    ——同一份用例「本地绿、CI 红」（2026-10-22 第一次跑 CI 时 12 条一起红）。
+
+    SSRF 本身由 tests/test_tls_spoof.py 与 url_safety 的用例覆盖；这里只把
+    「能不能访问」放行，fetch 链的其它分支逻辑（协商、md 变体、移动端、tinyfish）
+    照常真跑。只在用假域名的用例上显式声明，不做全局放宽。
+    """
+    import url_safety
+
+    monkeypatch.setattr(url_safety, "check_url", lambda url: (True, ""))

@@ -77,6 +77,12 @@ def _set_fps(conn, mapping, dim=768):
 
 # ── 切词 ──────────────────────────────────────────────────────────────────
 
+needs_vision = pytest.mark.skipif(
+    not li.vision_available(),
+    reason="Vision 指纹/OCR 需要 macOS + swiftc；这台机器没有，能力本身也是 macOS 专属",
+)
+
+
 class TestTokens:
     def test_cjk_split_per_char(self):
         """中文无空格，按字切是最小单位（再用整串命中补精度）。"""
@@ -199,6 +205,7 @@ class TestFingerprintSearch:
         assert res[0]["path"] == "/img/a.png"
         assert res[0]["score"] == pytest.approx(1.0, abs=1e-3)
 
+    @needs_vision
     def test_missing_fingerprint_returns_empty(self, conn):
         """库里没有该图且现算失败时返回空，不抛异常。"""
         res = li.search_local(conn, "", limit=5,
@@ -308,6 +315,7 @@ class TestIndexIncremental:
         left = conn.execute("SELECT path FROM images").fetchone()["path"]
         assert left == "/img/also-gone.png"
 
+    @needs_vision
     def test_cross_root_indexing_keeps_previous_root(self, conn, tmp_path):
         """分两次索引不同 root：第二次不得把第一次的条目判成 gone 删光。
 
@@ -329,6 +337,7 @@ class TestIndexIncremental:
         assert str(root_a / "keep.png") in paths, "上一个 root 的条目被误删"
         assert str(root_b / "new.png") in paths, "本次 root 的条目应入索引"
 
+    @needs_vision
     def test_incremental_judge_uses_full_triple(self, conn, tmp_path):
         """增量判据是 (mtime, size, inode) 三元组——docstring 说的「三者一起比」。
 
@@ -442,6 +451,7 @@ class TestFpMatrixConsistency:
         Image.new("RGB", (32, 32), color).save(p)
         return p
 
+    @needs_vision
     def test_matrix_matches_table_after_incremental(self, tmp_path):
         db = str(tmp_path / "idx.db")
         conn = li.open_db(db)
@@ -469,6 +479,7 @@ class TestFpMatrixConsistency:
         finally:
             conn.close()
 
+    @needs_vision
     def test_matrix_rebuilt_when_file_deleted(self, tmp_path):
         """fp.npy 被删后下一次 index 自动重建（它是派生件，可随时删）。"""
         db = str(tmp_path / "idx.db")

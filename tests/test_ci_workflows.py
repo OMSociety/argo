@@ -111,3 +111,21 @@ def test_requirements_files_exist_and_are_wired():
         assert dep in dev, f"测试真正要用的 {dep} 不在 requirements-dev"
     opt = (ROOT / "requirements-optional.txt").read_text(encoding="utf-8")
     assert "curl_cffi" in opt and "rapidocr" in opt
+
+
+def test_unit_installs_rg_for_local_seek():
+    """local-seek 的 5 条用例依赖 rg；CI 镜像默认没有，实测一缺就红成
+    「grep 执行失败」。装它只要 1 秒，比在用例里跳过更值。"""
+    unit = _load("ci.yml")["jobs"]["unit"]
+    assert "ripgrep" in _steps_text(unit)
+    extras = _load("ci.yml")["jobs"]["extras"]
+    assert "ripgrep" in _steps_text(extras)
+
+
+def test_repo_entrypoint_reaches_path():
+    """一批用例 subprocess 跑 `argo …`：conftest 必须把 repo/bin 放上 PATH，
+    否则在没装过 argo 的机器（CI）上红成 FileNotFoundError: 'argo'。"""
+    import shutil
+    found = shutil.which("argo")
+    assert found, "repo/bin 没上 PATH"
+    assert Path(found).resolve().as_posix().endswith("/bin/argo")

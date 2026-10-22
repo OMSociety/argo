@@ -315,6 +315,7 @@ def test_verify_results_respects_top_k(cache):
 
 # ── F. fetch_v3 集成：成功抓取自动写证据缓存 ───────────────────────────────────
 
+@pytest.mark.usefixtures("allow_fake_hosts")
 def test_fetch_v3_writes_evidence_cache(monkeypatch, tmp_path):
     """fetch_v3 成功路径自动写 URL 证据分缓存（隔离 db，不真打网）。"""
     import cache as cache_mod

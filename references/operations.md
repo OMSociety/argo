@@ -131,6 +131,15 @@ export TINYFISH_API_KEY="sk-tinyfish-..."   # 去 agent.tinyfish.ai/api-keys 申
 `extras` 不进 PR 的原因写在 workflow 注释里：它 9 分钟，一进 PR 就把「2 分钟反馈」
 变成「9 分钟反馈」，而可选依赖的漂移是周级别的。
 
+两个踩过的环境坑（第一次真实跑 CI 时踩到，已写进用例）：
+
+- **系统依赖 `ripgrep`**：local-seek 的 5 条用例依赖它，runner 默认没有，
+  缺失会退回 grep 并红成「grep 执行失败」。`unit`/`extras` 作业显式装。
+- **假域名的 DNS**：`docs.example.com` 这类地址在开发机可能被 ISP 劫持成公网 IP，
+  在 CI 上是 NXDOMAIN，SSRF 防护 fail-closed 后整条 fetch 链返回 `blocked`。
+  用假域名的用例声明 `allow_fake_hosts` fixture（`tests/conftest.py`），
+  只放行可达性，SSRF 自身仍由 `test_tls_spoof.py` 覆盖。
+
 本地复现某一片（与 CI 同参数；先 `pip install -r requirements-dev.txt`）：
 
 ```bash

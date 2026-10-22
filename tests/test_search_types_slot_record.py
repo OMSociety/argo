@@ -26,6 +26,8 @@ from __future__ import annotations
 import dataclasses
 import importlib.util
 import sys
+
+import pytest
 import unittest
 from pathlib import Path
 
@@ -150,6 +152,10 @@ class TestBehaviour(unittest.TestCase):
 class TestGateTeeth:
     """门禁有牙：把注解读取换回旧写法，PEP 649 那条必须失败。"""
 
+    @pytest.mark.skipif(
+        sys.version_info < (3, 14),
+        reason="PEP 649 是 3.14 语义：3.12 上旧写法本来就能读到注解，这条门禁无从成立",
+    )
     def test_reverting_annotation_read_breaks_pep649(self):
         original = search_types._class_annotations
         try:
