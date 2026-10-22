@@ -683,126 +683,31 @@ argo/
 
 ## Actualizaciones recientes
 
-### Sin publicar (plugin DSH): la página de ajustes gana una sección «Motores» + la cancelación llega al establecimiento de la conexión
+Solo las tres versiones más recientes. El historial completo está en el [historial de cambios](#historial-de-cambios) y el detalle de cada versión en [Releases](https://github.com/taxueseek/argo/releases).
 
-- **Sexta sección de ajustes «Motores»**: los 28 interruptores de comportamiento de argo salieron de las variables de entorno para entrar en el panel (caché / reordenación TF-IDF / verificación cruzada numérica / deduplicación MinHash / guardia SERP, Jina / UA móvil / capa de fetch Parallel, capa de evidencia semántica, gracia de cobertura y anchura de cola, lista de motores activos, proxy, raíces de búsqueda local y lista de lectura permitida, calentamiento / registro de uso / pool de conexiones / TTL varios). Se aplican mediante la nueva configuración volátil `argoEnv` (un `KEY=VALUE` por línea) en el entorno del subproceso de argo; los nombres pasan por la lista `ARGO_ENV_SPECS` y cualquier cosa fuera de ella falla en voz alta al aplicar, para que un error tipográfico no quede en silencio sin efecto. Los de tipo interruptor se aplican al instante; los de número / texto / lista se guardan en grupo; las filas sin configurar muestran el valor por defecto de argo y se marcan como "default". Los interruptores de autorización (recompute, URLs intranet) quedan deliberadamente fuera del panel
-- **La capa de origen de las claves ya es visible**: muestra "configurada / sin configurar + capa de origen (almacén de credenciales / entorno de arranque / .env del proyecto / .env del hogar) + estado de solo lectura", y las capas que no son de fichero avisan de que se sobrescribirán al guardar; `DEEPSEEK_API_KEY` se marca como compartida con el `web_search` del host; `fetchMaxChars` se trunca al límite del esquema de la herramienta de argo (50000) al guardar, eliminando la discrepancia entre «valor mostrado» y «valor efectivo»
-- **La cancelación llega al establecimiento de la conexión**: `acquireMcp` respeta ahora la cancelación mientras se establece la conexión — al abortar mata el subproceso y cierra con `WEB_ABORTED` en lugar de esperar al timeout; la cancelación también fluye por el camino de disparo único
-- **Correcciones**: la deduplicación de evidencia ya no traga mayúsculas y minúsculas; los hosts antiguos sin `effect` ya no rompen la activación; `saveKey` / `setForward` / `toggleTool` leen una instantánea en vivo, corrigiendo una carrera que perdía actualizaciones en acciones consecutivas rápidas; las respuestas de `describe` se protegen contra reordenaciones y solo se acepta la de la petición más reciente
+### Próxima versión: búsqueda de Tencent Yuanbao + tres fuentes más sin clave + lista estructurada de fallos
 
-### v2.9.7: Consolidación de arquitectura — seam web_fetch DSH + contrato explicit_only + contratos de estado unificados (License: Apache-2.0)
+- **Búsqueda de Yuanbao**: fuente china de primera mano y voz oficial, complementaria a la mezcla de portales y autopublicaciones de bocha y byted; ocupa el 2.º puesto del dominio general chino como cobertura de autoridad. Clave: `ARGO_YUANBAO_API_KEY`
+- **Tres fuentes más sin clave**: `tavily_free`, `keenable_free` y el retorno anónimo de `exa` funcionan sin configurar ninguna clave
+- **Fallos sobre los que se puede actuar**: cada fallo indica su origen y su clase, y dice si reintentar, cambiar de fuente o configurar una clave, junto a un nivel de confianza `meta.uncertainty`
+- **Capa de configuración local `config.local.yaml`**: los ajustes de esta máquina ya no se escriben en la configuración pública que acompaña a cada versión
+- **Nueva sección «Engines» en la página de ajustes de DSH**: los 28 interruptores de comportamiento de argo salen de las variables de entorno y pasan al panel
 
-- **Cambio de licencia**: MIT → Apache License 2.0 (concesión de patentes explícita, más seguro para uso comercial); nada más cambia
-- **Seam web_fetch del plugin DSH**: el web_fetch del huésped antes esquivaba argo por completo como ruta predeterminada de «lee esta URL»; ahora registra un proveedor de fetch en la cadena argo_fetch (HTTP primero, ascenso automático a navegador anti-detección ante Cloudflare / páginas renderizadas con JS); ejecución de doble vía isomorfa con el proveedor de búsqueda — piscina MCP residente primero, CLI de un solo disparo solo ante fallo de transporte, errores de herramienta y timeouts no se reenvían (esas ya significan que la llamada terminó; reenviar duplica llamadas de motor y cuota); fallos clasificados en cinco clases (timeout / bloqueado / vacío / genérico / cancelado) con mensajes accionables; nueva configuración `fetchProviderEnabled` / `fetchProviderId` / `fetchTimeoutMs` (25000) / `fetchMaxChars` (50000), toda activa por defecto con salidas de emergencia; medido: redirecciones de origen cruzado (enlaces cortos, ascensos de protocolo, caparazones de redirección) y páginas de desafío JS pasan de fallos estructurales del huésped a éxitos de argo, las páginas estáticas no cambian
-- **Cierre del contrato explicit_only**: `config._routable_filter` filtraba listas negras/blancas de entorno, cles y bloqueos, pero no explicit_only, así que 18 motores de solo-uso-explícito (incluido el único `deepseek_search` de pago) yacían en el pool de candidados habilitados donde seis rutas de enrutado (inyección TF-IDF, catch-all, backfill, reserva, etc.) podían elegirlos — nunca disparó solo porque el corpus no tenía ninguna entrada; una entrada habría disparado motores de pago en modo auto; ahora se filtra en el único productor, fijado por `tests/test_explicit_only_gate.py`
-- **Contratos de estado unificados**: cortocircuito en memoria del cortacircuitos cuando está sano y cerrado con conteo cero (sin bloqueo de fichero, sin reescritura de disco) con conciencia cross-process vía `(st_mtime_ns, st_size)`; la contabilidad adaptativa pliega `MAX(created_at)` en un solo SQL agregado más un gestor de contexto `batch()` para confirmaciones multi-motor en una transacción; el agotamiento de cuota registra la huella de credencial vigente y se desbloquea solo al rotar la clave; la caché de ruta se invalida cuando un motor del combo se agota o se recupera; `is_engine_routable` se convierte en el predicado de admisión único tras backfill / tfidf / breaker_filter
-- **Despacho y transporte**: auto / deep también descartan motores agotados por duro (reserva fail-open); ventana de espera de cobertura estrechada, el early-stop de Wave-1 ahora acepta suficiencia acumulada cross-engine; agrupación de conexiones POST (ahorra ~320ms anysearch / ~561ms octen por petición) + preconexión MCP; el dominio de clima gana `early_stop_min_results: 1`
-- **Resta de rutas calientes en sub-skills**: js-run reemplaza SIGALRM por el timeout nativo de MiniRacer, arreglando el crash `ValueError: signal only works in main thread` al invocarse desde hilos de trabajo de crawl / research / mcp; el rerank de local-seek elimina las lecturas de disco O(N) por consulta; local-search reutiliza el registro (sin doble parseo YAML); ego-search corta en corto la detección bajo auto
-- **Validación**: 71 pruebas unitarias del plugin; suite completa 4264 passed / 28 skipped; siete puertas pre-commit 123 passed; la comparativa de la cadena de fetch no regresa páginas estáticas y convierte fallos en éxitos en redirecciones / desafíos JS
+### v2.9.7: consolidación de arquitectura + el host delega la obtención de páginas en argo + License pasa a Apache-2.0
 
-### v2.9.6: Motor DeepSeek Search + contrato de operadores de consulta + agrupación de conexiones + puerta de instantáneas de enrutado
+- **Cambio de License**: MIT → Apache License 2.0. Se explicita la concesión de patentes; lo demás no cambia
+- **Las páginas que el host no podía obtener ahora sí se obtienen**: acortadores, actualizaciones de protocolo, redirect shells y páginas con desafío de JS pasan por la cadena de fetch de argo (HTTP primero, con escalada automática a un navegador cuando el sitio se resiste). Activado por defecto; se desactiva con `fetchProviderEnabled`
+- **El modo auto ya no llama por error a motores de pago**: los 18 motores exclusivos de invocación explícita salen del pool de candidatos de enrutado y solo se usan si se nombran con `--engine`
+- **Una clave nueva recupera el siguiente salto**: los motores con cuota agotada ya no esperan a que venza su ventana de recuperación, y la caché de enrutado se recalcula
+- **Ejecutar JS desde crawl / research / MCP ya no se cae**
 
-- Nuevo motor `deepseek_search` (`api.deepseek.com/v1/tools/search` oficial) activo por defecto: se omite solo sin `DEEPSEEK_API_KEY`, las otras 265 fuentes no se afectan; medido 445-510ms (anysearch 1.7-4.5s / exa 3.7s), el único de los tres con cobertura completa de nivel authority / rerank_score / hora de publicación, a la par de anysearch en ja/ko/es; pago por uso, fuera de los combos de dominio, `--engine deepseek_search` explícito es la vía principal; los hosts DSH comparten la misma key con el backend oficial por el seam nativo de credenciales (rotar la key en la página Models surte efecto en el siguiente salto, nunca se persiste ni se registra)
-- Corrección: `--since/--until` silenciosamente ineficaz para deepseek_search (añadido a TIME_CAPABLE_ENGINES)
-- Nueva `query_operators.py`, capa de contrato de operadores de consulta: `site:` / `-site:` / `-término` / `-"frase"` / `lang:` / `after:` / `before:` convergen de cinco formas dispersas en operadores estructurados; enrutado, caché y comprensión de consulta solo ven el clean_query sin instrucciones; `site:` / `-site:` posfiltran de verdad (coincidencia de subdominio, OR multi-sitio, conteo en `site_filtered`), los operadores entran en la clave de caché de resultados para evitar contaminación cruzada
-- `evidence.py`: nuevo campo de resumen de doble capa para Agent `summary` (semántica de resumen de DeepSeek Search)
-- Transporte sin pagar dos veces: POST reutiliza conexiones agrupadas (medido: la segunda petición en la misma conexión ahorra 320ms anysearch / 561ms octen), con reintento por fallo de préstamo y lectura del cuerpo antes de devolver; preconexión MCP; cierre de agotamiento de cuota y caché negativa muerta
-- Enrutado: octen entra en el segundo slot de la cadena de fallback general y el slot de cobertura TF-IDF (ventana de jitter de anysearch p90 3273→1614ms, máx 6266→1928ms, errores 9→0; sin diferencia de mediana en ventana sana, posicionado como seguro de cola), escapatoria `ARGO_GENERAL_FALLBACK_LEGACY=1`
-- Corrección de la decadencia de rango del aislamiento RRF por calibre: todos los resultados de un motor con la misma puntuación (medido: 5 resultados de anysearch todos 0.017213), la salida degeneraba en concatenación por peso de motor; nuevo test bloquea "puntuaciones estrictamente decrecientes dentro del mismo motor"
-- Corrección del caparazón de redirección ck/a de Bing no restaurado, que hacía que la capa de agregación filtrara lotes enteros (40.2% de resultados vacíos en los últimos 7 días): decodificación base64url offline recupera los enlaces reales, cero red
-- Corrección del combo líder TF-IDF que producía `['anysearch','anysearch']` ejecutándose dos veces en paralelo (doble cuota con wasted_ms registrado en 0): 200 consultas reales reproducidas, combos duplicados 1→0
-- Mejoras de búsqueda: caché negativa de fallos, conmutación por error de Nitter, aislamiento por calibre, extracción de X Article, guardián de eco de consulta (rechazo por parada temprana + cambio de motor en la cadena de recuperación)
-- Ingeniería: nueva puerta `scripts/pre-commit` (static_lint / module_size_gate / usage_doc / consistency / routing_snapshot / context_budget + engine_catalog, ~12s medido); la puerta de instantáneas de decisión de enrutado convierte los volteos de enrutado en golden diffable (unión de tres conjuntos de anotación, 115 consultas, solo se comparan domain y kind para que el ruido de entorno no dé falsos rojos); test de sincronía del registro de calibres bloquea "los nombres de motor de la tabla deben estar realmente registrados"
-- El plugin DSH se adapta a DSH 0.2.1-rc.2: entrada de runtime de doble stack (`startActivation({provider, label, request, signal, delivery})` nuevo / `start(provider, request)` heredado), el tool guard dentro del plugin evita llamadas anidadas de workers a `wide_research` tras eliminar rc.2 `toolFilter`; verificado extremo a extremo en rc.2 (`wide_research` planner → 2 workers → synthesis, passed=true / 14 sources) y `argo_search` nativo (count=3); rama de compatibilidad 0.2.1-alpha.1 cubierta por unit tests; unit tests del plugin 46→50
-- Versiones de entorno DSH: **DSH 0.2.1-rc.2 (actual, en ejecución, verificado extremo a extremo) + DSH 0.2.1-alpha.1 (compatible, rama start heredada cubierta por unit tests)**; tabla de compatibilidad en `packages/dsh-plugin/README.md`
+### v2.9.6: DeepSeek Search + operadores de consulta + fin del doble pago del mismo POST
 
-### v2.9.5: Dominio dedicado de tipo de cambio + deduplicación de dos capas + corrección de falsa penalización + aislamiento de daemon por checkout
-
-- `config.yaml`: nuevo dominio `fx_query` — las consultas de "tipo de cambio RMB/USD, paridad central, offshore" ya no caen en callejones macro vacíos ni en entradas de enciclopedia; ahora tipo en vivo + noticia de paridad diaria (675ms medidos; antes 1411ms y desencaminado)
-- `search_rank.py`: deduplicación de dos capas — normalización de sufijo de sitio en título ( cero dependencias) + revisión difusa rapidfuzz (solo dentro de la banda de casi-acierto; `ARGO_DEDUP_FUZZY=0` desactiva, sin instalar vuelve a minhash puro)
-- Corrección: falsa penalización por separadores de título en rerank degradado — títulos con `|` / `_` / `——` recibían ×0.6 uniforme, hundiendo documentación oficial 40%; afectaba cada consulta auto/deep sin clave Bocha (criterio convergido a la implementación única de rank_signals)
-- `query_understanding.py`: la negación gana "no-X" (la interrogativa "si es o no" no se lee como negación)
-- `daemon.py`: nombres en disco (socket/pid/puntero/log) acotados por checkout — trabajo multi-worktree/clone peleándose el daemon, matar procesos ajenos y "los cambios no surten efecto", todos erradicados
-- Nueva dependencia opcional rapidfuzz (`pip install rapidfuzz`; la instala install.sh, el núcleo no se afecta si falta)
-
-### v2.9.4: Atribución explícita de dominio de motor + cortador de cadena de recuperación + sincronización de puertas
-
-- `route.py`: `--engine X` complementa `match_domains`, corrigiendo TTL de caché general
-- `recovery.py`: motor único sin alternativa omite ejecución vacía L1
-- `config.yaml`: `org_entity` añade términos de diligencia; `fund_query` añade términos de regulación
-- `mcp_launch.sh`: `set -a` reducido a `. "$ENV_FILE"` línea única
-- `sub-skills/local-search/`: capa de registro cerrada y calidad mejorada
-- Sincronización de puertas: module_size_gate / ENGINE_CATALOG alineados
-
-### v2.9.3: empaquetado completo de posts de X + carril de estado de sesión del navegador + calidad/velocidad de la cadena local
-
-- **Nuevo**: `argo tweet` — un comando empaqueta el texto completo, hilo/citas/retweets e interacciones de un post de X; por defecto solo texto, `--out` escribe el paquete de 4 archivos (post.md/raw.json/manifest.json/CHECKLIST.md), `--media` descarga imágenes/vídeos bajo demanda; los motivos de fallo quedan visibles en los artefactos
-- **Nuevo**: carril de estado de sesión del navegador `argo auth` — `login/status/logout` gestiona un perfil de navegador persistente por sitio; escanea el QR una vez y las páginas que exigen sesión se vuelven accesibles; las cookies solo viven en el almacenamiento cifrado del propio Chrome (argo no las lee ni las exporta), los resultados con sesión se marcan `login_state_used` y quedan excluidos de la caché compartida (activar con `ARGO_AUTH_FETCH`)
-- **Más preciso**: la cadena local china resuelve las shells de redirección de Sogou/Baidu en URLs reales sin sesión (resultados conservados 1→5); corregido el bloqueo falso de la puerta de intención (las consultas tipo "tutorial" ya no quedan fijadas a un solo motor); URLs de identidad de fila ferroviaria corrigen la compresión del embudo de candidatos (10→1 → fiel 10→10)
-- **Más rápido**: gracia de consenso adaptativa (el primer motor que entrega suficiente libera la espera; despacho en inglés ~3.0s→2.2-2.5s); parada temprana de cola larga local; huellas de imagen local vía producto matricial mmap (77k imágenes 158ms→3.9ms, apagado por defecto con `ARGO_LOCAL_IMAGE=1`); adelgazamiento automático del consumo por agentes + negociación de contenido markdown, overhead fijo por llamada MCP −32%
-- **Más fuentes**: 43 motores sin referencia de dominio conectados a sus dominios; route_lang de enrutamiento por idioma; 3 nuevas fuentes financieras sin clave; `--academic-deep` multi-fuente académica con una bandera; consultas ferroviarias con transbordo/escala
-- **Más robusto**: js-run integrado como primer carril de la cadena de fetch (reintentos con huella Chrome); fugas de sesión jsrun y presupuesto de backoff corregidos; timeouts ajustados (redskill 60→15s) con la política de declaración dividida en tres grupos
-
-### v2.9.2: compatibilidad verificada con DSH 0.2.1-alpha.1 + correcciones de enrutamiento/guardas + sub-skill js-run
-
-- **Más compatible**: el plugin de DSH está verificado en el último DSH 0.2.1-alpha.1 — herramientas nativas de primera clase / web_search seam / wide_research funcionan en las tres formas; `argo mcp inject` añade WorkBuddy, cubriendo el 7.º host
-- **Más preciso**: degradación de evidencia débil TF-IDF a fuentes auxiliares, piso de fuentes muertas + relleno de slots del breaker, aislamiento de motores con cuota agotada, corrección de falsos positivos de serp_guard
-- **Más rápido y robusto**: importaciones diferidas de engines/evidence (volumen de import −50%), cortocircuito del conjunto de existencia en admisión (open 261 → 99), guardas de entrada/argumentos numéricos de MCP; nueva sub-skill `sub-skills/js-run` (ejecuta JS web sin navegador, P50 ≈ 1ms)
-
-### v2.9.1: optimización de calidad de contenido + resistencia a granjas de contenido + compatibilidad con el último entorno
-
-- **Más limpio**: evaluación de calidad de contenido mejorada y mayor resistencia a granjas de contenido — el contenido de baja calidad o generado en masa se identifica y filtra con más eficacia
-- **Más compatible**: adaptado a la última versión para colaborar sin fisuras con el entorno actual
-- **Más estable**: la búsqueda local añade una guarda sobre su propio árbol de instalación, evitando que los resultados se contaminen con el código fuente del propio argo
-
-### v2.9.0: optimización de fuentes + paridad plugin/CLI + lenguas minoritarias
-
-- **Más amplio**: fuentes 237 → 253 (sin clave 198 → 219); se añaden 14 fuentes de noticias locales en lenguas minoritarias, la fuente de texto completo de acceso abierto CORE, TinEye de búsqueda inversa de imágenes, una salida estable de Bing RSS y más; se revivieron Baidu y Sogou, dos fuentes perennes
-- **Más alineado**: 18 comandos CLI corresponden uno a uno con 19 herramientas MCP — por primera vez plugin y CLI quedan totalmente a la par en búsqueda
-- **Más idiomas**: 14 fuentes en lenguas minoritarias (tailandés/árabe/hebreo/griego/hindi/vietnamita/turco/indonesio, etc.), asignadas automáticamente según el idioma de la consulta
-- **Más rápido**: cadena de importación −79%, rerank con n=200 de 33ms → 1.5ms, aciertos de caché de ~60% a casi sin fallos
-- **Más fiable**: corrección de seguridad entre procesos en la ruta de escritura de cuotas, los resultados de parada temprana ya no se etiquetan erróneamente como timeout, y `argo stats` da a la calidad de búsqueda su propio libro contable
-
-### v2.8.9: salida más ligera + recuperación más rica y rápida + 5 fuentes internacionales y de verificación
-
-- **Más ligero**: salida por defecto −66% (los mismos resultados ya no se escriben tres veces); consultas repetidas −30% (caché de decisiones de enrutado); esperas con red lenta −36% (una fuente de respaldo se dispara automáticamente si la principal supera 0.8s)
-- **Más rico**: recall +35%, latencia de fetch −30%; fidelidad estructural del cuerpo 0/6 → 6/6 (títulos, listas y tablas ya no se aplanan); el contenido en chino ya no se puntúa sistemáticamente como de baja calidad
-- **Nuevo**: fuentes 235 → 237 (sin clave 194 → 198, todas gratis — The Guardian, France 24, DW, más los verificadores FactCheck.org / Full Fact para afirmaciones de EE. UU. y Reino Unido); fuente muerta gdelt retirada
-- **Más fiable**: corregidos seis defectos de contabilidad donde los números se contradecían entre sí; un embudo de seis etapas localiza dónde colapsa una búsqueda sin resultados; una herramienta de repetición sin conexión permite verificar los cambios el mismo día. Ver [notas de la versión](docs/RELEASE_NOTES_v2.8.9.md)
-
-### v2.8.8: correcciones reportadas por usuarios reales + aceleración general + 235 fuentes
-
-- **Correcciones**: motores que devolvían cero resultados en silencio al configurar claves con los nombres recomendados (#12); cadena de fetch que ignoraba el proxy y hacía fallar siempre sitios como GitHub (#13) — ahora funcionan `ARGO_PROXY`, las reglas por dominio del config y las variables de proxy estándar, respetando `NO_PROXY`
-- **Más rápido**: arranque en frío del comando 2.1s → 0.55s; caché de configuración entre procesos 50–82ms → 16–18ms; cada búsqueda informa tiempos por etapa y consumo de presupuesto, sin adivinar dónde está la lentitud (`--no-timing` para desactivar)
-- **Nuevo**: fuentes 218 → 235 (listas para usar sin configuración 184 → 194, todas sin clave: tendencias de China, avisos de seguridad, académico de acceso abierto, directorios de skills, búsqueda para agentes), `argo answer` (respuestas directas con citas), `argo watch` (observación de cambios web), superficies de herramientas CLI/MCP alineadas
-- **Más robusto**: rutas convencionales en los tres sistemas (nueva introspección `argo paths`), soporte de Python 3.9, degradaciones silenciosas ahora registradas; ver [notas de la versión](docs/RELEASE_NOTES_v2.8.8.md)
-
-### v2.8.7: fuentes ampliadas a 218 + una tanda de correcciones
-
-- **Ampliación de fuentes**: 168 → 218 fuentes, 72 → 89 dominios (nuevas fuentes oficiales: StackExchange Q&A, metadatos DOI, inteligencia de vulnerabilidades, ciclos de vida), más tres canales directos de obtención de contenido
-- **Una tanda de correcciones**: enrutamiento multi-motor, fallback de resultados vacíos, redirecciones con chino, degradación de búsqueda local, etc.; ver [notas de la versión](docs/RELEASE_NOTES_v2.8.7.md)
-
-### v2.8.6: búsqueda más rápida + reparto multi-fuente
-
-- Carrera de motores, reparto en tres vías de Zhihu, distribución idiomática/académica ampliada, puerta de fuentes muertas
-
-### v2.8.5: herramientas nativas del plugin DSH + MCP apagado por defecto + compatibilidad con Windows
-
-- **Herramientas nativas del plugin**: `argo_search` / `argo_fetch` se registran como herramientas nativas de primera clase, disponibles por defecto sin conexión MCP; los esquemas se generan desde la única fuente de verdad (`mcp_tools.py`), sin deriva; las 18 herramientas (salvo `argo_research`) se activan a demanda vía `nativeTools`
-- **MCP apagado por defecto**: tres formas de conexión (MCP a demanda / herramientas nativas como entrada por defecto / web_search seam); coste de token residente cero, y un profile patch abre la superficie completa de 19 herramientas
-- **Compatibilidad con Windows** (PR #11 de la comunidad): rutas temporales del sistema, arreglo de codificación GBK, resolución de intérprete en runtime (`python3`/`python`), symlink recurre a junction sin permisos, nuevo instalador PowerShell `install.ps1`
-- **Autocuración de cuotas**: el agotamiento de cuota remota oculto en HTTP 200 se detecta; el enrutamiento excluye ese motor y pasa a fuentes de respaldo, y vuelve automáticamente en el siguiente periodo
-- **Deadline global de fetch**: `ARGO_FETCH_DEADLINE_S` (60s por defecto) acota la cadena de respaldo; respeta señales de parada 429/503; renderizado tinyfish + sondas de variante `.md`
-
-### v2.8.4: fusión de datos locales + MCP en un comando
-
-- **La investigación profunda puede comer tus datos locales**: los work packages admiten `file_inputs` (CSV / XLSX / literatura de primera mano; se registra el hash, no el contenido) + `recompute` (recalc en sandbox; los desajustes se marcan)
-- **El MCP ya no se edita a mano**: `argo mcp inject` escribe Claude Code / Cursor / Windsurf / Codex / OpenCode / Cline (escritura atómica + backup + deshacer)
-- **Las consultas simples se quedan baratas**: normalización + puerta de complejidad + sintaxis social/plataforma primero + si se descarta un motor chino, se siguen mirando candidatos
-- **Keenable** como fuente web en prueba gratis
-- **Seguridad**: recompute bloquea subprocesos de salida a red; las rutas de host son conscientes de la instalación
-
-> Detalle: la tabla siguiente y las [notas de release](docs/) por versión.
+- **Nuevo motor `deepseek_search`**: 445-510 ms, el único de los tres que cubre clasificación de autoridad, rerank_score y fecha de publicación; `--since/--until` funciona de verdad. Se factura por llamada y requiere su propia `DEEPSEEK_API_KEY`; sin clave se omite
+- **Operadores de consulta bajo un solo contrato**: `site:` / `-site:` / `-término` / `lang:` / `after:` / `before:` se analizan de forma uniforme, y `site:` aplica un filtrado posterior real
+- **El mismo POST ya no se paga dos veces**: la reutilización del pool de conexiones ahorra 320 ms (anysearch) / 561 ms (octen) en la segunda petición de una misma conexión
+- **Dos defectos de enlaces y ordenación corregidos**: todos los resultados de un motor puntuaban igual y aplanaban la salida; los redirect shells de Bing sin restaurar costaron sus resultados al 40,2 % de las consultas en 7 días
+- **Las decisiones de enrutado tienen puerta de instantánea**: una inversión de rutas se vuelve un golden diffeable en lugar de cambiar en silencio
 
 ---
 

@@ -641,138 +641,31 @@ argo/
 
 ## Recent updates
 
-### Unreleased (next version): Yuanbao search + three keyless sources + structured failure list + DSH settings "Engines" section
+Only the three most recent versions. Full history in the [changelog](#changelog); per-release detail on [Releases](https://github.com/taxueseek/argo/releases).
 
-**Search core**
+### Next version: Tencent Yuanbao search + three more keyless sources + a structured failure list
 
-- **Tencent Yuanbao search (`yuanbao`)**: a first-hand / official-voice Chinese source (a live test on 「三星堆的由来」 returned 8 of 10 results from People's Daily, Xinhua, the National Cultural Heritage Administration and peers), complementary to the portal-and-self-media mix of bocha / byted; default allowance 2000 calls / month, consumed per call. It sits 2nd in the Chinese-general domain as an **authority hedge** — in the month when bocha / octen / byted were all excluded, six Chinese queries measured a 2664ms median with 0% date coverage on anysearch versus 699ms median with 96% date coverage on yuanbao. Key: `ARGO_YUANBAO_API_KEY` (Tencent's official name `TENCENTCLOUD_WSA_APIKEY` also works)
-- **Three more keyless sources**: `tavily_free` (official keyless mode), `keenable_free` (anonymous endpoint) and `exa` (anonymous fallback) — widening the out-of-the-box surface; the first two join the general fallback chain
-- **Structured failure list (`failures`)**: failures are no longer just a human-readable line — each one carries source, category and an actionable verdict (retry / switch source / configure a key); results also carry `meta.uncertainty` (low / medium / high)
-- **Output trust boundary**: `<untrusted-web-content>` markers embedded in page bodies are stripped, and responses carry `content_trust: "untrusted"` so web content cannot impersonate system instructions
-- **Five new sources**: HKEX announcements, SHFE quotes, CFETS RMB central parity, DeFiLlama, GLEIF legal entity identifiers
-- **Local config overlay `config.local.yaml`**: local state (temporarily disabling an engine, local paths, tuning) no longer goes into the shipped public `config.yaml` — deep merge, effective immediately, never committed, silently ignored if broken
-- **Article metadata and body links**: `argo fetch --include-links` (MCP parameter `include_links`) returns article metadata and in-body links alongside the text
+- **Yuanbao search**: a first-hand, official-voice Chinese source that complements the portal-and-self-media mix of bocha and byted; sits 2nd in the Chinese-general domain as an authority hedge. Key: `ARGO_YUANBAO_API_KEY`
+- **Three more sources usable with no key**: `tavily_free`, `keenable_free` and the `exa` anonymous fallback now work with no key configured at all
+- **Failures you can act on**: each failure names its source and class and says whether to retry, switch sources or configure a key, alongside a `meta.uncertainty` confidence level
+- **Local config overlay `config.local.yaml`**: machine-local tuning is no longer written into the public config shipped with each release
+- **A new "Engines" section on the DSH settings page**: argo's 28 behaviour switches move out of environment variables and into the panel
 
-**DSH plugin**
+### v2.9.7: architecture consolidation + host web fetching handed to argo + License moved to Apache-2.0
 
-- **Sixth settings section "Engines"**: argo's 28 behaviour switches moved out of environment variables and into the panel (cache / TF-IDF rerank / numeric cross-check / MinHash dedup / SERP guard, Jina / mobile UA / Parallel fetch layer, semantic evidence layer, hedge grace and tail width, engine enable list, proxy, local search roots and read allowlist, warmup / usage log / connection pool / assorted TTLs). Applied via the new volatile config `argoEnv` (one `KEY=VALUE` per line) into the argo subprocess env; names go through the `ARGO_ENV_SPECS` allowlist, and anything outside it fails loudly at apply time so a typo cannot silently do nothing. Switch-type changes apply immediately; number / text / list types save as a group; unconfigured rows show argo's default and are marked "default". Authorisation switches (recompute, intranet URLs) deliberately stay out of the panel
-- **Key source layer is now visible**: shows "configured / unconfigured + source layer (credential store / startup env / project .env / home .env) + read-only state", with non-file layers noting they will be overwritten on save; `DEEPSEEK_API_KEY` is marked as shared with the host's `web_search`; `fetchMaxChars` is truncated to the argo tool schema cap of 50000 on save, removing the "displayed value ≠ effective value" mismatch
-- **Cancellation reaches connection establishment**: `acquireMcp` now honours cancellation while the connection is being established — abort kills the subprocess and settles with `WEB_ABORTED` instead of waiting out the timeout; cancellation also flows through the single-shot fallback
-- **Fixes**: evidence dedup no longer swallows case; older hosts without `effect` no longer crash activation; `saveKey` / `setForward` / `toggleTool` read a live snapshot, fixing a race that dropped updates on rapid consecutive actions; `describe` responses are guarded against reordering, only the latest request's response is accepted
+- **License change**: MIT → Apache License 2.0. The patent grant is now explicit; nothing else changes
+- **Pages the host could not fetch now succeed**: short-link redirects, protocol upgrades, redirect shells and Cloudflare / JS challenge pages go through argo's fetch chain (HTTP first, auto-escalating to a browser when a site pushes back). On by default; turn it off with `fetchProviderEnabled`
+- **Auto mode no longer calls paid engines by accident**: the 18 explicit-only engines are removed from the routing candidate pool and are reached only when named with `--engine`
+- **A new key recovers on the next hop**: quota-exhausted engines no longer wait for their recovery window, and the routing cache is recomputed
+- **Running JS from crawl / research / MCP no longer crashes**
 
-### v2.9.7: Architecture consolidation — DSH web_fetch seam + explicit_only contract + unified state contracts (License: Apache-2.0)
+### v2.9.6: DeepSeek Search + query operators + no double-paying for the same POST
 
-- **License change**: MIT → Apache License 2.0 (explicit patent grant, safer for commercial use); nothing else changes
-- **DSH plugin web_fetch seam**: the host's web_fetch used to bypass argo entirely as the default "read this URL" path; it now registers a fetch provider on the argo_fetch chain (HTTP first, auto-upgrade to an anti-detection browser on Cloudflare / JS-rendered pages); isomorphic dual-path execution with the search provider — resident MCP pool first, CLI single-shot only on transport failure, tool-level errors and timeouts are not retried (those mean the call already ran; retrying doubles engine calls and quota); failures classified into five kinds (timeout / blocked / empty / generic / cancelled) with actionable messages; new config `fetchProviderEnabled` / `fetchProviderId` / `fetchTimeoutMs` (25000) / `fetchMaxChars` (50000), all on by default with escape hatches; measured: cross-origin redirects (short links, protocol upgrades, redirect shells) and JS challenge pages flip from structural host failures to argo successes, static pages unchanged
-- **explicit_only contract closure**: `config._routable_filter` filtered env blacklists / keys / blocklists but not explicit_only, so 18 explicit-only engines (including the only paid `deepseek_search`) sat in the enabled candidate pool where six routing paths (TF-IDF injection, catch-all, backfill, fallback, etc.) could select them — it never fired only because the corpus had no matching entry; one entry would have auto-fired paid engines in auto mode; now filtered at the single producer, locked by `tests/test_explicit_only_gate.py`
-- **Unified state contracts**: circuit breaker memory short-circuit when healthy closed and zero-count (no file lock, no disk rewrite) with cross-process awareness via `(st_mtime_ns, st_size)`; adaptive accounting folds `MAX(created_at)` into one aggregate SQL plus a `batch()` context manager for single-transaction multi-engine commits; quota exhaustion records the credential fingerprint and auto-unlocks on key rotation; the route cache invalidates when a combo engine is exhausted or recovers; `is_engine_routable` becomes the single admission predicate behind backfill / tfidf / breaker_filter
-- **Dispatch and transport**: auto / deep also drop hard-exhausted engines (fail-open fallback); hedge wait window narrowed, Wave-1 early stop now accepts cross-engine cumulative sufficiency; POST connection pooling (saves ~320ms anysearch / ~561ms octen per request) + MCP pre-connect; weather domain gains `early_stop_min_results: 1`
-- **Sub-skill hot-path subtraction**: js-run replaces SIGALRM with MiniRacer's native timeout, fixing the `ValueError: signal only works in main thread` crash when called from crawl / research / mcp worker threads; local-seek rerank drops per-query O(N) disk reads; local-search reuses the registry (no double YAML parse); ego-search short-circuits probing under auto
-- **Validation**: 71 plugin unit tests; full suite 4264 passed / 28 skipped; pre-commit seven gates 123 passed; fetch-chain A/B shows no static-page regression and failures flipped to successes on redirects / JS challenges
-
-### v2.9.6: DeepSeek Search engine + query operator contract + transport connection pooling + routing snapshot gate
-
-- New engine `deepseek_search` (official `api.deepseek.com/v1/tools/search`) on by default: auto-skipped without `DEEPSEEK_API_KEY`, other 265 sources unaffected; measured 445-510ms (anysearch 1.7-4.5s / exa 3.7s), the only one of the three with full authority tier / rerank_score / publish-time coverage, on par with anysearch for ja/ko/es; pay-per-use, excluded from domain combos, explicit `--engine deepseek_search` is the main path; DSH hosts share the same key with the official backend via the native credential seam (key rotation on the web Models page takes effect on the next hop, never persisted or logged)
-- Fix: `--since/--until` silently ineffective for deepseek_search (added to TIME_CAPABLE_ENGINES)
-- New `query_operators.py` query operator contract layer: `site:` / `-site:` / `-term` / `-"phrase"` / `lang:` / `after:` / `before:` converge from five scattered forms into structured operators; routing, cache, and query understanding only see the clean_query with instructions stripped; `site:` / `-site:` truly post-filter (subdomain match, multi-site OR, filtered count in `site_filtered`), operators join the result cache key to avoid cross-contamination
-- `evidence.py`: new Agent-tier two-layer summary `summary` field (DeepSeek Search summary semantics)
-- Transport de-duplicated pay: POST reuses pooled connections (measured second request on the same connection saves 320ms anysearch / 561ms octen), with borrow-failure retry and read-drain-before-return; MCP pre-connect; quota exhaustion and dead negative-cache closure
-- Routing: octen joins the general fallback chain second slot and TF-IDF hedge slot (anysearch jitter window p90 3273→1614ms, max 6266→1928ms, errors 9→0; no median difference in the healthy window, positioned as tail insurance), `ARGO_GENERAL_FALLBACK_LEGACY=1` escape hatch
-- Fix RRF caliber-isolation rank decay: all results from one engine scored identically (measured anysearch 5 results all 0.017213), output degenerated into engine-weight block concatenation; new test locks "strictly decreasing scores within the same engine"
-- Fix Bing ck/a redirect shell not restored, causing the aggregation layer to filter entire batches (40.2% empty results in the last 7 days): offline base64url decode restores real links, zero network
-- Fix TF-IDF leader combo producing `['anysearch','anysearch']` run twice concurrently (double quota with wasted_ms recorded as 0): 200 real queries replayed, duplicate combos 1→0
-- Search improvements: failure negative cache, Nitter failover, caliber isolation, X Article extraction, query echo guard (early-stop rejection + recovery chain engine switch)
-- Engineering: new `scripts/pre-commit` gate (static_lint / module_size_gate / usage_doc / consistency / routing_snapshot / context_budget + engine_catalog, ~12s measured); routing decision snapshot gate turns routing flips into diffable golden (union of three annotation sets, 115 queries, only domain and kind compared so environment noise can't false-red); caliber registry sync test locks "engine names in the table must be really registered"
-- DSH plugin adapts to DSH 0.2.1-rc.2: dual-stack runtime entry (`startActivation({provider, label, request, signal, delivery})` new / `start(provider, request)` legacy), tool guard inside the plugin prevents worker nested `wide_research` calls after rc.2 removed `toolFilter`; end-to-end verified on rc.2 (`wide_research` planner → 2 workers → synthesis, passed=true / 14 sources) and native `argo_search` (count=3); 0.2.1-alpha.1 compatibility branch covered by unit tests; plugin unit tests 46→50
-- DSH environment versions: **DSH 0.2.1-rc.2 (current, running, end-to-end verified) + DSH 0.2.1-alpha.1 (compatible, legacy start branch unit-covered)**; compatibility table in `packages/dsh-plugin/README.md`
-
-### v2.9.5: FX-rate dedicated domain + two-layer dedup + ranking false-kill fix + per-checkout daemon isolation
-
-- `config.yaml`: new `fx_query` domain — "RMB/USD exchange rate, central parity, offshore" queries no longer fall through macro-data dead-ends to encyclopedia entries; now live rate + daily parity news (675ms measured; previously 1411ms and off-target)
-- `search_rank.py`: two-layer dedup — title site-suffix normalization (zero-dep) + rapidfuzz fuzzy near-duplicate check (only inside the near-hit band; `ARGO_DEDUP_FUZZY=0` to disable, auto-fallback to pure minhash when not installed)
-- Fix: title separator false-kill during degraded rerank — titles containing `|` / `_` / `——` were uniformly ×0.6, pushing official docs down 40%; every auto/deep query on keyless setups was affected (judgment converged to the single rank_signals implementation)
-- `query_understanding.py`: negation understanding gains "not-X" (the interrogative "whether" is not misread as negation)
-- `daemon.py`: on-disk names (socket/pid/pointer/log) scoped per checkout — multi-worktree/clone daemon squatting, wrong-process kills, and "edits don't take effect" all rooted out
-- New optional dependency rapidfuzz (`pip install rapidfuzz`; installed by install.sh, core unaffected when missing)
-
-### v2.9.4: Explicit engine domain attribution + recovery chain circuit-breaker + gate sync
-
-- `route.py`: explicit `--engine X` supplements `match_domains`, fixing cache TTL blanket-general
-- `recovery.py`: explicit single-engine no-fallback skips L1 same-engine empty run
-- `config.yaml`: `org_entity` adds unless shareholder-diligence terms; `fund_query` adds unless policy-regulation terms
-- `mcp_launch.sh`: `set -a` narrowed to `. "$ENV_FILE"` single line
-- `sub-skills/local-search/`: engine registry layer closure and search_v3 quality improvement
-- Gate sync: module_size_gate / ENGINE_CATALOG / domain_profiles.json baseline aligned
-
-### v2.9.3: full X post packaging + browser login-state lane + local-chain quality/speed fixes
-
-- **New**: `argo tweet` — one command packs a given X post's full text, thread/quote/repost context and engagement data; text-only by default, `--out` writes a 4-file bundle (post.md/raw.json/manifest.json/CHECKLIST.md), `--media` downloads images/videos on demand; failure reasons surface in the artifacts
-- **New**: `argo auth` browser login-state lane — `login/status/logout` manages a persistent per-site browser profile; scan the QR once and login-required pages become fetchable; cookies stay in Chrome's own encrypted storage (argo never reads or exports them), login-state results are flagged `login_state_used` and excluded from the shared cache (enable with `ARGO_AUTH_FETCH`)
-- **More accurate**: the Chinese local chain resolves Sogou/Baidu redirect shells into real URLs without a session (kept results 1→5); intent-gate false-lock fixed ("tutorial"-style queries no longer pinned to one engine); rail table-row identity URLs fix the candidate funnel compression (10→1 → faithful 10→10)
-- **Faster**: adaptive consensus grace (the first engine delivering enough releases the wait; English dispatch ~3.0s→2.2-2.5s); local long-tail early-stop; local image fingerprints via mmap matrix dot product (77k images 158ms→3.9ms, off by default with `ARGO_LOCAL_IMAGE=1`); automatic agent-consumption slimming + markdown content negotiation, MCP per-call fixed overhead −32%
-- **More sources**: 43 engines without domain references wired into their domains; route_lang language routing; 3 new keyless finance sources; `--academic-deep` one-flag academic multi-source; rail transfer/stopover queries
-- **More robust**: js-run wired in as the fetch chain's first lane (Chrome-fingerprint retries); jsrun session-leak and backoff-budget fixes; timeouts tightened (redskill 60→15s) with the declaration policy split into three groups
-
-### v2.9.2: DSH 0.2.1-alpha.1 compatibility verified + routing/guard fixes + js-run sub-skill
-
-- **More compatible**: the DSH plugin is verified on the latest DSH 0.2.1-alpha.1 — native first-class tools / web_search seam / wide_research all work; `argo mcp inject` adds WorkBuddy, covering a 7th host
-- **More accurate**: TF-IDF weak-evidence demotion to auxiliary sources, dead-source floor + breaker slot backfill, quota-exhausted engine isolation, serp_guard false-positive fixes
-- **Faster & more robust**: lazy imports for engines/evidence (import volume −50%), admission existence-set short-circuit (open calls 261 → 99), MCP entry/numeric-argument guards; new `sub-skills/js-run` sub-skill (browser-free JS execution, P50 ≈ 1ms)
-
-### v2.9.1: content-quality optimization + content-farm resistance + latest-environment compatibility
-
-- **Cleaner**: improved content-quality assessment and stronger resistance to content farms — low-quality, bulk-generated content in results is identified and filtered more effectively
-- **More compatible**: adapted to the latest host environment for seamless operation
-- **More stable**: local search now guards against its own install tree, so results are no longer polluted by argo's own source files
-
-### v2.9.0: source optimization + plugin/CLI parity + minor languages
-
-- **Broader**: sources 237 → 253 (keyless 198 → 219), adding 14 minor-language local news sources, the CORE open-access full-text source, TinEye reverse image search, a stable Bing RSS outlet, and more; the evergreen Baidu and Sogou sources were revived
-- **More aligned**: 18 CLI commands map one-to-one to 19 MCP tools — plugin and CLI search capabilities are fully at parity for the first time
-- **More languages**: 14 minor-language sources (Thai/Arabic/Hebrew/Greek/Hindi/Vietnamese/Turkish/Indonesian, etc.), matched automatically by query language
-- **Faster**: import chain −79%, rerank at n=200 33ms → 1.5ms, cache hit rate from ~60% to almost no misses
-- **More trustworthy**: cross-process safety fix on the quota write path, early-stop results no longer mislabeled as timeouts, and `argo stats` gives search quality its own ledger
-
-### v2.8.9: slimmer output + richer and faster retrieval + 5 international media and fact-check sources
-
-- **Leaner**: default output −66% (the same results are no longer written three times); repeated queries −30% (routing-decision cache); slow-network waits −36% (backup sources auto-dispatched when the primary stalls past 0.8s)
-- **Richer**: recall +35%, fetch latency −30%; body-structure fidelity 0/6 → 6/6 (headings, lists and tables no longer flattened); Chinese content no longer systematically judged low-quality
-- **New**: sources 235 → 237 (keyless 194 → 198, all free — The Guardian, France 24, DW, fact-checkers FactCheck.org / Full Fact in US and UK editions); dead source gdelt retired
-- **More trustworthy**: six bookkeeping defects where numbers contradicted each other fixed; the six-stage funnel shows which layer a "0 results" collapse happened in; offline replay tools verify changes same-day; see [release notes](docs/RELEASE_NOTES_v2.8.9.md)
-
-### v2.8.8: real-user bug fixes + across-the-board speedups + 235 sources
-
-- **Fixes**: engines silently returning nothing after a key was configured under its recommended name (#12); the fetch chain bypassed proxies so GitHub etc. always failed (#13) — `ARGO_PROXY`, config per-domain rules and standard proxy environment variables now all work, and `NO_PROXY` is respected
-- **Faster**: CLI cold start 2.1s → 0.55s; cross-process config cache 50–82ms → 16–18ms; every search reports per-stage timing and a budget bill, so there is no guessing where it is slow (`--no-timing` to disable)
-- **New**: sources 218 → 235 (keyless 184 → 194, all keyless: domestic trending boards, security vulnerabilities, open-access scholarship, skill directories, agent search), `argo answer` direct answers, `argo watch` page watching, CLI/MCP tool-surface alignment
-- **More robust**: platform-conventional paths on all three OSes (new `argo paths` introspection), Python 3.9 supported, silent degradations now reported; see [release notes](docs/RELEASE_NOTES_v2.8.8.md)
-
-### v2.8.7: sources expanded to 218 + a batch of fixes
-
-- **Source expansion**: 168 → 218 sources, 72 → 89 domains (new official sources incl. StackExchange Q&A, DOI metadata, vulnerability intel, product lifecycles), plus three direct-out fetch channels
-- **A batch of fixes**: multi-engine routing, zero-result fallback, Chinese redirects, local search degradation, etc.; see [release notes](docs/RELEASE_NOTES_v2.8.7.md)
-
-### v2.8.6: faster search + multi-source split
-
-- Engine racing, Zhihu three-source split, language/academic dispatch widened, dead-source gate
-
-### v2.8.5: native DSH plugin tools + MCP off by default + Windows support
-
-- **Native plugin tools**: `argo_search` / `argo_fetch` register as first-class native tools, available by default without an MCP connection; schemas are generated from the single source of truth (`mcp_tools.py`), zero drift; all 18 tools (except `argo_research`) can be enabled via `nativeTools`
-- **MCP off by default**: three plugin shapes (on-demand MCP / native tools as the default entry / web_search seam); zero standing token cost, and one profile patch opens the full 14-tool surface
-- **Windows compatibility** (community PR #11): system temp paths, GBK encoding fix, runtime interpreter resolution (`python3`/`python`), symlink falls back to junction, new PowerShell installer `install.ps1`
-- **Quota self-healing**: remote quota exhaustion hidden in HTTP 200 envelopes is detected; routing excludes that engine and switches to backup sources, returning automatically at the next quota period
-- **Fetch global deadline**: `ARGO_FETCH_DEADLINE_S` (default 60s) caps the fallback chain; 429/503 stop signals are honored; tinyfish rendering + `.md` variant probes
-
-### v2.8.4: local data fusion + one-command MCP attach
-
-- **Deep research can eat your local data**: work packages can take `file_inputs` (first-hand CSV / XLSX / literature; hash registered, content not stored) + `recompute` (sandboxed recalculation; mismatches are flagged)
-- **MCP attach is no longer hand-edited config**: `argo mcp inject` writes Claude Code / Cursor / Windsurf / Codex / OpenCode / Cline (atomic write + backup + undo)
-- **Simple queries stay cheap**: query normalize + complexity gate + social/platform syntax first + if a Chinese engine is dropped, keep looking at backups
-- **Keenable** added as a free-trial web search source
-- **Security**: recompute blocks outbound subprocesses; host paths are install-aware
-
-> Full notes: the table below and per-version [release notes](docs/).
+- **New `deepseek_search` engine**: 445-510ms, the only one of the three covering authority tiering, rerank_score and publish time; `--since/--until` genuinely works. Billed per call, needs your own `DEEPSEEK_API_KEY` and is skipped automatically without one
+- **Query operators behind one contract**: `site:` / `-site:` / `-term` / `lang:` / `after:` / `before:` are parsed uniformly, and `site:` performs real post-filtering
+- **The same POST is no longer paid for twice**: connection-pool reuse saves 320ms (anysearch) / 561ms (octen) on the second request over one connection
+- **Two link-resolution and ranking defects fixed**: results from one engine all scoring the same had flattened the output; Bing redirect shells left unresolved cost 40.2% of queries their results over 7 days
+- **Routing decisions are snapshot-gated**: routing flips become a diffable golden instead of changing silently
 
 ---
 
