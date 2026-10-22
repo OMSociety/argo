@@ -1,0 +1,155 @@
+name: nightly
+
+# 夜间三件事，对应 PR 上不该跑的三类成本：
+#   replay —— 用库里已有的录制数据离线重跑整条管线（确定性，1 秒级）
+#   drift  —— 联网重录固定查询集，与基线报告比「结果条数 / 输出体积」是否漂移
+#   ledger —— argo stats 的时延与命中率落成曲线
+#
+# 为什么不在 PR 上跑：免费源会被 CI 出口 IP 限流或反爬，fork 也拿不到 secret。
+# 为什么单独用 drift 而不是 --check：录制只保留「当时真正被调到」的引擎，
+# 而重放是瞬时完成，早停时机与真跑不同，会去要一个当时没调过的引擎，报成
+# 「没录到」。那是录制机制的正常边界，不是回归——所以这里只比条数与体积。
+
+on:
+  schedule:
+    - cron: "30 18 * * *" # UTC 18:30 = 北京 02:30
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  LANG: C.UTF-8
+  LC_ALL: C.UTF-8
+  TZ: Asia/Shanghai
+  PYTHONDONTWRITEBYTECODE: "1"
+
+jobs:
+  replay:
+    name: 离线重放（录制数据 + 下限）
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: python -m pip install -r requirements-dev.txt
+      - name: 整条管线重放（不联网）
+        run: python scripts/replay_eval.py --data tests/golden/pipeline_golden.json --check
+
+  drift:
+    name: 联网漂移（固定查询集）
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: python -m pip install -r requirements-dev.txt
+
+      - name: 重录固定查询集
+        run: |
+          mapfile -t QS < tests/golden/drift_queries.txt
+          python scripts/replay_eval.py --record --queries "${QS[@]}" \
+            --out "$RUNNER_TEMP/drift-$(date -u +%F).json"
+
+      - name: 生成报告并与基线对比
+        run: |
+          python scripts/replay_eval.py --data "$RUNNER_TEMP"/drift-*.json --json > drift_report.json
+          python scripts/replay_eval.py --data "$RUNNER_TEMP"/drift-*.json --json \
+            --compare tests/golden/drift_baseline_report.json > drift_diff.json
+
+      - name: 阈值（条数 -1 以内、体积 +20% 以内）
+        run: |
+          python - <<'PY'
+          import json, sys
+          base = json.load(open("tests/golden/drift_baseline_report.json"))["report"]
+          cur = json.load(open("drift_report.json"))
+          b = {c["id"]: c for c in base["cases"]}
+          bad = []
+          for c in cur["cases"]:
+              o = b.get(c["id"])
+              if not o:
+                  continue
+              if c["kept"] < o["kept"] - 1:
+                  bad.append(f'{c["id"]}: 结果 {c["kept"]} 条，基线 {o["kept"]} 条')
+              if c["bytes"] > o["bytes"] * 1.2:
+                  bad.append(f'{c["id"]}: 输出 {c["bytes"]}B，超过基线 {o["bytes"]}B×1.2')
+          if bad:
+              print("\n".join(bad))
+              sys.exit(1)
+          print(f'通过：{len(cur["cases"])} 条，漏录 {cur.get("total_missing", 0)} 个引擎（信息项）')
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: drift-reports
+          path: |
+            drift_report.json
+            drift_diff.json
+          if-no-files-found: warn
+
+  ledger:
+    name: 账本（时延 / 结果率）
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: python -m pip install -r requirements-dev.txt
+      - name: 导出指标
+        run: |
+          python bin/argo stats > stats.json
+          python - <<'PY'
+          import json
+          d = json.load(open("stats.json"))["query"]
+          rows = [
+              {"name": "avg_elapsed_ms", "unit": "ms", "value": d["avg_elapsed_ms"]},
+              {"name": "result_rate", "unit": "ratio", "value": round(d["result_rate"] * 100, 2)},
+          ]
+          open("bench.json", "w").write(json.dumps(rows))
+          PY
+      # 首次启用曲线：仓库里要有 gh-pages 分支（或把 auto-push 打开）。
+      # 现在只产出报告，不让夜间任务因为缺分支而红。
+      - uses: benchmark-action/github-action-benchmark@v1
+        with:
+          tool: customSmallerIsBetter
+          output-file-path: bench.json
+          auto-push: false
+          comment-on-alert: false
+          fail-on-alert: false
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ledger
+          path: |
+            stats.json
+            bench.json
+
+  notify:
+    name: 夜间失败开 issue
+    needs: [replay, drift, ledger]
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `nightly 失败 ${new Date().toISOString().slice(0, 10)}`,
+              body: `夜间任务失败：${run}\n\n先看 drift 作业的 artifact（drift_report.json / drift_diff.json），再看 replay 的下限报错。`,
+            });

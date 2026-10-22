@@ -1,0 +1,18 @@
+# 开发与 CI 依赖（运行期不强制，这些只在测试/门禁/CI 里用）
+#
+# 为什么锁死 pytest 版本：门禁的判定标准必须可复现。pytest 大版本会改收集语义
+# （9.x 起 subtests 内建），pytest-timeout 的默认行为也会随版本变。
+pytest==9.1.1
+pytest-split==0.11.0
+pytest-timeout==2.4.0
+PyYAML==6.0.3
+
+# 下面三件是「测试本身要用的可选依赖」，不是运行期依赖：
+#   curl_cffi  —— 一批用例用 mock 替换 curl_cffi.requests 验 TLS 指纹与 429 停止
+#                 轮换，补丁目标必须真实存在；缺件时这些用例会 skip（tests/_deps.py）
+#   bs4 / lxml —— HTML 引擎解析链，缺件时 keep 数归零，用例会红成「解析坏了」
+# 装在这里的原因：CI 的 unit 作业要跑的是**真实行为**，不是跳过版。
+# 九件可选依赖全装的那档见 requirements-optional.txt 与 extras 作业。
+curl_cffi
+beautifulsoup4
+lxml

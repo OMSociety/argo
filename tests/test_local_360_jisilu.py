@@ -27,6 +27,7 @@ for p in (str(SCRIPT_DIR), str(LOCAL_SEARCH_DIR)):
 from engines_base import _build_html_engine  # noqa: E402
 from engine_families import family_of  # noqa: E402
 from argo_engine_registry import get_registry  # noqa: E402
+from _deps import needs_curl_cffi  # noqa: E402
 
 # ── 简化模拟 HTML ──────────────────────────────────────────────────────────────
 
@@ -141,6 +142,7 @@ class TestSmartRouter(unittest.TestCase):
             self.assertIn(e, CATEGORY_PRIORITY["chinese"], f"{e} 不在 chinese 白名单")
 
 
+@needs_curl_cffi
 class TestParsing(unittest.TestCase):
     """解析正确性与容器过滤"""
 

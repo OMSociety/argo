@@ -1,0 +1,13 @@
+# 可选依赖（缺失时主流程必须仍然可用；这九件在代码里全是函数内惰性导入）
+#
+# CI 的 extras 作业装这一份，用来验证「装全之后仍然通过」；
+# 「一个都不装」由 unit 作业天然覆盖，不需要另开一档。
+brotli
+beautifulsoup4
+curl_cffi
+pymupdf
+python-jobspy
+openpyxl
+pdfplumber
+pypdfium2
+rapidocr

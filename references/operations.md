@@ -112,7 +112,49 @@ export TINYFISH_API_KEY="sk-tinyfish-..."   # 去 agent.tinyfish.ai/api-keys 申
 | 排序质量有没有退步 | `python3 -m pytest tests/test_ranking_golden.py -q` | 秒级 |
 | 结果条数与输出体积有没有退步 | `python3 scripts/replay_eval.py --check` | 秒级 |
 | 这次改动到底比上次好还是差 | 先 `--save-baseline 旧.json`，改完再 `--compare 旧.json` | 秒级 |
-| 全面回归 | `python3 -m pytest tests/ -q` | 三分钟左右 |
+| 全面回归 | `python3 -m pytest tests/ -q` | 约 5 分钟（4441 条，本机实测 4:45） |
+
+## CI 流水线（与本地门禁同源）
+
+线上跑的和本地跑的是同一批东西，不在 CI 里另写一套判断：
+
+| 作业 | 触发 | 跑什么 | 目标时长 |
+|---|---|---|---|
+| `gates` | push/PR | `bash scripts/pre-commit` 七道门（与本地完全一致） | ≤20s |
+| `unit` | push/PR | 全量用例按历史耗时切 4 片（`tests/.test_durations`） | 每片 ≤2min |
+| `extras` | push/PR | 装全 `requirements-optional.txt` 九件后再跑 | ≤8min |
+| `smoke` | push/PR | `node --check`、`npm pack --dry-run`、CLI/MCP 入口、状态目录可写 | ≤3min |
+| `nightly:replay` | 每日 | `replay_eval --check`（离线，带下限） | 秒级 |
+| `nightly:drift` | 每日 | 重录 `tests/golden/drift_queries.txt` 并比基线报告 | ≤2min |
+| `nightly:ledger` | 每日 | `argo stats` 的时延/结果率落曲线 | 秒级 |
+
+本地复现某一片（与 CI 同参数；先 `pip install -r requirements-dev.txt`）：
+
+```bash
+python3 -m pytest --splits 4 --group 2 --durations-path tests/.test_durations --timeout=120
+```
+
+`requirements-dev.txt` 里除 pytest 插件外还有三件**测试自身要用**的可选依赖
+（`curl_cffi` / `bs4` / `lxml`）：一批用例用 mock 替换 `curl_cffi.requests`，
+补丁目标必须真实存在；HTML 引擎解析链缺 bs4 会让 keep 数归零、红成「解析坏了」。
+缺这些件的环境里，相关用例会 skip 并写明原因（`tests/_deps.py`），而不是报 import 错误。
+
+分片文件靠历史耗时切，用例增删后重新生成一次（约 5 分钟）：
+`python3 -m pytest tests -q --store-durations --durations-path tests/.test_durations`
+
+漂移基线（`tests/golden/drift_baseline*.json`）只在**确认变好**时重录，
+不要因为某天红了就覆盖——那等于把回归擦掉：
+
+```bash
+python3 scripts/replay_eval.py --record --out tests/golden/drift_baseline.json \
+  --queries "$(cat tests/golden/drift_queries.txt)"
+python3 scripts/replay_eval.py --data tests/golden/drift_baseline.json \
+  --save-baseline tests/golden/drift_baseline_report.json
+```
+
+**已知边界**：录制只保留当时真正被调到的引擎；重放是瞬时完成，早停时机与
+真跑不同，会去要一个当时没调过的引擎并报「没录到」。所以 nightly 的漂移门
+只比结果条数与输出体积，`not_recorded` 当信息项，不当失败。
 
 `scripts/replay_eval.py` 的用法：它把真实搜索里每个引擎返回的内容录在
 `tests/golden/pipeline_golden.json`，之后不上网也能重跑整条流程。

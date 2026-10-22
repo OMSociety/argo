@@ -11,9 +11,11 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "sub-skills" / "local-search"))
 
 from search_v3 import _fallback_extract  # noqa: E402
+from _deps import needs_curl_cffi  # noqa: E402
 
 
 class TestFallbackExtract(unittest.TestCase):
+    @needs_curl_cffi
     def test_extracts_result_like_links(self):
         html = """
         <html><body>

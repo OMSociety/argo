@@ -18,6 +18,9 @@ SCRIPT_DIR = SKILL_DIR / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
 
+from _deps import needs_curl_cffi  # noqa: E402
+
+
 class _FakeResp:
     """模拟 curl_cffi 响应。"""
 
@@ -40,6 +43,7 @@ def _fake_public_dns():
 class TestImpersonateGuard(unittest.TestCase):
     """get_impersonated 的 SSRF 防护与失败路径。"""
 
+    @needs_curl_cffi
     def test_private_url_rejected_without_request(self):
         from http_client import HttpClient
         client = HttpClient(timeout=2, max_retries=0)
@@ -59,6 +63,7 @@ class TestImpersonateGuard(unittest.TestCase):
         self.assertIn("curl_cffi not installed", resp.get("error", ""))
 
 
+@needs_curl_cffi
 class TestImpersonateSuccess(unittest.TestCase):
     """get_impersonated 成功与指纹轮换。"""
 

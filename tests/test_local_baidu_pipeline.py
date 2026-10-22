@@ -21,6 +21,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 import engines_base  # noqa: E402
 from evidence import is_serp_or_jump_url  # noqa: E402
+from _deps import needs_curl_cffi  # noqa: E402
 
 _FAKE_SERP = """
 <html><body>
@@ -83,6 +84,7 @@ class TestResolveRedirects(unittest.TestCase):
                     "tls_impersonate": ["chrome131"]}
         return engines_base._build_html_engine(cfg_spec)
 
+    @needs_curl_cffi
     def test_jump_urls_resolved_and_unresolvable_dropped(self):
         import http_client
 

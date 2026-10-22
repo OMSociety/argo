@@ -22,6 +22,9 @@ SCRIPT_DIR = SKILL_DIR / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
 
+from _deps import needs_curl_cffi  # noqa: E402
+
+
 class _FakeResp:
     """模拟 curl_cffi 响应。"""
 
@@ -153,6 +156,7 @@ class TestGetRespectsRetryAfter(unittest.TestCase):
         self.assertEqual(calls["n"], 2)  # 初始 + 1 次等待重试
 
 
+@needs_curl_cffi
 class TestImpersonatedStopSignal(unittest.TestCase):
     """get_impersonated 对 429/503 停止信号的处理。"""
 

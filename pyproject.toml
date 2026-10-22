@@ -1,0 +1,13 @@
+# 这里只放测试与门禁配置，不是打包声明。
+# 分发形态仍是 npm（package.json）+ 整树脚本，变更版本号请改 package.json。
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+# 超时不写在这里：没装 pytest-timeout 的环境会把未知配置项变成警告噪音，
+# 而门禁输出必须干净。CI 用显式 --timeout=120（见 .github/workflows/ci.yml）。
+markers = [
+    "live: 需要真实网络的用例（PR 不跑，nightly 跑）",
+    "slow: 单条超过 5 秒的用例",
+    "gate: 门禁自检（体积/静态/口径），改动这些依赖时必须跑",
+]

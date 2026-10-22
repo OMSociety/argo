@@ -1,0 +1,135 @@
+name: ci
+
+# 四个作业对应四类风险，不是四份重复跑：
+#   gates  —— 门禁本身（体积/静态/口径/路由漂移），改配置或文档最先红
+#   unit   —— 全量用例分 4 片，PR 反馈目标 3 分钟内
+#   extras —— 九件可选依赖装全之后再跑一遍（unit 只装测试所需的三件）
+#   smoke  —— 干净环境下的入口冒烟：CLI 包装、MCP 入口、引擎清单
+#
+# 不在 PR 上跑的东西：live 引擎（配额/反爬/fork 无 secret）、nightly 录制
+# （见 nightly.yml）。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "docs-local/**"
+      - "assets/**"
+      - "README*.md"
+      - "LICENSE"
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # 门禁里有一批中文口径检查（引擎目录、五语文案对账），locale 必须固定；
+  # 时区同理：「7d」这类时间窗按本地时区算会跨日漂移。
+  LANG: C.UTF-8
+  LC_ALL: C.UTF-8
+  TZ: Asia/Shanghai
+  PYTHONDONTWRITEBYTECODE: "1"
+  ARGO_USAGE_LOG: "0"
+
+jobs:
+  gates:
+    name: gates（七道快门禁）
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: python -m pip install -r requirements-dev.txt
+      - name: 与本地完全相同的七道门（scripts/pre-commit 可直接独立运行）
+        run: bash scripts/pre-commit
+
+  unit:
+    name: unit（分片 ${{ matrix.group }}/4）
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: python -m pip install -r requirements-dev.txt
+      - name: pytest（按历史耗时切片）
+        run: >
+          python -m pytest
+          --splits 4 --group ${{ matrix.group }}
+          --durations-path tests/.test_durations
+          --timeout=120
+          --junitxml=junit-${{ matrix.group }}.xml
+      - name: 保留 JUnit（失败也要留，flaky 历史靠它）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-${{ matrix.group }}
+          path: junit-${{ matrix.group }}.xml
+          if-no-files-found: warn
+
+  extras:
+    name: extras（可选依赖装全）
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements-dev.txt
+            requirements-optional.txt
+      - run: python -m pip install -r requirements-dev.txt -r requirements-optional.txt
+      - name: 装全之后仍要全绿（unit 只装测试所需的三件）
+        run: python -m pytest --timeout=120 -m "not live and not slow" --junitxml=junit-extras.xml
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-extras
+          path: junit-extras.xml
+          if-no-files-found: warn
+
+  smoke:
+    name: smoke（干净环境入口）
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: python -m pip install -r requirements-dev.txt
+      - name: 入口冒烟（全部不联网）
+        run: |
+          node --check bin/argo.js
+          npm pack --dry-run > /dev/null
+          python bin/argo --version
+          python bin/argo paths
+          python scripts/search.py --list-engines > /dev/null
+          python -c "import sys; sys.path.insert(0, 'scripts'); import mcp_tools; assert mcp_tools.TOOLS"
+      - name: 陌生环境的第一个坑：状态目录可建可写
+        run: |
+          export ARGO_STATE_DIR="$RUNNER_TEMP/argo-state"
+          python bin/argo search --list-engines > /dev/null
+          test -d "$ARGO_STATE_DIR" || mkdir -p "$ARGO_STATE_DIR"
+          touch "$ARGO_STATE_DIR/.probe" && rm "$ARGO_STATE_DIR/.probe"

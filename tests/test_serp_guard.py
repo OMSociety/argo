@@ -21,6 +21,7 @@ if SCRIPTS_DIR not in sys.path:
 
 from serp_guard import is_junk_serp, guard_enabled  # noqa: E402
 import engines_base  # noqa: E402
+from _deps import needs_curl_cffi  # noqa: E402
 
 # 与任何测试 query 都零 token 重叠的垃圾结果（缓存 SERP 形态）
 JUNK_EN = [
@@ -196,6 +197,7 @@ class TestFullEngineChain:
         html = _serp_html([(r["title"], "https://j.example.com/a", r["snippet"]) for r in JUNK_EN])
         assert self._run(bing_engine, monkeypatch, html, "quantum computing tutorial") == []
 
+    @needs_curl_cffi
     def test_relevant_serp_passes_through(self, bing_engine, monkeypatch):
         html = _serp_html([("Quantum computing tutorial", "https://x.example.com/q", "qubits explained")])
         out = self._run(bing_engine, monkeypatch, html, "quantum computing tutorial")
@@ -207,12 +209,14 @@ class TestFullEngineChain:
                 + "lorem ipsum dolor sit amet " * 40 + "</body></html>")
         assert self._run(bing_engine, monkeypatch, html, "quantum computing tutorial") == []
 
+    @needs_curl_cffi
     def test_direct_hit_branch_relevant_passes(self, bing_engine, monkeypatch):
         html = ("<html><head><title>quantum computing tutorial - Notes</title></head><body>"
                 + "lorem ipsum dolor sit amet " * 40 + "</body></html>")
         out = self._run(bing_engine, monkeypatch, html, "quantum computing tutorial")
         assert len(out) == 1
 
+    @needs_curl_cffi
     def test_switch_disables_full_chain(self, bing_engine, monkeypatch):
         monkeypatch.setenv("ARGO_SERP_GUARD", "0")
         html = _serp_html([(r["title"], "https://j.example.com/a", r["snippet"]) for r in JUNK_EN])

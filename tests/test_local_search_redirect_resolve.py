@@ -20,6 +20,10 @@ for p in (ROOT / "sub-skills" / "local-search", ROOT / "scripts"):
         sys.path.insert(0, str(p))
 
 import search_v3  # noqa: E402
+from _deps import needs_curl_cffi  # noqa: E402
+
+# 这四条都在验跳转链解析（curl_cffi 在补丁目标里），缺件时跳过而不是报错。
+pytestmark = needs_curl_cffi
 
 _SOGOU_SPEC = {
     "type": "http", "enabled": True, "url": "https://www.sogou.com/web",
