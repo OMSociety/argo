@@ -68,25 +68,9 @@ jobs:
 
       - name: 阈值（条数 -1 以内、体积 +20% 以内）
         run: |
-          python - <<'PY'
-          import json, sys
-          base = json.load(open("tests/golden/drift_baseline_report.json"))["report"]
-          cur = json.load(open("drift_report.json"))
-          b = {c["id"]: c for c in base["cases"]}
-          bad = []
-          for c in cur["cases"]:
-              o = b.get(c["id"])
-              if not o:
-                  continue
-              if c["kept"] < o["kept"] - 1:
-                  bad.append(f'{c["id"]}: 结果 {c["kept"]} 条，基线 {o["kept"]} 条')
-              if c["bytes"] > o["bytes"] * 1.2:
-                  bad.append(f'{c["id"]}: 输出 {c["bytes"]}B，超过基线 {o["bytes"]}B×1.2')
-          if bad:
-              print("\n".join(bad))
-              sys.exit(1)
-          print(f'通过：{len(cur["cases"])} 条，漏录 {cur.get("total_missing", 0)} 个引擎（信息项）')
-          PY
+          python scripts/ci_drift_gate.py \
+            --baseline tests/golden/drift_baseline_report.json \
+            --current drift_report.json
 
       - uses: actions/upload-artifact@v4
         if: always()
