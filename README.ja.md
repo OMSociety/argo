@@ -85,7 +85,11 @@ dsh plugin --profile web add "github:taxueseek/argo"
 </p>
 
 <p align="center">
-  <img src="assets/readme/settings-keys.png" width="100%" alt="Argo 設定ページ「キー」分区：常用エンジンの key の入力・更新・クリア、設定済み/未設定と来源層を表示、平文は非表示、各行に「転送」チェックボックス">
+  <img src="assets/readme/settings-engines.png" width="100%" alt="Argo 設定ページ「エンジン」分区：argo 本体の 28 個の挙動スイッチを環境変数からパネルへ移設——キャッシュと並び替えグループ（テストモード / TF-IDF 再ランク / 数値クロスチェック / MinHash 重複排除 / SERP ガード / 重複しきい値）を表示、未設定行は既定値のまま、スイッチ類は保存で即時有効">
+</p>
+
+<p align="center">
+  <img src="assets/readme/settings-keys.png" width="100%" alt="Argo 設定ページ「キー」分区：DeepSeek 公式検索は「設定済み・資格情報ストア」と表示され、ホストの web_search と同一キーを共用。Tencent Yuanbao / Tavily / Exa など常用エンジンのキー入力・更新・クリアができ、平文は非表示、各行に「転送」チェックボックス">
 </p>
 
 | 分区 | 管理内容 |
@@ -203,7 +207,7 @@ Argo は四つの接続方式をサポートします。場面に合わせて選
 4. **無料オープン生態系で足りる。** 政府・学術・標準・セキュリティの公開 API とキーレス エンジンで大部分をカバー（235 ソースが無設定）。
 5. **品質は測定可能。** ランキング金標・融合利得アブレーション・負のルーティング制御。
 
-> v2.9.3 はこの全てを実装：264 ソース / 95 ドメイン / 227 無設定。
+> 以上の 5 項目はすでに v2.9.x 系で全て実装済み：272 ソース / 97 ドメイン / 235 無設定。
 
 ---
 
@@ -493,7 +497,8 @@ v2.9.4 が直したのは明示エンジン指定の経路。--engine X を指�
 | arxiv / semantic_scholar / openalex | 学術 | 主に無料 |
 | pubchem / gbif / rfc_editor | 化学 / 種 / 標準 | 無料 |
 | github / stackoverflow / pypi / npm | コードとパッケージ | 設定次第 |
-| byted / bocha / metaso / octen | 中国語ウェブ / AI 検索 | API / 低コスト |
+| byted / bocha / metaso / octen / yuanbao | 中国語ウェブ / AI 検索 | API / 低コスト |
+| hkex / shfe / cfets / defillama / gleif | 香港公告 / 上期所 / 人民元中間価格 / DeFi / 法人識別子 | 無料 |
 | zhihu / wechat_sogou | 中国語意見 / 公式アカウント | API / 無料 |
 | tavily / felo / exa | 国際 / 意味検索 | 有料または枠 |
 | twitter / reddit / xiaohongshu / bilibili / weibo | SNS UGC | 無料（一部ログイン） |

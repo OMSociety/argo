@@ -85,7 +85,11 @@ The plugin ships a browser-side settings page with two entries: the settings pop
 </p>
 
 <p align="center">
-  <img src="assets/readme/settings-keys.png" width="100%" alt="Argo settings, Keys section: set, update and clear common engine keys, showing configured/unconfigured plus source layer, never echoing plaintext, with a Forward checkbox per row">
+  <img src="assets/readme/settings-engines.png" width="100%" alt="Argo settings, Engines section: argo's 28 behaviour switches moved from environment variables into the panel — the cache & ranking group is shown (test mode / cache off, TF-IDF rerank, numeric cross-check, MinHash dedup, SERP guard, dedup threshold); unconfigured rows show the default and switch-type changes apply immediately">
+</p>
+
+<p align="center">
+  <img src="assets/readme/settings-keys.png" width="100%" alt="Argo settings, Keys section: DeepSeek official search shows configured · credential store and shares one key with the host's web_search; common engine keys (Tencent Yuanbao / Tavily / Exa) can be set, updated and cleared, plaintext is never echoed, each row has a Forward checkbox">
 </p>
 
 | Section | What it controls |
@@ -203,7 +207,7 @@ All four forms run the same Python code underneath; CLI and MCP tools map one to
 4. **The free/open ecosystem is enough.** Government, academic, standards and security open APIs plus keyless engines cover most domains (235 keyless sources).
 5. **Quality is measurable.** Ranking golden floors, fusion-ablation gates and negative routing controls — "is this version better" is now a number, not a vibe.
 
-> v2.9.3 ships all of the above: 264 sources, 95 domains, 227 keyless. Details in [docs/为什么选择argo.md](docs/为什么选择argo.md).
+> All five are already shipped across the v2.9.x line: 272 sources, 97 domains, 235 keyless out of the box. Details in [docs/为什么选择argo.md](docs/为什么选择argo.md).
 
 ---
 
@@ -451,7 +455,8 @@ Config currently has **272** sources (**235** usable with no key) and **97** dom
 | arxiv / semantic_scholar / openalex | academic | mostly free |
 | pubchem / gbif / rfc_editor | chemistry / species / standards | free |
 | github / stackoverflow / pypi / npm | code & packages | depends |
-| byted / bocha / metaso / octen | Chinese web / AI search | API / low cost |
+| byted / bocha / metaso / octen / yuanbao | Chinese web / AI search | API / low cost |
+| hkex / shfe / cfets / defillama / gleif | HKEX announcements / SHFE / RMB central parity / DeFi / legal entity IDs | Free |
 | zhihu / wechat_sogou | Chinese opinion / WeChat | API / free |
 | tavily / felo / exa | international / semantic | paid or quota |
 | twitter / reddit / xiaohongshu / bilibili / weibo | social UGC | free (some need login) |
@@ -636,7 +641,19 @@ argo/
 
 ## Recent updates
 
-### Unreleased (DSH plugin): settings page gains an "Engines" section + cancellation reaches connection establishment
+### Unreleased (next version): Yuanbao search + three keyless sources + structured failure list + DSH settings "Engines" section
+
+**Search core**
+
+- **Tencent Yuanbao search (`yuanbao`)**: a first-hand / official-voice Chinese source (a live test on 「三星堆的由来」 returned 8 of 10 results from People's Daily, Xinhua, the National Cultural Heritage Administration and peers), complementary to the portal-and-self-media mix of bocha / byted; default allowance 2000 calls / month, consumed per call. It sits 2nd in the Chinese-general domain as an **authority hedge** — in the month when bocha / octen / byted were all excluded, six Chinese queries measured a 2664ms median with 0% date coverage on anysearch versus 699ms median with 96% date coverage on yuanbao. Key: `ARGO_YUANBAO_API_KEY` (Tencent's official name `TENCENTCLOUD_WSA_APIKEY` also works)
+- **Three more keyless sources**: `tavily_free` (official keyless mode), `keenable_free` (anonymous endpoint) and `exa` (anonymous fallback) — widening the out-of-the-box surface; the first two join the general fallback chain
+- **Structured failure list (`failures`)**: failures are no longer just a human-readable line — each one carries source, category and an actionable verdict (retry / switch source / configure a key); results also carry `meta.uncertainty` (low / medium / high)
+- **Output trust boundary**: `<untrusted-web-content>` markers embedded in page bodies are stripped, and responses carry `content_trust: "untrusted"` so web content cannot impersonate system instructions
+- **Five new sources**: HKEX announcements, SHFE quotes, CFETS RMB central parity, DeFiLlama, GLEIF legal entity identifiers
+- **Local config overlay `config.local.yaml`**: local state (temporarily disabling an engine, local paths, tuning) no longer goes into the shipped public `config.yaml` — deep merge, effective immediately, never committed, silently ignored if broken
+- **Article metadata and body links**: `argo fetch --include-links` (MCP parameter `include_links`) returns article metadata and in-body links alongside the text
+
+**DSH plugin**
 
 - **Sixth settings section "Engines"**: argo's 28 behaviour switches moved out of environment variables and into the panel (cache / TF-IDF rerank / numeric cross-check / MinHash dedup / SERP guard, Jina / mobile UA / Parallel fetch layer, semantic evidence layer, hedge grace and tail width, engine enable list, proxy, local search roots and read allowlist, warmup / usage log / connection pool / assorted TTLs). Applied via the new volatile config `argoEnv` (one `KEY=VALUE` per line) into the argo subprocess env; names go through the `ARGO_ENV_SPECS` allowlist, and anything outside it fails loudly at apply time so a typo cannot silently do nothing. Switch-type changes apply immediately; number / text / list types save as a group; unconfigured rows show argo's default and are marked "default". Authorisation switches (recompute, intranet URLs) deliberately stay out of the panel
 - **Key source layer is now visible**: shows "configured / unconfigured + source layer (credential store / startup env / project .env / home .env) + read-only state", with non-file layers noting they will be overwritten on save; `DEEPSEEK_API_KEY` is marked as shared with the host's `web_search`; `fetchMaxChars` is truncated to the argo tool schema cap of 50000 on save, removing the "displayed value ≠ effective value" mismatch

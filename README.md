@@ -85,7 +85,11 @@ dsh plugin --profile web add "github:taxueseek/argo"
 </p>
 
 <p align="center">
-  <img src="assets/readme/settings-keys.png" width="100%" alt="Argo 设置页「密钥」分区：常用引擎 key 的填写、更新、清除，显示已配置/未配置与来源层，明文不回显，每行可勾选「转发」">
+  <img src="assets/readme/settings-engines.png" width="100%" alt="Argo 设置页「引擎」分区：argo 本体 28 个行为开关从环境变量搬进面板，缓存与排序组在列——测试模式（关缓存）/ TF-IDF 重排 / 数值交叉校验 / MinHash 去重 / SERP 守卫 / 去重阈值，未配置行显示默认态，开关类改完即时生效">
+</p>
+
+<p align="center">
+  <img src="assets/readme/settings-keys.png" width="100%" alt="Argo 设置页「密钥」分区：DeepSeek 官方搜索显示「已配置 · 凭证库」并与宿主 web_search 共用同一把 key；腾讯元宝 / Tavily / Exa 等常用引擎 key 可填写、更新、清除，明文不回显，每行可勾选「转发」">
 </p>
 
 | 分区 | 管什么 |
@@ -101,7 +105,7 @@ dsh plugin --profile web add "github:taxueseek/argo"
 
 **密钥安全**：写入 DSH 凭证库（与 Models 页同一处），不写进插件配置、不打日志、不回显明文。凭证服务优先级为**存储文件层 > 启动环境 > 项目 .env > 家目录 .env**：在面板（或 Models 页）保存即覆盖启动环境里的旧值，argo 子进程下一跳新连接用新 key；「清除」只删凭证库里的值，环境变量或 `.env` 提供的 key 会重新露出。设置页只是凭证域的写入口，读取仍由宿主在每次调用时完成。
 
-**DeepSeek 官方 key 原生供给**：argo 的 `deepseek_search` 引擎（官方 `api.deepseek.com/v1/tools/search`，结果自带 authority 权威分级 / rerank_score 排序分 / 发布时间）与 DSH 官方搜索后端**共用同一把 key**。插件经 DSH 原生凭证 seam 取用，不需要任何手工配置：解析路径 `ctx.get('credentials').resolve('DEEPSEEK_API_KEY')`，逐次解析——在 web Models 页轮换 key 后，下一跳新连接即生效，无需重启插件。插件不读 key 文件、不落盘、不打日志；key 值只经内存进入 argo 子进程 env，任何输出与错误信息都不含它。旧宿主无 credentials 服务时静默跳过：argo 侧该引擎按缺 key 停用，其余 263 个源不受影响。
+**DeepSeek 官方 key 原生供给**：argo 的 `deepseek_search` 引擎（官方 `api.deepseek.com/v1/tools/search`，结果自带 authority 权威分级 / rerank_score 排序分 / 发布时间）与 DSH 官方搜索后端**共用同一把 key**。插件经 DSH 原生凭证 seam 取用，不需要任何手工配置：解析路径 `ctx.get('credentials').resolve('DEEPSEEK_API_KEY')`，逐次解析——在 web Models 页轮换 key 后，下一跳新连接即生效，无需重启插件。插件不读 key 文件、不落盘、不打日志；key 值只经内存进入 argo 子进程 env，任何输出与错误信息都不含它。旧宿主无 credentials 服务时静默跳过：argo 侧该引擎按缺 key 停用，其余 271 个源不受影响。
 
 **web seam 的 pin 必读**（漏配会打挂 `web_fetch`）：宿主 `dsh-web` 的 provider 选择规则是「配置 id 优先；都没有且恰好一个可用则选它；**多个可用直接报 `WEB_PROVIDER_AMBIGUOUS`**」。web profile 默认挂着官方 http fetch provider（免 key、永远可用），本 bundle 再注册一个就是两个可用——**不 pin 的话 `web_fetch` 整个挂掉**（`web_search` 同理，若 profile 里另有搜索 provider）。故启用 web seam 的 profile 必须在 web 服务行显式指定：
 
@@ -205,7 +209,7 @@ Agent 干活的量级变了，检索的玩法跟着变了五件事，每一件 A
 4. **免费开放生态够用了。** 政府、学术、标准、安全机构的开放 API + 免 key 引擎，已经能覆盖大多数领域（235 个免配置源）；稀缺免费额度（firecrawl 1000 credits/月、stackexchange 300 次/天）做了「日常补位、关键顶上」的分层，订阅墙不是唯一解。
 5. **检索质量从「感觉」到「度量」。** 排序有金标（MRR/nDCG 地板）、融合有增益消融检查、路由有负向控制矩阵——「这版比上版好吗」从此是数字问题，不是玄学。
 
-> v2.9.3 把以上全部落地：264 个源、95 个领域、227 个免配置开箱。逐项细节见 [docs/为什么选择argo.md](docs/为什么选择argo.md) 与 [发布说明](docs/RELEASE_NOTES_v2.9.0.md)。
+> 以上五项已经在 v2.9.x 系列里全部落地：272 个源、97 个领域、235 个免配置开箱。逐项细节见 [docs/为什么选择argo.md](docs/为什么选择argo.md) 与 [发布说明](docs/RELEASE_NOTES_v2.9.0.md)。
 
 ---
 
@@ -524,7 +528,8 @@ v2.9.4 修的是显式选引擎的场景。用 --engine X 指定引擎时，缓�
 | arxiv / semantic_scholar / openalex | 学术 | 免费为主 |
 | pubchem / gbif / rfc_editor | 化学 / 物种 / 标准 | 免费 |
 | github / stackoverflow / pypi / npm | 代码与包 | 视配置 |
-| byted / bocha / octen | 中文网页 / AI 搜索 | API / 低成本 |
+| byted / bocha / octen / yuanbao | 中文网页 / AI 搜索 | API / 低成本 |
+| hkex / shfe / cfets / defillama / gleif | 港股公告 / 上期所 / 人民币中间价 / DeFi / 法人标识 | 免费 |
 | zhihu / wechat_sogou | 中文观点 / 公众号 | API / 免费 |
 | tavily / exa | 国际 / 语义 | 付费或额度 |
 | stackexchange / doi / endoflife / nvd / flk_law | 问答官方 API / 论文元数据 / 生命周期 / 漏洞 / 法规原文 | 免费 |
@@ -757,7 +762,19 @@ argo/
 
 ## 最近更新
 
-### 未发布（DSH 插件）：设置页补「引擎」分区 + 取消信号贯通连接建立
+### 未发布（下一版）：元宝搜索 + 免 key 三源 + 结构化失败清单 + DSH 设置页「引擎」分区
+
+**搜索内核**
+
+- **腾讯元宝搜索接入（`yuanbao`）**：中文一手 / 官方口径源（实测「三星堆的由来」10 条里 8 条来自人民日报 / 新华网 / 国家文物局等），与 bocha / byted 的「门户 + 自媒体」构成互补；默认 2000 次 / 月按次额度。进中文通用域第 2 位做**权威源对冲**——当月 bocha / octen / byted 三个主力同时被排除时，同 6 个中文查询对拍 anysearch 中位 2664ms、日期覆盖 0%，yuanbao 中位 699ms、日期覆盖 96%。key 用 `ARGO_YUANBAO_API_KEY`（腾讯官方名 `TENCENTCLOUD_WSA_APIKEY` 也认）
+- **免 key 通道扩三源**：`tavily_free`（官方 keyless 模式）、`keenable_free`（匿名端点）、`exa`（匿名回退）——不配任何 key 的开箱可用面再扩，前两个进通用兜底链
+- **结构化失败清单（`failures`）**：失败不再只有一行给人看的文本，按来源和类别标出「可重试 / 换源 / 去配 key」和处置建议，Agent 能直接照着做；结果同时带 `meta.uncertainty` 综合可信度（low / medium / high）
+- **输出信任边界**：网页正文自带的 `<untrusted-web-content>` 标记会被剥离，响应统一带 `content_trust: "untrusted"`，防网页内容冒充系统指令
+- **新源五个**：港股公告（hkex）、上期所行情（shfe）、人民币中间价（cfets）、DeFiLlama、GLEIF 法人标识
+- **本机配置覆盖层 `config.local.yaml`**：本机状态（临时停用某引擎、本机路径、调优）不再写进随版发布的公共 `config.yaml`——深度合并、改完即生效、不进公开仓、写坏静默忽略
+- **文章元数据与正文链接**：`argo fetch --include-links`（MCP 同名参数 `include_links`）在抓正文时一并给出文章元数据与正文内链接
+
+**DSH 插件**
 
 - **设置页第六个分区「引擎」**：argo 本体的 28 个行为开关从环境变量搬进面板（缓存 / TF-IDF 重排 / 数值交叉校验 / MinHash 去重 / SERP 守卫、Jina / 移动端 UA / Parallel 抓取层、语义证据层、对冲宽限与尾宽、引擎启停名单、代理、本机检索根与读取白名单、预热 / 使用日志 / 连接池 / 各类 TTL）。经新 volatile 配置 `argoEnv`（一行一个 `KEY=VALUE`）随 argo 子进程 env 生效；名字走 `ARGO_ENV_SPECS` 白名单，白名单外 apply 期 loud fail，防拼写静默失效。开关类即时生效，数字 / 文本 / 名单类分组保存；未配置行显示 argo 默认态并标注「默认」。授权类开关（可复算执行、内网 URL）刻意不进面板
 - **密钥页来源层可见**：显示「已配置 / 未配置 + 来源层（凭证库 / 启动环境 / 项目 .env / 家目录 .env）+ 只读态」，非 file 层提示保存后将覆盖；`DEEPSEEK_API_KEY` 标注与宿主 `web_search` 共用；`fetchMaxChars` 保存时截断到 argo 工具 schema 上限 50000，消除「显示值与实效不符」

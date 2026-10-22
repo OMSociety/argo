@@ -85,7 +85,11 @@ El plugin incluye una página de ajustes del lado del navegador con dos entradas
 </p>
 
 <p align="center">
-  <img src="assets/readme/settings-keys.png" width="100%" alt="Ajustes de Argo, sección Claves: definir, actualizar y borrar claves de motores habituales, mostrando configurada/sin configurar más la capa de origen, sin mostrar el texto plano, con una casilla Reenviar por fila">
+  <img src="assets/readme/settings-engines.png" width="100%" alt="Ajustes de Argo, sección Motores: los 28 interruptores de comportamiento del núcleo argo pasan de variables de entorno al panel — se muestra el grupo de caché y ordenación (modo test / sin caché, rerank TF-IDF, cotejo numérico, dedup MinHash, guardia SERP, umbral de dedup); las filas sin configurar muestran el valor por defecto y los interruptores se aplican al guardar">
+</p>
+
+<p align="center">
+  <img src="assets/readme/settings-keys.png" width="100%" alt="Ajustes de Argo, sección Claves: la búsqueda oficial de DeepSeek aparece como «configurada · almacén de credenciales» y comparte una sola clave con el web_search del host; las claves de motores habituales (Tencent Yuanbao / Tavily / Exa) se definen, actualizan y borran sin mostrar el texto plano, con una casilla Reenviar por fila">
 </p>
 
 | Sección | Qué controla |
@@ -203,7 +207,7 @@ Las cuatro formas comparten el mismo código Python por debajo; la CLI y las her
 4. **El ecosistema libre basta.** APIs abiertas de gobiernos/academia/estándares/seguridad + motores sin clave cubren la mayoría de dominios (235 sin clave).
 5. **Calidad medible.** Pisos golden de ranking, gates de ablación de fusión y controles negativos de enrutamiento.
 
-> v2.9.3 lo implementa todo: 264 fuentes, 95 dominios, 227 sin clave.
+> Los cinco puntos ya están implementados en la serie v2.9.x: 272 fuentes, 97 dominios, 235 sin clave.
 
 ---
 
@@ -493,7 +497,8 @@ La config tiene ahora **272** fuentes (**235** sin clave) y **97** dominios (ver
 | arxiv / semantic_scholar / openalex | académico | mostly free |
 | pubchem / gbif / rfc_editor | química / especies / estándares | free |
 | github / stackoverflow / pypi / npm | código y paquetes | depends |
-| byted / bocha / metaso / octen | web china / búsqueda IA | API / low cost |
+| byted / bocha / metaso / octen / yuanbao | web china / búsqueda IA | API / bajo coste |
+| hkex / shfe / cfets / defillama / gleif | anuncios de HKEX / SHFE / paridad central del yuan / DeFi / identificadores de entidad legal | Gratis |
 | zhihu / wechat_sogou | opinión china / WeChat | API / free |
 | tavily / felo / exa | internacional / semántica | paid or quota |
 | twitter / reddit / xiaohongshu / bilibili / weibo | social UGC | free (some need login) |
