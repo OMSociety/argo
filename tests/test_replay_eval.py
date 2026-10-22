@@ -215,3 +215,28 @@ def test_field_change_ignores_urls_that_came_or_went():
     row = replay_eval.diff_reports(base, new)["cases"][0]
     assert "field_changes" not in row, row
     assert row["entered"] == ["u2"] and row["left"] == ["u1"]
+
+
+# ── 查询集文件：空文件不能静默变成「录一条空查询」 ─────────────────────────────
+
+def test_queries_file_ignores_blank_and_comment(tmp_path):
+    p = tmp_path / "q.txt"
+    p.write_text("\n# 注释\nAlan Turing\n  \n中国 2025 年 GDP 增速\n", encoding="utf-8")
+    assert replay_eval._read_queries_file(str(p)) == ["Alan Turing", "中国 2025 年 GDP 增速"]
+
+
+def test_queries_file_only_comments_is_empty(tmp_path):
+    p = tmp_path / "q.txt"
+    p.write_text("# 只有注释\n\n", encoding="utf-8")
+    assert replay_eval._read_queries_file(str(p)) == []
+
+
+def test_empty_queries_file_fails_instead_of_recording_blank(tmp_path, monkeypatch):
+    """空查询集必须退 1，而不是录一条 query="" 的 case 让阈值判定误判成通过。"""
+    p = tmp_path / "q.txt"
+    p.write_text("\n\n", encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", [
+        "replay_eval.py", "--record", "--queries-file", str(p),
+        "--out", str(tmp_path / "out.json")])
+    assert replay_eval.main() == 1
+    assert not (tmp_path / "out.json").exists()

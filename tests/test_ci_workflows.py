@@ -94,6 +94,16 @@ def test_nightly_is_scheduled_and_reports():
     assert jobs["notify"].get("if") == "failure()"
 
 
+def test_extras_stays_off_the_pr_path():
+    """装全九件可选依赖实测 9 分钟，进 PR 就把 2 分钟反馈变成 9 分钟。
+
+    可选依赖的漂移是周级别的，PR 上用 gates/unit/smoke 就够；extras 只在
+    push main 与手动触发时跑。改回 PR 前先想清楚这条关键路径。
+    """
+    extras = _load("ci.yml")["jobs"]["extras"]
+    assert "pull_request" in (extras.get("if") or ""), extras.get("if")
+
+
 def test_requirements_files_exist_and_are_wired():
     dev = (ROOT / "requirements-dev.txt").read_text(encoding="utf-8")
     assert "pytest-split" in dev, "分片插件不能只写在 workflow 里"

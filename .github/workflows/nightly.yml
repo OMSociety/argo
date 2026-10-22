@@ -56,8 +56,8 @@ jobs:
 
       - name: 重录固定查询集
         run: |
-          mapfile -t QS < tests/golden/drift_queries.txt
-          python scripts/replay_eval.py --record --queries "${QS[@]}" \
+          python scripts/replay_eval.py --record \
+            --queries-file tests/golden/drift_queries.txt \
             --out "$RUNNER_TEMP/drift-$(date -u +%F).json"
 
       - name: 生成报告并与基线对比

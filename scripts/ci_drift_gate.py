@@ -42,6 +42,7 @@ def _load(path: Path) -> dict[str, Any]:
 
 def violations(base: dict[str, Any], cur: dict[str, Any]) -> list[str]:
     by_id = {c.get("id"): c for c in (base.get("cases") or [])}
+    cur_ids = {c.get("id") for c in (cur.get("cases") or [])}
     out: list[str] = []
     for case in cur.get("cases") or []:
         old = by_id.get(case.get("id"))
@@ -55,6 +56,11 @@ def violations(base: dict[str, Any], cur: dict[str, Any]) -> list[str]:
         if old_bytes and case.get("bytes", 0) > old_bytes * BYTES_GROWTH:
             out.append(
                 f"{cid}: 输出 {case.get('bytes')}B，超过基线 {old_bytes}B×{BYTES_GROWTH}")
+    # 基线里有、本次没有：不是「通过」，是这条根本没被录到（查询集被改、
+    # 或录制整条失败）。2026-10-22 本地实跑踩过：只剩 1 条时判定照样退 0。
+    for cid in by_id:
+        if cid and cid not in cur_ids:
+            out.append(f"{cid}: 本次报告里没有这条（查询集被改了，还是录制失败？）")
     return out
 
 

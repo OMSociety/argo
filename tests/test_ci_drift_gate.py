@@ -59,6 +59,15 @@ def test_new_case_without_baseline_is_not_drift():
     assert ci_drift_gate.violations(base, cur) == []
 
 
+def test_baseline_case_missing_from_current_is_drift():
+    """只剩一条也算「通过」是误判：基线里四条，本次只录到一条，必须报。"""
+    base = _report([_case("a"), _case("b"), _case("c"), _case("d")])
+    cur = _report([_case("a")])
+    bad = ci_drift_gate.violations(base, cur)
+    assert len(bad) == 3
+    assert all("本次报告里没有这条" in b for b in bad)
+
+
 def test_baseline_wrapper_is_unwrapped(tmp_path: Path):
     base = {"_meta": {"saved_at": "x"}, "report": _report([_case("a", kept=5)])}
     cur = _report([_case("a", kept=2)])

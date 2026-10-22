@@ -534,8 +534,25 @@ def _fmt_header(doc: dict) -> str:
 
 # ── 命令行 ────────────────────────────────────────────────────────────────────
 
+def _read_queries_file(path: str) -> list[str]:
+    """从文件读查询词：每行一个，忽略空行与行首注释。
+
+    为什么要有这个入口：原来靠 shell 的 `mapfile` 拼参数，在 zsh / 空文件 /
+    只有空行三种情况下会静默退化成「录一条空查询」——2026-10-22 本地实跑
+    就录出了一条 query="" 的 case，而阈值判定只看 id 交集，于是「一条也算通过」。
+    """
+    qs = [line.strip() for line in Path(path).read_text(encoding="utf-8").splitlines()
+          if line.strip() and not line.lstrip().startswith("#")]
+    return qs
+
+
 def _cmd_record(args) -> int:
     queries = args.queries or _DEFAULT_QUERIES
+    if getattr(args, "queries_file", None):
+        queries = _read_queries_file(args.queries_file)
+        if not queries:
+            print(f"查询集是空的：{args.queries_file}", file=sys.stderr)
+            return 1
     out_path = Path(args.out) if args.out else DEFAULT_DATA_PATH
     cases: list[dict] = []
     for q in queries:
@@ -576,6 +593,7 @@ def main() -> int:
     ap.add_argument("--save-baseline", help="把当前结果存为对照基准")
     ap.add_argument("--record", action="store_true", help="联网录制（唯一会联网的模式）")
     ap.add_argument("--queries", nargs="*", help="录制用的查询词")
+    ap.add_argument("--queries-file", help="从文件读查询词（每行一个，空行与 # 注释忽略）")
     ap.add_argument("--out", help="录制结果写到哪里")
     ap.add_argument("--mode", default="auto")
     ap.add_argument("--depth", default="fast")

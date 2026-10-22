@@ -118,15 +118,18 @@ export TINYFISH_API_KEY="sk-tinyfish-..."   # 去 agent.tinyfish.ai/api-keys 申
 
 线上跑的和本地跑的是同一批东西，不在 CI 里另写一套判断：
 
-| 作业 | 触发 | 跑什么 | 目标时长 |
+| 作业 | 触发 | 跑什么 | 实测（本机） |
 |---|---|---|---|
-| `gates` | push/PR | `bash scripts/pre-commit` 七道门（与本地完全一致） | ≤20s |
-| `unit` | push/PR | 全量用例按历史耗时切 4 片（`tests/.test_durations`） | 每片 ≤2min |
-| `extras` | push/PR | 装全 `requirements-optional.txt` 九件后再跑 | ≤8min |
-| `smoke` | push/PR | `node --check`、`npm pack --dry-run`、CLI/MCP 入口、状态目录可写 | ≤3min |
-| `nightly:replay` | 每日 | `replay_eval --check`（离线，带下限） | 秒级 |
-| `nightly:drift` | 每日 | 重录 `tests/golden/drift_queries.txt` 并比基线报告 | ≤2min |
-| `nightly:ledger` | 每日 | `argo stats` 的时延/结果率落曲线 | 秒级 |
+| `gates` | push/PR | `bash scripts/pre-commit` 七道门（与本地完全一致） | 12s |
+| `unit` | push/PR | 全量用例按历史耗时切 4 片（`tests/.test_durations`） | 4 片并行 71s（单片 54–70s） |
+| `smoke` | push/PR | `node --check`、`npm pack --dry-run`、CLI/MCP 入口、状态目录可写 | 2s（runner 上含 npm 约 15s） |
+| `extras` | push main / 手动 | 装全 `requirements-optional.txt` 九件后再跑一遍 | 装 4m46s + 跑 4m28s |
+| `nightly:replay` | 每日 | `replay_eval --check`（离线，带下限） | 0s |
+| `nightly:drift` | 每日 | 重录 `tests/golden/drift_queries.txt` 并比基线报告 | 8s |
+| `nightly:ledger` | 每日 | `argo stats` 的时延/结果率落曲线 | <1s |
+
+`extras` 不进 PR 的原因写在 workflow 注释里：它 9 分钟，一进 PR 就把「2 分钟反馈」
+变成「9 分钟反馈」，而可选依赖的漂移是周级别的。
 
 本地复现某一片（与 CI 同参数；先 `pip install -r requirements-dev.txt`）：
 

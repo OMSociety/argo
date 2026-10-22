@@ -13,6 +13,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
     paths-ignore:
       - "docs/**"
       - "docs-local/**"
@@ -85,6 +86,10 @@ jobs:
 
   extras:
     name: extras（可选依赖装全）
+    # 本地实测：装九件 4 分 46 秒 + 全量 4 分 28 秒 = 9 分钟，一旦进 PR 就成为
+    # 关键路径，把「2 分钟反馈」变成「9 分钟反馈」。可选依赖的漂移是周级别的，
+    # 所以只在 push main 与手动触发时跑，PR 上由 gates/unit/smoke 负责。
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
