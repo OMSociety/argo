@@ -328,6 +328,27 @@ def _format_engine_summary(summary: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _merge_verify_timing(timing: dict[str, Any], verify_ms: float) -> None:
+    """把 verify 的墙钟并回 timing 的三个总数，保持互相自洽。
+
+    why：verify 发生在主搜索快照之后。此前只并回 stages_ms/process_ms，
+    elapsed_ms 仍是主搜索的数（实测 1173 vs 10967），调用方最先读的总账
+    比它的分项之和还小 8 倍。三个数必须一起走，否则「这次为什么慢」会被
+    带偏到主搜索上。
+    """
+    total = float(timing.get("stages_ms") or 0) + verify_ms
+    timing.setdefault("stages", []).append({
+        "stage": "verify",
+        "ms": round(verify_ms, 1),
+        "pct": round(verify_ms * 100.0 / total, 1) if total > 0 else 0.0,
+    })
+    timing["stages_ms"] = round(total, 1)
+    timing["process_ms"] = round(
+        float(timing.get("process_ms") or 0) + verify_ms, 1)
+    timing["elapsed_ms"] = round(
+        max(float(timing.get("elapsed_ms") or 0), total), 1)
+
+
 def main():
     # 入口第一件事：钉住 stdout/stderr 编码（实现唯一，见 cli_io）。
     # 放在这里而不是 import 期：本模块被 search.py 与 bin/argo 两条路调用，
@@ -579,19 +600,11 @@ def main():
     # （process_ms 定格处）之后，净增 280–1160ms 完全不进任何账——实测
     # wall 776–1746ms vs process_ms 494–701ms，「这次为什么慢」归因指错
     # 方向。快照后移做不到（verify 是装配后的可选后处理），补一个 stage
-    # 并把耗时并回 stages_ms / process_ms，两个总数保持自洽。
+    # 并把耗时并回三个总数（stages_ms / process_ms / elapsed_ms），
+    # 三者保持自洽（2026-10-22 补 elapsed_ms）。
     if _timing is not None and "timing" in results and args.verify:
         _verify_ms = (time.perf_counter() - _t_verify0) * 1000.0
-        _t = results["timing"]
-        _total = float(_t.get("stages_ms") or 0) + _verify_ms
-        _t.setdefault("stages", []).append({
-            "stage": "verify",
-            "ms": round(_verify_ms, 1),
-            "pct": round(_verify_ms * 100.0 / _total, 1) if _total > 0 else 0.0,
-        })
-        _t["stages_ms"] = round(_total, 1)
-        _t["process_ms"] = round(
-            float(_t.get("process_ms") or 0) + _verify_ms, 1)
+        _merge_verify_timing(results["timing"], _verify_ms)
 
     if args.json_output:
         public = {k: v for k, v in results.items() if not k.startswith("_")}

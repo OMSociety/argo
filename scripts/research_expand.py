@@ -8,6 +8,29 @@ Agent 的 MECE 问题树走 research_work_packages，不要把扩词当研究拆
 from __future__ import annotations
 
 import re
+
+
+def _english_anchor(query: str) -> str:
+    """中英混合查询里的英文锚点；单 token 不足以独立成查询时返回空串。
+
+    why（2026-10-22 实测）：「Rust 异步运行时怎么选」被扩成一条独立的
+    `Rust` 子查询，抓回 Rust 游戏官网、语言首页、算法库，15 条来源里 3 条
+    与问题无关；「AI 监管 新规」同理会扩成 `AI`。单 token 丢了中文里真正的
+    限定语（异步运行时/监管），既浪费一次检索又污染引用。
+    判据用「≥2 个词 或 单 token ≥5 字符」：`kubernetes`、`Python`、`Claude Code`
+    这类本身可独立检索的保留；`Rust`/`AI`/`DSH`/纯数字年份与股票代码不单飞。
+    """
+    tokens = [w for w in query.split()
+              if w.isascii() and len(w) > 1 and any(c.isalnum() for c in w)
+              and not w.isdigit()]
+    text = " ".join(tokens)
+    if not text:
+        return ""
+    if len(tokens) >= 2:
+        return text
+    return text if len(text) >= 5 else ""
+
+
 def expand_query(query: str, num_sub: int = 4) -> list[dict[str, str]]:
     """按关键词特征扩检索词。产出的是搜索变体，不是可验证子问题。"""
     sub_queries: list[dict[str, str]] = []
@@ -16,7 +39,7 @@ def expand_query(query: str, num_sub: int = 4) -> list[dict[str, str]]:
     has_english = any(c.isascii() and c.isalpha() for c in query)
 
     if has_chinese and has_english:
-        eng_words = " ".join(w for w in query.split() if w.isascii() and len(w) > 2)
+        eng_words = _english_anchor(query)
         if eng_words:
             sub_queries.append({
                 "query": eng_words,

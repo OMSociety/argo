@@ -335,6 +335,10 @@ python3 scripts/search.py "贵州茅台股价" --verify 3
 # [verify] 核验 3 条，improved=2 unchanged=1 degraded=0 mean_delta=0.18
 ```
 
+核验有全局墙钟 `ARGO_VERIFY_BUDGET_S`（默认 5s）：到点未回来的 URL 标进
+`pending`，已回来的照常回填；`--fields agent` 保留 `verify.revision_summary`、
+`pending` 与逐条 `delta`，不必为了看核验结果放弃精简档。
+
 以上开关在精简档与 `--fields agent` 档都保留（两档都不会剥掉 `fetch_required`）。
 
 ## argo answer（直答）与 Seltz 语料
@@ -516,7 +520,7 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 
 ## 功能开关总表（`ARGO_*`，唯一事实=源码扫描）
 
-> 105 个开关按六类 MECE。原则：调试/运行配置不进模型上下文（MCP schema 不暴露）；
+> 113 个开关按六类 MECE。原则：调试/运行配置不进模型上下文（MCP schema 不暴露）；
 > 本表由门禁与源码双向锁定——文档里的开关必须代码实存，代码新增开关必须入表。
 
 ### 能力开关（37）
@@ -587,7 +591,7 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 | `ARGO_YUANBAO_API_KEY` | 对应引擎/服务的凭据（腾讯元宝搜索，官方名 `TENCENTCLOUD_WSA_APIKEY` 同样识别） | 缺密钥=该源跳过或降级 |
 | `ARGO_ZHIHU_ACCESS_SECRET` | 对应引擎/服务的凭据 | 缺密钥=该源跳过或降级 |
 
-### 行为调参（28）
+### 行为调参（29）
 
 | 变量 | 作用 | 默认/备注 |
 |------|------|----------|
@@ -604,6 +608,7 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 | `ARGO_DAEMON` | 允许 search 在 daemon 不在位时自动后台拉起（显式 opt-in） | 默认关；=1 开启。`argo daemon start` 手动启动的实例不受此开关影响；`ARGO_NO_DAEMON=1` 优先 |
 | `ARGO_DAEMON_TIMEOUT` | daemon 快路径客户端等待上限（秒） | 默认 120；deep 长查询可调大 |
 | `ARGO_FETCH_DEADLINE_S` | 行为阈值/预算调参 | 默认经实测校准，勿轻动 |
+| `ARGO_VERIFY_BUDGET_S` | `--verify` 全局墙钟预算（秒） | 默认 5：到点未回的 URL 进 `pending`，已回的照常回填；0=关闭（逐 URL 8s 降级链照旧）。2026-10-22 实测最坏 9.7s→≤5.5s |
 | `ARGO_DEDUP_FUZZY` | ('minhash 去重的 rapidfuzz 模糊近重复复核（近似命中带内启用）', '默认开；=0 关；未装 rapidfuzz 时自动回退纯 minhash') | 见 rank_signals.py docstring |
 | `ARGO_DEDUP_FUZZY_THR` | 行为阈值/预算调参 | 默认 0.88（token_set_ratio 判定线） |
 | `ARGO_DEDUP_FUZZY_BAND` | 行为阈值/预算调参 | 默认 0.55（minhash 近似命中带下限） |

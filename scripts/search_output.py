@@ -85,6 +85,39 @@ _AGENT_RESULT_FIELDS = (
 )
 
 
+def _slim_verify(v: Any) -> dict[str, Any] | None:
+    """verify 块的 agent 精简版：保留「核验后改了什么」，丢掉逐条细节。
+
+    why：`--fields agent` 此前把整个 verify 块剥掉，而这是**唯一**能说明
+    「花几秒核验换来了什么」的字段。保留 revision_summary 与每条 delta，
+    体积约 0.2–0.8 KB；pre/post 绝对分与 title 已在 results[] 可查，不重复。
+    """
+    if not isinstance(v, dict):
+        return None
+    out: dict[str, Any] = {}
+    for key in ("revision_summary", "pending", "skipped_cached", "semantic"):
+        if v.get(key) is not None:
+            out[key] = v[key]
+    rows = []
+    for r in v.get("verified") or []:
+        if not isinstance(r, dict):
+            continue
+        rows.append({k: r[k] for k in
+                     ("url", "delta", "post_absorption", "fetch_method")
+                     if r.get(k) is not None})
+    if rows:
+        out["verified"] = rows
+    return out or None
+
+
+def _slim_reorder(r: Any) -> dict[str, Any] | None:
+    """证据回写排序的 agent 精简版：只留结论（是否重排、动了几处）。"""
+    if not isinstance(r, dict):
+        return None
+    out = {k: r[k] for k in ("reordered", "moved") if r.get(k) is not None}
+    return out or None
+
+
 def _strip_for_agent(payload: dict[str, Any]) -> dict[str, Any]:
     """--fields agent：输出只留答案内容（P2-2，2026-09-13）。
 
@@ -117,9 +150,22 @@ def _strip_for_agent(payload: dict[str, Any]) -> dict[str, Any]:
         # 信任级别：网页文本一律是不可信外部数据，随答案一起到达，
         # 避免调用方把摘要里的指令当任务执行（输出层声明，非提示词）。
         "content_trust",
+        # 核验产出：verify/evidence_reorder 是**花了墙钟换来的**，且是
+        # 「该不该引用这批结果」的直接依据。此前被整块剥掉，调用方付了
+        # 几秒核验却只看到 verified_count 一个数（2026-10-22 实测）。
+        # 值由下方 _slim_verify/_slim_reorder 压缩，不整块照搬。
+        "verify", "evidence_reorder",
     )
     out: dict[str, Any] = {k: payload[k] for k in keep_top
                            if payload.get(k) is not None}
+    for _key, _slim in (("verify", _slim_verify),
+                        ("evidence_reorder", _slim_reorder)):
+        if payload.get(_key) is not None:
+            _value = _slim(payload[_key])
+            if _value is not None:
+                out[_key] = _value
+            else:
+                out.pop(_key, None)
     slim_results = []
     for r in payload.get("results") or []:
         if not isinstance(r, dict):

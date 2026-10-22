@@ -95,25 +95,23 @@ def test_serp_guard_only_guards_own_engines(_clean_kills, monkeypatch):
 
 def test_recovery_limitation_distinguishes_outcomes():
     """「触发但无策略可用」与「恢复成功」在局限声明里必须可区分。"""
-    import search as search_mod
+    from search_attribution import zero_result_recovery_note
 
-    def _lim(recovery):
-        # super_search 里 extra_lim 的构建逻辑不在独立函数里；这里按同判据
-        # 断言文案分级的存在性（判据改动时本测试同步改）。
-        rec = recovery or {}
-        if isinstance(rec, dict) and rec.get("triggered") \
-                and not rec.get("recovered"):
-            return "recovery triggered but no usable strategy"
-        if recovery:
-            return "recovery used; engine fallback may differ"
-        return ""
+    def _lim(recovery, outcomes=None):
+        return zero_result_recovery_note(recovery, outcomes) or ""
 
     assert "no usable strategy" in _lim(
         {"triggered": True, "recovered": False, "note": "无可用恢复策略"})
-    assert "fallback may differ" in _lim(
-        {"triggered": True, "recovered": True})
+    # 恢复成功的那半句由 search.py 的 elif 分支产出，helper 只负责失败分支
+    assert _lim({"triggered": True, "recovered": True}) == ""
     assert _lim(None) == ""
-    # 源码里两个分支都要在（防止只改一半）
-    src = (REPO / "scripts" / "search.py").read_text(encoding="utf-8")
+    # 2026-10-22：空结果来自「跳过/鉴权失败」时，必须点名源，而不是说 no recall
+    skipped = _lim(
+        {"triggered": True, "recovered": False, "note": "无可用恢复策略"},
+        [{"engine": "bocha", "status": "skipped-quota-exhausted"}])
+    assert "bocha" in skipped and "no-recall" in skipped
+    # 源码里两个分支都要在（判据在 search_attribution，措辞在 search.py）
+    src = (REPO / "scripts" / "search_attribution.py").read_text(encoding="utf-8")
     assert "recovery triggered but no usable strategy" in src
-    assert "recovery used; engine fallback may differ" in src
+    src_search = (REPO / "scripts" / "search.py").read_text(encoding="utf-8")
+    assert "recovery used; engine fallback may differ" in src_search

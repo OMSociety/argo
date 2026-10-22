@@ -44,15 +44,112 @@ def top_engine_latency(engine_latency: dict[str, Any] | None,
 
 
 def usage_log_attribution(engine_latency: dict[str, Any] | None,
-                          top_n: int = DEFAULT_TOP_N) -> dict[str, Any]:
-    """usage_log query 流的归因字段（当前只有引擎耗时 Top-N）。
+                          top_n: int = DEFAULT_TOP_N,
+                          engine_outcomes: Iterable[dict[str, Any]] | None = None
+                          ) -> dict[str, Any]:
+    """usage_log query 流的归因字段（慢源 Top-N + 失败类别）。
 
     返回 dict 以便调用方 **展开进日志记录**，未来新增归因维度（如
     「等待预算被谁耗掉」「缓存未命中的原因分布」）时只扩这里，
     主管线那一行 `**usage_log_attribution(...)` 不动——归因是会长大的，
     写入点不该跟着长（主管线有模块大小门禁，见模块 docstring）。
+
+    失败类别只记「哪类」不记条数：errors 已经记了条数，两者互补。
     """
-    return {"engine_latency_top": top_engine_latency(engine_latency, top_n)}
+    out: dict[str, Any] = {
+        "engine_latency_top": top_engine_latency(engine_latency, top_n),
+    }
+    kinds = failure_kinds(engine_outcomes)
+    if kinds:
+        out["failure_kinds"] = kinds
+    return out
+
+
+# 合成引擎名（只存在于基准/混沌测试的 fake combo）。它们出现在 engines_used
+# 里就说明这一跑不是真实检索；写进生产 usage_log 会污染慢源排行与总量统计
+# （2026-10-21 实测 "hedge bench" 32 条，dead_primary/fast_backup 进了慢源榜）。
+_SYNTHETIC_ENGINES: frozenset[str] = frozenset({
+    "dead_primary", "dead_backup", "fast_backup", "slow_backup",
+    "slow_primary", "quick_primary", "fast_primary",
+})
+
+
+def is_synthetic_run(engines: Iterable[str] | None) -> bool:
+    """这组引擎是否来自基准/测试的合成组合（有一个即判合成）。"""
+    return any(str(e) in _SYNTHETIC_ENGINES for e in (engines or []))
+
+
+# 「源被跳过/没资格调用」的状态：空结果时要把它们与「查询没有召回」分开。
+# 只收持续性状态（配额/缺 env/鉴权），不含 timeout/error——后者是本次
+# 真的失败了，原表述已够用。
+SKIPPED_SOURCE_STATUSES: frozenset[str] = frozenset({
+    "skipped-quota-exhausted", "skipped-missing-env",
+    "quota-exhausted", "auth-failed",
+})
+
+
+def skipped_sources(engine_outcomes: Iterable[dict[str, Any]] | None,
+                    limit: int = 4) -> list[str]:
+    """空结果时被跳过/鉴权失败的引擎名（去重、保序、限量）。"""
+    out: list[str] = []
+    seen: set[str] = set()
+    for o in (engine_outcomes or []):
+        if not isinstance(o, dict):
+            continue
+        if str(o.get("status") or "") not in SKIPPED_SOURCE_STATUSES:
+            continue
+        name = str(o.get("engine") or "?")
+        if name not in seen:
+            seen.add(name)
+            out.append(name)
+        if len(out) >= max(0, int(limit)):
+            break
+    return out
+
+
+def zero_result_recovery_note(recovery: Any,
+                              engine_outcomes: Iterable[dict[str, Any]] | None
+                              ) -> str | None:
+    """恢复链触发但没救回来时的局限声明；不需要声明时返回 None。
+
+    「没有召回」与「源被跳过/鉴权失败」处置完全不同：前者改写查询，
+    后者看 failures 或补凭证。此前一律写成 no recall，实测 bocha 配额
+    耗尽（403 not enough money）被报成「查询无召回」，调用方白跑一轮。
+    """
+    if not isinstance(recovery, dict) or not recovery.get("triggered") \
+            or recovery.get("recovered"):
+        return None
+    note = recovery.get("note") or "no note"
+    skipped = skipped_sources(engine_outcomes)
+    if skipped:
+        return (
+            "recovery triggered but no usable strategy ("
+            f"{note}); empty results came from skipped/failed sources "
+            f"({', '.join(skipped)}) — see failures; this is not necessarily "
+            "a no-recall query"
+        )
+    return (
+        "recovery triggered but no usable strategy ("
+        f"{note}); empty results likely mean the query had no recall — "
+        "try rephrasing"
+    )
+
+
+def failure_kinds(engine_outcomes: Iterable[dict[str, Any]] | None,
+                  limit: int = 6) -> list[str]:
+    """本次调用的失败类别（去重、稳定排序），写进 usage_log 供长期归因。
+
+    errors 只记「几条」，回答不了「哪类失败在反复出现」；类别来自
+    output_transparency.build_failures（与 agent 档 failures 同一口径），
+    不在日志侧另写一份分类。
+    """
+    try:
+        from output_transparency import build_failures
+    except ImportError:  # pragma: no cover - 单文件分发时的降级
+        return []
+    rows = build_failures({"engine_outcomes": list(engine_outcomes or [])},
+                          limit=limit)
+    return sorted({str(r.get("category") or "unknown") for r in rows})
 
 
 def aggregate_slow_engines(rows: Iterable[dict[str, Any]],

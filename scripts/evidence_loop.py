@@ -19,6 +19,8 @@ MECE 分工（互不重叠）：
 
 from __future__ import annotations
 
+import os
+import time
 from typing import Any, Callable, Optional
 
 
@@ -33,6 +35,23 @@ def _log(message: str) -> None:
     """
     import logging
     logging.getLogger("unified_search.evidence_loop").debug(message)
+
+
+# verify 的全局墙钟预算（秒）。0 = 关闭，逐 URL 的 8s 降级链照旧。
+#
+# why（2026-10-22 实测）：--verify 3 的最坏一次 9.7s，而单 URL 的 fetch 链
+# deadline 是 8s（见 fetch_v3 的「deadline + 5s 上界」），3 个 URL 并行时
+# 墙钟由最慢那个定义。结果是：主搜索 1.2s，核验尾巴 9.7s，而调用方在
+# timing.elapsed_ms 里只看到 1.2s。核验是「加分项」不是「必须项」：到点
+# 未回来的 URL 进 pending（语义与 fetch 失败完全一致），已回来的照常回填。
+# 默认 5s 高于典型核验 2.9s，只砍尾部；需要完整降级链时设 0。
+def _verify_budget_s() -> float:
+    try:
+        raw = os.environ.get("ARGO_VERIFY_BUDGET_S", "5") or "5"
+        value = float(raw)
+    except ValueError:
+        return 5.0
+    return value if value > 0 else 0.0
 
 # ── 高后果域（finance / health / legal / 事实与安全）──────────────────────────
 # 命中这些域时，Agent 在把搜索结果当答案前必须先核验正文。
@@ -516,33 +535,46 @@ def verify_results(results: list[dict[str, Any]],
     # 语义层（默认关）的输入：正文已在内存，批量一次调用；关闭时不产生任何行为
     scored_inputs: list[dict[str, Any]] = []
 
-    if len(targets) > 1:
+    def _consume(r: dict, ev: dict | None, text: str) -> None:
+        """把一条 fetch 结果记进 verified/pending；成功才产生语义输入。"""
+        if ev is None:
+            pending.append(r.get("url") or "")
+            return
+        # 不再在这里重复写证据：fetch_fn（fetch_v3）成功时已把证据分
+        # 并入该 URL 的正文条目。此处再写一遍是同源同刻的双写，
+        # 合并存储后还会因为「没有正文条目」而变成静默空操作。
+        _record_verify(r, ev, verified, revisions)
+        if text.strip():
+            scored_inputs.append({"url": r.get("url") or "",
+                                  "title": r.get("title") or "",
+                                  "text": text})
+
+    budget_s = _verify_budget_s()
+    if targets and budget_s > 0:
+        # 硬墙钟：到点就返回，未完成的 URL 进 pending，不 join 卡住的线程。
+        # 预算只约束「这次核验等多久」，不改单 URL 的降级链语义。
+        from bounded_run import TaskError, run_bounded
+        finished, unfinished = run_bounded(
+            targets, _fetch_one, budget_s,
+            max_workers=min(len(targets), 3))
+        for item, value in finished:
+            if isinstance(value, TaskError):
+                _log(f"verify fetch 任务异常 {item.get('url') or ''}: "
+                     f"{type(value.exc).__name__}")
+                pending.append(item.get("url") or "")
+                continue
+            _consume(*value)
+        for item in unfinished:
+            # 与 fetch 失败同语义：拿不到正文就标 pending，不伪造已核验
+            pending.append(item.get("url") or "")
+    elif len(targets) > 1:
         with ThreadPoolExecutor(max_workers=min(len(targets), 3)) as ex:
             futures = [ex.submit(_fetch_one, r) for r in targets]
             for fut in as_completed(futures):
-                r, ev, text = fut.result()
-                if ev is None:
-                    pending.append(r.get("url") or "")
-                    continue
-                # 不再在这里重复写证据：fetch_fn（fetch_v3）成功时已把证据分
-                # 并入该 URL 的正文条目。此处再写一遍是同源同刻的双写，
-                # 合并存储后还会因为「没有正文条目」而变成静默空操作。
-                _record_verify(r, ev, verified, revisions)
-                if text.strip():
-                    scored_inputs.append({"url": r.get("url") or "",
-                                          "title": r.get("title") or "",
-                                          "text": text})
+                _consume(*fut.result())
     else:
         for r in targets:
-            r2, ev, text = _fetch_one(r)
-            if ev is None:
-                pending.append(r2.get("url") or "")
-                continue
-            _record_verify(r2, ev, verified, revisions)
-            if text.strip():
-                scored_inputs.append({"url": r2.get("url") or "",
-                                      "title": r2.get("title") or "",
-                                      "text": text})
+            _consume(*_fetch_one(r))
 
     semantic_meta: dict[str, Any] | None = None
     if scored_inputs:

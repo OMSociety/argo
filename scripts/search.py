@@ -862,15 +862,15 @@ def super_search(query: str, engine: str = "auto", n: int = 5, explain: bool = F
             "url-seed: seed URL was not fetched; results are related discovery only"
         )
     # 恢复链两种结局分开说（2026-10-10 方案甲）：「恢复成功换了引擎」与
-    # 「触发了但无可用策略」对消费者的含义完全不同——后者意味着空结果是
-    # 查询本身无召回（该改写查询），不是引擎故障（该重试）。
+    # 「触发了但无可用策略」对消费者的含义完全不同。失败那一半再细分：
+    # 源被跳过/鉴权失败时不要写成「查询没有召回」（2026-10-22 修正），
+    # 具体判据与措辞在 search_attribution.zero_result_recovery_note。
     _rec_info = result.get("recovery") or {}
-    if isinstance(_rec_info, dict) and _rec_info.get("triggered") \
-            and not _rec_info.get("recovered"):
-        extra_lim.append(
-            "recovery triggered but no usable strategy ("
-            f"{_rec_info.get('note') or 'no note'}); empty results likely mean "
-            "the query had no recall — try rephrasing")
+    from search_attribution import zero_result_recovery_note
+    _rec_note = zero_result_recovery_note(
+        _rec_info, result.get("engine_outcomes"))
+    if _rec_note is not None:
+        extra_lim.append(_rec_note)
     elif result.get("recovery"):
         extra_lim.append("recovery used; engine fallback may differ from primary route")
     # 执行归因：把「为什么只有这么几条 / 为什么只跑了一个源」写进随答案一起

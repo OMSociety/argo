@@ -56,7 +56,7 @@ from variant_recall import augment_with_variants
 from phrase_filter import apply_phrase_filter, extract_phrases
 from except_sets import OPT_IMPORT, SHAPE_BENIGN
 from postprocess_signals import apply_tfidf_polish, detect_number_conflict
-from search_attribution import usage_log_attribution
+from search_attribution import usage_log_attribution, is_synthetic_run
 from search_output import _collect_errors, _slow_query_ttl, build_funnel
 from search_rank import (
     _LANG_SCRIPT,
@@ -981,15 +981,15 @@ def finalize(req: _SearchRequest, run: _SearchRun, hooks: Any) -> dict[str, Any]
     # 字符（与 recovery 流同一脱敏纪律）；记录失败静默，绝不拖累主路径。
     # 取自 req 而非局部别名：_emit_usage 是 postprocess 的局部变量，
     # 本函数（finalize）不在其作用域内，直接引用会 NameError。
-    if req.emit_usage_log is not None:
+    if req.emit_usage_log is not None and not is_synthetic_run(raw_results):
         try:
-            # 引擎级耗时归因（2026-10-15 起）：写在 search_attribution，本处只接线。
+            # 归因走 search_attribution；合成引擎（基准/混沌）整条不入日志。
             req.emit_usage_log("query", {
                 "query": (query[:60] if query else query),
                 "count": len(merged),
                 "elapsed_ms": round(elapsed),
                 "engines_used": list(raw_results.keys())[:8],
-                **usage_log_attribution(engine_latency),
+                **usage_log_attribution(engine_latency, engine_outcomes=engine_outcomes),
                 "errors": len(_collect_errors(raw_results, engine_outcomes)),
                 "recovered": bool(recovery_info.get("recovered")) if recovery_info else False,
                 "early_stopped": bool(early_stopped),
