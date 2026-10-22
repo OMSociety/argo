@@ -206,12 +206,15 @@ const DEFAULTS = Object.freeze({
  * 解析前提。每个名字都在 argo 仓 scripts/ 有读取点，由
  * tests/test_dsh_plugin_env_gate.py 对拍，防白名单漂移成 Fiction。
  *
- * kind：bool=开关（值 0/1，invert=true 时语义反转，如 NO_CACHE 的「关缓存」），
- * num=数字，str=字符串，list=名单（逗号或路径分隔符分隔，照 argo 原语义）。
+ * kind：bool=开关（值 0/1）、num=数字，str=字符串，list=名单（逗号或路径分隔符分隔，照 argo 原语义）。
  * def=argo 侧默认值（仅面板展示用，缺省即不写该行、由 argo 自己决定）。
+ *
+ * 开关文案一律写「正向行为」或「明确的关闭动作」，**不要再用 invert 反转**：
+ * 历史 bug（2026-10-22）——`关闭搜索结果缓存` 配 invert 后，未配置时面板显示
+ * 为「开」，点一下反而把 ARGO_NO_CACHE 写成 0，缓存始终没关掉。
  */
 export const ARGO_ENV_SPECS = Object.freeze([
-  { name: 'ARGO_NO_CACHE', kind: 'bool', invert: true, group: 'cache', def: false, zh: '关闭搜索结果缓存', en: 'Disable result cache', hintZh: 'argo 默认缓存 1 小时；调试期关掉缓存看实时结果', hintEn: 'argo caches results for 1h by default; turn off to see live results' },
+  { name: 'ARGO_NO_CACHE', kind: 'bool', group: 'cache', def: false, zh: '测试模式（关闭结果缓存）', en: 'Test mode (disable result cache)', hintZh: '日常保持关闭：结果缓存 1 小时。改进 Skill/插件、需要看实时结果时再打开', hintEn: 'Off by default: results are cached for 1h. Enable only when developing the skill/plugin' },
   { name: 'ARGO_TFIDF_RERANK', kind: 'bool', group: 'cache', def: true, zh: 'TF-IDF 重排', en: 'TF-IDF rerank', hintZh: '多引擎结果融合前的相关性重排，默认开', hintEn: 'Relevance rerank before fusion, on by default' },
   { name: 'ARGO_NUMBER_CROSSCHECK', kind: 'bool', group: 'cache', def: true, zh: '数值交叉校验', en: 'Number cross-check', hintZh: '对查询里的数值主张做跨源核对，默认开', hintEn: 'Cross-check numeric claims across sources, on by default' },
   { name: 'ARGO_MINHASH_DEDUPE', kind: 'bool', group: 'cache', def: true, zh: 'MinHash 去重', en: 'MinHash dedupe', hintZh: '近重复结果合并，默认开', hintEn: 'Merge near-duplicate results, on by default' },
@@ -236,7 +239,13 @@ export const ARGO_ENV_SPECS = Object.freeze([
   { name: 'ARGO_TEXT_LEXICON', kind: 'str', group: 'local', zh: '词表 JSON 路径', en: 'Lexicon JSON path', hintZh: '文本处理词表覆盖，默认用打包词表', hintEn: 'Text lexicon override; default uses the bundled one' },
   { name: 'ARGO_PAID_SEARCH', kind: 'str', group: 'paid', def: 'auto', zh: '付费搜索对冲', en: 'Paid search hedge', hintZh: 'auto=优势域自动用 DeepSeek；off=关闭；预算见下一项', hintEn: 'auto = use DeepSeek in proven domains; off = disable' },
   { name: 'ARGO_BUDGET_DEEPSEEK_SEARCH', kind: 'num', group: 'paid', def: 5, min: 0, max: 1000, step: 1, zh: 'DeepSeek 月度预算（元）', en: 'DeepSeek monthly budget (CNY)', hintZh: '0=关闭；¥5≈1000次成功调用（¥0.005/次）', hintEn: '0 = off; CNY 5 ≈ 1000 successful calls (CNY 0.005 each)' },
-  { name: 'ARGO_NO_PREWARM', kind: 'bool', invert: true, group: 'misc', def: false, zh: '关闭连接预热', en: 'Disable prewarm', hintZh: 'MCP 握手后预热引擎注册表，默认开', hintEn: 'Prewarm the engine registry after handshake, on by default' },
+  { name: 'ARGO_QUOTA_ANYSEARCH_LIMIT', kind: 'num', group: 'paid', def: 1000, min: 0, max: 1000000, step: 1, zh: 'AnySearch 每日次数', en: 'AnySearch daily calls', hintZh: '默认 1000/日；0=不限制。改动对下一次新建连接生效', hintEn: 'Default 1000/day; 0 = unlimited. Applies to new connections' },
+  { name: 'ARGO_QUOTA_ZHIHU_LIMIT', kind: 'num', group: 'paid', def: 5000, min: 0, max: 1000000, step: 1, zh: '知乎 每日次数', en: 'Zhihu daily calls', hintZh: '默认 5000/日；0=不限制。改动对下一次新建连接生效', hintEn: 'Default 5000/day; 0 = unlimited. Applies to new connections' },
+  { name: 'ARGO_QUOTA_YUANBAO_LIMIT', kind: 'num', group: 'paid', def: 6000, min: 0, max: 1000000, step: 1, zh: '元宝 每月次数', en: 'Yuanbao monthly calls', hintZh: '默认 6000/月；0=不限制。改动对下一次新建连接生效', hintEn: 'Default 6000/month; 0 = unlimited. Applies to new connections' },
+  { name: 'ARGO_QUOTA_BOCHA_LIMIT', kind: 'num', group: 'paid', def: 10000, min: 0, max: 1000000, step: 1, zh: '博查 每月次数', en: 'Bocha monthly calls', hintZh: '默认 10000/月；0=不限制。改动对下一次新建连接生效', hintEn: 'Default 10000/month; 0 = unlimited. Applies to new connections' },
+  { name: 'ARGO_QUOTA_EXA_LIMIT', kind: 'num', group: 'paid', def: 1000, min: 0, max: 1000000, step: 1, zh: 'Exa 每月次数', en: 'Exa monthly calls', hintZh: '默认 1000/月；0=不限制。改动对下一次新建连接生效', hintEn: 'Default 1000/month; 0 = unlimited. Applies to new connections' },
+  { name: 'ARGO_QUOTA_TAVILY_LIMIT', kind: 'num', group: 'paid', def: 1000, min: 0, max: 1000000, step: 1, zh: 'Tavily 每月次数', en: 'Tavily monthly calls', hintZh: '默认 1000/月；0=不限制。改动对下一次新建连接生效', hintEn: 'Default 1000/month; 0 = unlimited. Applies to new connections' },
+  { name: 'ARGO_NO_PREWARM', kind: 'bool', group: 'misc', def: false, zh: '关闭连接预热', en: 'Disable prewarm', hintZh: 'MCP 握手后预热引擎注册表，默认开；开启本项即关闭预热', hintEn: 'Prewarm the engine registry after handshake, on by default; enable this to turn it off' },
   { name: 'ARGO_USAGE_LOG', kind: 'bool', group: 'misc', def: true, zh: '使用日志', en: 'Usage log', hintZh: 'argo 侧 JSONL 使用账本，默认开', hintEn: 'argo JSONL usage ledger, on by default' },
   { name: 'ARGO_ENGINE_HTTP_CLIENT', kind: 'bool', group: 'misc', def: true, zh: 'HttpClient 连接池', en: 'HttpClient pool', hintZh: '引擎 HTTP 走连接池，默认开；=0 回退 urllib（诊断用）', hintEn: 'Pooled engine HTTP, on by default; =0 falls back to urllib' },
   { name: 'ARGO_ADMISSION_TTL_S', kind: 'num', group: 'misc', def: 1, min: 0, max: 60, step: 0.5, zh: '准入记忆 TTL（秒）', en: 'Admission memo TTL (s)', hintZh: '引擎准入状态记忆时长，默认 1；0 每次现查', hintEn: 'Admission memo window, default 1; 0 = always fresh' },

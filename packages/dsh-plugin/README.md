@@ -29,7 +29,7 @@ dsh plugin --profile web add "github:taxueseek/argo#main&path:packages/dsh-plugi
 
 - **接入**：`web_search` / `web_fetch` seam 开关；引擎入口命令与参数（npx 或本机 `mcp_server.py`）；搜索/抓取超时、正文上限、连接空闲回收、并发连接数
 - **工具**：18 个原生一等工具的勾选（默认只开 `argo_search` / `argo_fetch`）；单次调用超时与返回文本上限
-- **引擎**：argo 本体的行为开关（原环境变量，curated 白名单 30 个，分八组：缓存与排序 / 抓取层 / 语义与自适应 / 引擎启停 / 网络出口 / 本机检索 / **付费搜索** / 其他）。其中「付费搜索」组含付费对冲开关 `ARGO_PAID_SEARCH`（auto/off）与 DeepSeek 月度预算（元，0=关闭）；预算按成功调用计费，用尽后 `deepseek_search` 自动跳过并回落免费源。开关类即时生效，数字 / 文本 / 名单类分组保存；未配置行显示 argo 默认态并标注「默认」。授权类开关（可复算执行、内网 URL）刻意不进面板
+- **引擎**：argo 本体的行为开关（原环境变量，curated 白名单 36 个，分八组：缓存与排序 / 抓取层 / 语义与自适应 / 引擎启停 / 网络出口 / 本机检索 / **付费搜索** / 其他）。「缓存与排序」组第一项是**测试模式（关闭结果缓存）**，默认关、日常结果缓存 1 小时；只有改进 Skill/插件、需要实时结果时才打开。「付费搜索」组含付费对冲开关 `ARGO_PAID_SEARCH`（auto/off）、DeepSeek 月度预算（元，0=关闭），以及按额度形态区分的次数上限：AnySearch / 知乎为每日次数，元宝 / 博查 / Exa / Tavily 为每月次数（0=不限制）。预算按成功调用计费，用尽后 `deepseek_search` 自动跳过并回落免费源。开关类即时生效，数字 / 文本 / 名单类分组保存；未配置行显示 argo 默认态并标注「默认」。授权类开关（可复算执行、内网 URL）刻意不进面板
 - **密钥**：常用引擎 key 的填写、更新、清除；显示「已配置 / 未配置 + 来源层（凭证库 / 启动环境 / .env）+ 只读态」，明文不回显；每行可勾选「转发」，等价于把引用名加进 `keyRefs`
 - **研究**：worker / 轨道 / 每轨信源 / token 上限与报告落盘目录
 - **高级**：worker 工具 allow / deny 名单、凭证转发名单
@@ -70,7 +70,7 @@ argo 的 `deepseek_search` 引擎（官方 `api.deepseek.com/v1/tools/search`，
 - 安全：插件不读 key 文件、不落盘、不打日志；key 值只经内存进入 argo 子进程 env，任何输出与错误信息都不含它
 - 旧宿主无 credentials 服务时静默跳过：argo 侧该引擎按缺 key 停用，其余 265 个源不受影响
 - `keyRefs: []` 可整体关闭转发；后续要转发别的宿主凭证（如 `ARGO_EXA_API_KEY`），把引用名加进数组即可，entry 必须是 POSIX 标识符（apply 期 loud fail）
-- `argoEnv`（设置页「引擎」分区写入）：argo 行为开关，一行一个 `KEY=VALUE`，名字限 curated 白名单（index.js 的 `ARGO_ENV_SPECS`，30 个；白名单外 apply 期 loud fail，防拼错静默失效）；授权位与路径 / 状态类变量刻意不收。与 `keyRefs` 的分工：`keyRefs` 管密钥（凭证库），`argoEnv` 管行为开关（插件配置），两者都不落明文
+- `argoEnv`（设置页「引擎」分区写入）：argo 行为开关，一行一个 `KEY=VALUE`，名字限 curated 白名单（index.js 的 `ARGO_ENV_SPECS`，36 个；白名单外 apply 期 loud fail，防拼错静默失效）；授权位与路径 / 状态类变量刻意不收。与 `keyRefs` 的分工：`keyRefs` 管密钥（凭证库），`argoEnv` 管行为开关（插件配置），两者都不落明文
 
 ## 依赖
 

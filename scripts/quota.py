@@ -14,6 +14,7 @@ quota.py — Unified Search v2 配额管理器
 from __future__ import annotations
 
 import json
+import os
 import time
 import threading
 from pathlib import Path
@@ -27,6 +28,24 @@ from cli_io import dumps
 SKILL_DIR = Path(__file__).parent.parent
 BACKENDS_DIR = SKILL_DIR / "backends"
 QUOTA_PROFILES_PATH = BACKENDS_DIR / "quota_profiles.json"
+
+# 次数额度的环境覆盖白名单（DSH 设置页「付费搜索」分组写入）。
+#
+# 为什么按引擎列名而不是一个 JSON：面板是「一行一个 KEY=VALUE」的形态，
+# 每个数字字段要独占一行才能被现有的 envMap/白名单门禁识别；一个 JSON
+# 大字段既无法在面板上分引擎显示，也会让 env gate 失去可判定的锚点。
+#
+# 语义：值 = 该引擎配额周期内的次数上限；0 = 不限制（None）；空/非法 = 保持
+# config.yaml 的声明值。周期（day/month）不在面板改——它决定的是「这条限制
+# 按天还是按月」，与引擎的商业额度形态绑定，换周期需要同时换文案与默认值。
+_QUOTA_LIMIT_ENV: tuple[tuple[str, str], ...] = (
+    ("ARGO_QUOTA_ANYSEARCH_LIMIT", "anysearch"),   # 日
+    ("ARGO_QUOTA_ZHIHU_LIMIT", "zhihu"),           # 日
+    ("ARGO_QUOTA_YUANBAO_LIMIT", "yuanbao"),       # 月
+    ("ARGO_QUOTA_BOCHA_LIMIT", "bocha"),           # 月
+    ("ARGO_QUOTA_EXA_LIMIT", "exa"),               # 月
+    ("ARGO_QUOTA_TAVILY_LIMIT", "tavily"),         # 月
+)
 
 
 _STATE_DIR_CACHE: tuple[str, Path] | None = None
@@ -197,6 +216,29 @@ class QuotaManager:
             self._budget_sig = _budget.budget_signature()
         except Exception:
             self._budget_sig = None
+        self._apply_quota_env_overrides()
+
+    def _apply_quota_env_overrides(self) -> None:
+        """把面板写入的 ARGO_QUOTA_<ENGINE>_LIMIT 叠到次数额度上。
+
+        只改内存里的 profile，不写 quota_profiles.json（派生件随包发版）。
+        非法/空值静默忽略：面板与环境变量都可能被手工编辑，配额读取失败
+        不应让整次路由崩掉。0 = 显式不限制。
+        """
+        for env_name, engine in _QUOTA_LIMIT_ENV:
+            raw = (os.environ.get(env_name) or "").strip()
+            if not raw:
+                continue
+            try:
+                value = int(raw)
+            except ValueError:
+                continue
+            if value < 0:
+                continue
+            profile = self._profiles.get(engine)
+            if not isinstance(profile, dict):
+                continue
+            profile["limit"] = value if value > 0 else None
 
     def _load_state(self) -> None:
         if _state_path().exists():
@@ -624,6 +666,7 @@ class QuotaManager:
                 "total_cost": round(self.get_total_cost(engine), 6),
                 "used": self._state.get(engine, {}).get("used", 0),
                 "limit": profile.get("limit", "∞"),
+                "period": profile.get("period"),
                 # 月度预算（原生币种）：amount=None 表示未设预算、沿用次数额度
                 "budget": profile.get("budget_amount"),
                 "budget_currency": profile.get("budget_currency"),

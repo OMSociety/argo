@@ -149,6 +149,39 @@ test('client ENGINE_TOGGLES mirror ARGO_ENV_SPECS (drift gate)', () => {
   }
 })
 
+test('cache switch defaults to cache enabled and never inverts', () => {
+  const spec = ARGO_ENV_SPECS.find((s) => s.name === 'ARGO_NO_CACHE')
+  assert.ok(spec, 'ARGO_NO_CACHE 不在白名单')
+  assert.equal(spec.def, false, '缓存默认必须是开（NO_CACHE 默认 0）')
+  assert.match(spec.zh, /测试模式/, '缓存开关文案应说明这是测试模式')
+  assert.equal(spec.invert, undefined, '负向开关不再用 invert 反转')
+  assert.deepEqual(ARGO_ENV_SPECS.filter((s) => s.invert).map((s) => s.name), [],
+    '任何开关都不应再依赖 invert：文案与 env 必须同向')
+})
+
+test('paid quota switches distinguish daily and monthly limits', () => {
+  const byName = new Map(ARGO_ENV_SPECS.map((s) => [s.name, s]))
+  const daily = ['ARGO_QUOTA_ANYSEARCH_LIMIT', 'ARGO_QUOTA_ZHIHU_LIMIT']
+  const monthly = ['ARGO_QUOTA_YUANBAO_LIMIT', 'ARGO_QUOTA_BOCHA_LIMIT',
+    'ARGO_QUOTA_EXA_LIMIT', 'ARGO_QUOTA_TAVILY_LIMIT']
+  for (const name of daily) {
+    const spec = byName.get(name)
+    assert.ok(spec, `${name} 不在白名单`)
+    assert.match(spec.zh, /每日/, `${name} 的文案必须写明按日`)
+  }
+  for (const name of monthly) {
+    const spec = byName.get(name)
+    assert.ok(spec, `${name} 不在白名单`)
+    assert.match(spec.zh, /每月/, `${name} 的文案必须写明按月`)
+  }
+  for (const name of [...daily, ...monthly]) {
+    const spec = byName.get(name)
+    assert.equal(spec.kind, 'num', `${name} 必须是数字`)
+    assert.equal(spec.group, 'paid', `${name} 应归入付费搜索组`)
+    assert.equal(spec.min, 0, `${name} 允许 0=不限制`)
+  }
+})
+
 test('ArgoPanel renders every tab without undefined references', () => {
   // node --check 只查语法，查不出渲染路径里的未定义引用；注册测试又不跑组件。
   // 这里用带状态的 React 替身把六个 tab 各完整渲染一遍：任何 tab 的渲染函数

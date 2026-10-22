@@ -520,7 +520,7 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 
 ## 功能开关总表（`ARGO_*`，唯一事实=源码扫描）
 
-> 113 个开关按六类 MECE。原则：调试/运行配置不进模型上下文（MCP schema 不暴露）；
+> 119 个开关按六类 MECE。原则：调试/运行配置不进模型上下文（MCP schema 不暴露）；
 > 本表由门禁与源码双向锁定——文档里的开关必须代码实存，代码新增开关必须入表。
 
 ### 能力开关（37）
@@ -550,7 +550,7 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 | `ARGO_MOBILE_FIRST_HOSTS` | mobile first hosts | 见 references/operations.md 与模块 docstring |
 | `ARGO_MULTI_QUERY` | ('multi-query 变体召回（普适性增强）', '默认开；=0 一键回滚/A-B') | 见 variant_recall.py docstring |
 | `ARGO_NO_AUTORELOAD` | no autoreload | 见 references/operations.md 与模块 docstring |
-| `ARGO_NO_CACHE` | ('跳过结果缓存读', '默认关；等价 --no-cache') | 见 references/operations.md 与模块 docstring |
+| `ARGO_NO_CACHE` | ('测试模式：跳过结果缓存读', '默认关；等价 --no-cache。仅改进 Skill/插件需要实时结果时开') | 见 references/operations.md 与模块 docstring |
 | `ARGO_NO_PREWARM` | ('MCP warm 线程里的 anysearch 预连接', '默认开；非空且非 0 时跳过') | 预连接把 TLS 握手藏进 initialize 到首次 tools/call 的空档；对拍/排障时置 1 |
 | `ARGO_PROXY` | proxy | 见 references/operations.md 与模块 docstring |
 | `ARGO_PYTHON` | python | 见 references/operations.md 与模块 docstring |
@@ -591,7 +591,7 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 | `ARGO_YUANBAO_API_KEY` | 对应引擎/服务的凭据（腾讯元宝搜索，官方名 `TENCENTCLOUD_WSA_APIKEY` 同样识别） | 缺密钥=该源跳过或降级 |
 | `ARGO_ZHIHU_ACCESS_SECRET` | 对应引擎/服务的凭据 | 缺密钥=该源跳过或降级 |
 
-### 行为调参（29）
+### 行为调参（35）
 
 | 变量 | 作用 | 默认/备注 |
 |------|------|----------|
@@ -600,6 +600,12 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 | `ARGO_GENERAL_FALLBACK_LEAD` | 通用兜底链领队覆盖（传引擎名，提到首位） | 默认空=按 engine_policy 常量（octen 领队）；=anysearch 复现 2026-10-21 之前的顺位。用于交错 A/B，不改默认值即可对拍 |
 | `ARGO_PAID_SEARCH` | 付费搜索对冲开关 | 默认 `auto`：仅在 english_tech / intl_news_flash 的付费位插入 DeepSeek（预算用完回落 TinyFish）；`off` 关闭。见 `scripts/paid_policy.py` |
 | `ARGO_BUDGET_DEEPSEEK_SEARCH` | DeepSeek 月度预算（元） | 默认 5（≈1000 次成功调用）；0=关闭自动使用。也可用 `argo budget set deepseek_search 5` 写共享文件 |
+| `ARGO_QUOTA_ANYSEARCH_LIMIT` | 行为阈值/预算调参 | AnySearch 每日次数上限（默认 1000）；0=不限制；空=沿用 config.yaml |
+| `ARGO_QUOTA_ZHIHU_LIMIT` | 行为阈值/预算调参 | 知乎每日次数上限（默认 5000）；0=不限制；空=沿用 config.yaml |
+| `ARGO_QUOTA_YUANBAO_LIMIT` | 行为阈值/预算调参 | 元宝每月次数上限（默认 6000）；0=不限制；空=沿用 config.yaml |
+| `ARGO_QUOTA_BOCHA_LIMIT` | 行为阈值/预算调参 | 博查每月次数上限（默认 10000）；0=不限制；空=沿用 config.yaml |
+| `ARGO_QUOTA_EXA_LIMIT` | 行为阈值/预算调参 | Exa 每月次数上限（默认 1000）；0=不限制；空=沿用 config.yaml |
+| `ARGO_QUOTA_TAVILY_LIMIT` | 行为阈值/预算调参 | Tavily 每月次数上限（默认 1000）；0=不限制；空=沿用 config.yaml |
 | `ARGO_BUDGETS_JSON` | 预算整份 JSON 覆盖 | 高级/测试用；优先级高于预算文件，例 `{"deepseek_search":{"amount":5,"currency":"CNY","period":"month"}}` |
 | `ARGO_BUDGET_FILE` | 预算文件路径覆盖 | 默认 `~/.config/argo/budgets.json`；多环境隔离时用 |
 | `ARGO_PAID_BUDGET_BYPASS` | 单次绕过月度预算 | =1 时显式/自动调用都不检查预算；用于临时排障，不改变配置 |
