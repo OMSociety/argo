@@ -53,6 +53,18 @@ def _assess_quality(result: dict) -> dict:
         except Exception:
             security = {}
 
+    # 风险门禁（v2.9.8）：被隔离的内容用清洗后正文替换原始正文，使注入
+    # 污染的正文不进 Agent 上下文、不进证据分。正常内容零改动。
+    quarantined = bool(security.get("quarantined"))
+    if quarantined:
+        cleaned = security.get("cleaned_content")
+        if cleaned is not None:
+            content = cleaned
+            result["content"] = cleaned
+            result["length"] = len(cleaned)
+    # 隔离内容一律判否：来源试图注入，其正文不可信
+    content_ok = content_ok and not quarantined
+
     result.update({
         "quality_breakdown": quality_breakdown(content, html),
         "content_ok": content_ok,
@@ -63,6 +75,7 @@ def _assess_quality(result: dict) -> dict:
         "content_age_days": content_age_days,
         "quality_score": quality_score,
         "content_security": security,
+        "content_quarantined": quarantined,
     })
     return result
 

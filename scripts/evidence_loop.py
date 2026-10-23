@@ -127,6 +127,10 @@ def extract_fetch_evidence(fetch_result: dict[str, Any]) -> Optional[dict[str, A
     content = fetch_result.get("content") or ""
     if not content.strip():
         return None
+    # 风险门禁（v2.9.8）：被隔离的正文不进证据分——来源试图注入，其正文不该
+    # 拿到吸收分去影响排序（正文此时已被清洗，但来源可信度存疑）。
+    if fetch_result.get("content_quarantined"):
+        return None
     title = fetch_result.get("title") or ""
     url = fetch_result.get("url") or ""
     if not url:

@@ -254,7 +254,7 @@ argo fetch "https://example.com/post" --json --include-links    # 附带正文�
   存档只在**确实发生截断**时写入，超上限（单档 8MB / 共 300 份）自动淘汰最旧的；`ARGO_FULLTEXT=0` 关闭
 - **降级触发**：HTTP 失败 / 内容 < 50 字符 / 检测到 CF 挑战 / 检测到 JS shell
 - **Wayback 回退**：失败或空内容自动查最新快照（`fetch_method=wayback` + `snapshot_url`/`snapshot_ts`）
-- **内容安全引擎**：抓取内容先过注入检测再交给 Agent——70+ 中英日韩俄阿希泰模式（指令覆盖/角色操纵/系统提示泄露/越狱/数据外泄/身份冒充/XSS）+ 编码归一化（零宽字符/RTL/Unicode 同形字/base64/URL 编码）+ 语义意图分析 + 风险评分 + 目标脱敏。输出 `content_security.content_clean / risk_score / threat_count / threat_types / redactions / content_lang`
+- **内容安全引擎**：抓取内容先过注入检测再交给 Agent——70+ 中英日韩俄阿希泰模式（指令覆盖/角色操纵/系统提示泄露/越狱/数据外泄/身份冒充/XSS）+ 编码归一化（零宽字符/RTL/Unicode 同形字/base64/URL 编码）+ 语义意图分析 + 风险评分 + 目标脱敏。输出 `content_security.content_clean / risk_score / threat_count / threat_types / redactions / content_lang`。**风险门禁**（v2.9.8，默认开）：`risk_score ≥ ARGO_CONTENT_RISK_THRESHOLD`（默认 0.5）的正文被隔离——用清洗后正文替换原始正文、标 `content_quarantined`、`content_ok=false`，且不进证据分；开关 `ARGO_CONTENT_RISK_GATE=0` 应急放行。
 - 单独调用：`python3 scripts/content_security.py "文本" --json` 或 `--stdin < content.txt`
 
 ### argo_screenshot
@@ -526,7 +526,7 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 > 119 个开关按六类 MECE。原则：调试/运行配置不进模型上下文（MCP schema 不暴露）；
 > 本表由门禁与源码双向锁定——文档里的开关必须代码实存，代码新增开关必须入表。
 
-### 能力开关（37）
+### 能力开关（39）
 
 | 变量 | 作用 | 默认/备注 |
 |------|------|----------|
@@ -535,6 +535,8 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 | `ARGO_ALLOW_RECOMPUTE` | ('research 可复算脚本执行', '默认拒绝，显式授权') | 见 references/operations.md 与模块 docstring |
 | `ARGO_CONFIG_CACHE` | ('配置解析缓存', '默认开') | 见 references/operations.md 与模块 docstring |
 | `ARGO_CONFIG_STAMP_TTL_S` | config stamp ttl s | 见 references/operations.md 与模块 docstring |
+| `ARGO_CONTENT_RISK_GATE` | ('内容风险门禁：高风险正文隔离 + 清洗后替换', '默认开；=0 放行高风险内容') | 见 content_security.py docstring |
+| `ARGO_CONTENT_RISK_THRESHOLD` | ('门禁阈值：risk_score ≥ 此值即隔离', '默认 0.5') | 见 content_security.py docstring |
 | `ARGO_COMPLETENESS_V2` | ('完整性维度 QSDM 信息/噪声比', '默认开；=0 退回长度启发式') | 见 rank_signals.py docstring |
 | `ARGO_CROSS_DOMAIN_HOMOGENEITY` | ('跨域内容同质惩罚（异域发同一篇内容降权，对应 Google scaled content abuse）', '默认开') | 见 rank_signals.py docstring |
 | `ARGO_DOMAIN_CONCENTRATION` | ('域级聚合惩罚（同域占比过半降权）', '默认开') | 见 rank_signals.py docstring |

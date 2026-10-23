@@ -629,10 +629,51 @@ def scrub_content(content: str) -> ScrubResult:
     return get_scrubber().scrub(content)
 
 
+# ── 风险门禁（v2.9.8）──────────────────────────────────────────────────────
+#
+# 此前 scrub_to_dict 只回传元数据（risk_score 等），**清洗后的正文被丢弃**——
+# 安全引擎只「评分」不「门禁」，高风险内容照样进证据流水线与 Agent 上下文。
+# 门禁把「评分」变成「动作」：risk_score ≥ 阈值时，fetch 层用清洗后正文替换
+# 原始正文并标 content_quarantined，使被注入污染的正文不进证据分、不进上下文。
+#
+# 开关与阈值都可配（见 references/usage.md 功能开关总表）：
+#   ARGO_CONTENT_RISK_GATE        默认开；关掉 = 放行高风险内容，仅应急用
+#   ARGO_CONTENT_RISK_THRESHOLD   默认 0.5，与历史 content_clean 阈值一致
+RISK_GATE_THRESHOLD = 0.5
+
+
+def risk_gate_enabled() -> bool:
+    """内容风险门禁总开关（默认开）。"""
+    try:
+        from engine_env import env_flag
+        return env_flag("ARGO_CONTENT_RISK_GATE", default=True)
+    except Exception:
+        return True
+
+
+def risk_gate_threshold() -> float:
+    """门禁阈值：risk_score ≥ 此值即隔离。默认 0.5，越界回落默认。"""
+    try:
+        from engine_env import get_env
+        val = float(str(get_env(["ARGO_CONTENT_RISK_THRESHOLD"])).strip())
+    except (TypeError, ValueError):
+        return RISK_GATE_THRESHOLD
+    if val <= 0.0 or val > 1.0:
+        return RISK_GATE_THRESHOLD
+    return val
+
+
 def scrub_to_dict(content: str) -> dict:
-    """清洗入口（dict 形态，供 fetch 层直接合并）。"""
+    """清洗入口（dict 形态，供 fetch 层直接合并）。
+
+    除历史字段外，回传门禁三件套：gate_applied（门禁是否生效）、
+    quarantined（是否隔离）、cleaned_content（仅隔离时回传，供替换原始正文）。
+    """
     r = scrub_content(content)
-    return {
+    gate_on = risk_gate_enabled()
+    threshold = risk_gate_threshold()
+    quarantined = gate_on and r.risk_score >= threshold
+    out = {
         "content_clean": r.clean,
         "risk_score": r.risk_score,
         "threat_count": len(r.threats),
@@ -640,7 +681,15 @@ def scrub_to_dict(content: str) -> dict:
         "redactions": r.redactions,
         "encoding_layers_stripped": r.encoding_layers_stripped,
         "content_lang": r.content_lang,
+        "gate_applied": gate_on,
+        "gate_threshold": threshold,
+        "quarantined": quarantined,
     }
+    # 只有被隔离时才回传清洗后正文：它替换原始正文，是门禁的「动作」部分；
+    # 未命中时多带一份正文副本只是白占内存。
+    if quarantined:
+        out["cleaned_content"] = r.content
+    return out
 
 
 # ── CLI ────────────────────────────────────────────────────────────────────
