@@ -6,7 +6,7 @@
 
 ## 安装方式
 
-> **唯一真实源是 GitHub。** 请用下面任一方式，勿用 `npm install argo-search`（npm registry 上那份是**非官方陈旧版 v1.0.1**，不随本项目更新）。
+> GitHub 与 npm 两个来源都由本仓库发布。GitHub 跟 main 走，npm 按 tag 发布、版本确定。
 
 ### 方式一：一键脚本（推荐本机长期用）
 
@@ -17,7 +17,8 @@ curl -fsSL https://raw.githubusercontent.com/taxueseek/argo/main/scripts/install
 ### 方式二：npx（不加装，即用即走）
 
 ```bash
-npx -y github:taxueseek/argo
+npx -y argo-search            # npm 发布版，跟着 tag 走
+npx -y github:taxueseek/argo  # GitHub main，跟着最新提交走
 ```
 
 ### 方式三：给 Agent 挂 MCP

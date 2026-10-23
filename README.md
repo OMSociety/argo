@@ -57,7 +57,8 @@ Argo 的能力通过四个子技能（sub-skills）组织，每个子技能是�
 Argo 同时是 DeepSeek Harness 的插件，一行命令装好：
 
 ```bash
-dsh plugin --profile web add "github:taxueseek/argo"
+dsh plugin --profile web add argo-search                  # npm 发布版
+dsh plugin --profile web add "github:taxueseek/argo"      # GitHub main
 ```
 
 装完重启 `dsh web` 即生效。搜索和抓取成为原生一等工具，不依赖 MCP 连接，不占常驻上下文开销。另有 1 个 `wide_research` 并行研究和 19 个 MCP 工具按需开启。完整接入形态见下文。
@@ -145,7 +146,8 @@ dsh plugin --profile web add "github:taxueseek/argo"
 curl -fsSL https://raw.githubusercontent.com/taxueseek/argo/main/scripts/install.sh | bash
 
 # 方式二：npx 即用即走（推荐 Agent 快速挂载）
-npx -y github:taxueseek/argo
+npx -y argo-search              # npm 发布版，跟着 tag 走
+npx -y github:taxueseek/argo    # GitHub main，跟着最新提交走
 
 # 方式三：git clone（开发 / 改源码）
 git clone https://github.com/taxueseek/argo.git
@@ -174,7 +176,7 @@ Argo 支持四种接入方式，按你的场景挑：
 | **MCP Server** | Agent 常驻挂载 | 19 个检索工具随时可用，一条命令注入 Claude Code / Cursor / Windsurf / Codex / OpenCode / Cline，写配置前自动备份 |
 | **DSH 插件** | DeepSeek Harness 用户 | 一行 `dsh plugin add` 装好，搜索和抓取成为原生一等工具，不依赖 MCP 连接，不占常驻上下文开销；自带六分区设置页，改完即生效 |
 | **Skill 文件** | Claude Code / Grok Build / Kimi 等 | 技能包装进 Agent 的技能目录，你说「帮我查一下」「核实一下」，它自己去查 |
-| **npx 即用即走** | 快速试一下 | `npx -y github:taxueseek/argo`，不用装，适合临时把 MCP 挂进任意客户端 |
+| **npx 即用即走** | 快速试一下 | `npx -y argo-search`（npm 发布版）或 `npx -y github:taxueseek/argo`（main），不用装，适合临时把 MCP 挂进任意客户端 |
 
 四种形态底层是同一套 Python 代码，CLI 与 MCP 工具一一对应，装哪种都不缺能力。
 
@@ -279,7 +281,7 @@ freshness  ≈ 发布时间（会忽略「2015 年以来」这类历史对比年
 
 ## 快速开始
 
-任选一种即可。**以 GitHub 为唯一安装来源**（`npx github:taxueseek/argo` 或 `install.sh` / `install.ps1`），当前推荐 **v2.9.8**。**请勿用 `npm install argo-search`**——npm registry 上那份是**非官方陈旧版 v1.0.1**（非本仓库维护，功能残缺、不随本项目更新）。本包 `package.json` 已设 `private: true` 防止误发布到 npm registry。
+任选一种即可。GitHub 与 npm 两个来源都由本仓库发布，当前推荐 **v2.9.8**。GitHub 路线用 `npx github:taxueseek/argo` 或 `install.sh` / `install.ps1`，跟 main 走；npm 路线用 `npx -y argo-search` 或 `npm install -g argo-search`，按 tag 发布，版本确定、下载体积更小。2.9.8 起 npm 由打 tag 触发的 CI 自动发布，与 GitHub Release 同源；registry 上更早的 v1.0.1 是历史版本，不要锁定到它。
 
 **零配置就能跑**：不配 API Key 时走免费引擎 + 本地 `local_*` 引擎；配了 Key 的源质量通常更好，没配则自动跳过。
 
@@ -344,9 +346,11 @@ npx -y github:taxueseek/argo
 
 ```bash
 # 装法 A：19 个 mcp__argo__* 工具（主包自带 bundle，与 MCP 全量相同）
-dsh plugin --profile web add "github:taxueseek/argo"
+dsh plugin --profile web add argo-search                  # npm 发布版
+dsh plugin --profile web add "github:taxueseek/argo"      # GitHub main
 
 # 装法 B：搜索工具 + wide_research 并行研究调度（子包）
+dsh plugin --profile web add @taxueseek/argo-dsh          # npm 发布版
 dsh plugin --profile web add "github:taxueseek/argo#main&path:packages/dsh-plugin"
 ```
 

@@ -57,7 +57,8 @@ Argo의 능력은 네 개의 하위 스킬(sub-skills)로 구성되며, 각 하�
 Argo는 DeepSeek Harness 플러그인이기도 하며, 명령 한 줄로 설치합니다:
 
 ```bash
-dsh plugin --profile web add "github:taxueseek/argo"
+dsh plugin --profile web add argo-search                  # npm 릴리스판
+dsh plugin --profile web add "github:taxueseek/argo"      # GitHub main
 ```
 
 설치 후 `dsh web`을 재시작하면 적용됩니다. 검색과 긁기가 네이티브 1급 도구가 되어 MCP 연결에 의존하지 않고 상주 컨텍스트 비용도 차지하지 않습니다. 그 외 `wide_research` 병렬 리서치 1개와 MCP 도구 19개를 필요할 때 켤 수 있습니다. 전체 연동 형태는 아래에서.
@@ -145,7 +146,8 @@ dsh plugin --profile web add "github:taxueseek/argo"
 curl -fsSL https://raw.githubusercontent.com/taxueseek/argo/main/scripts/install.sh | bash
 
 # 방식 2: npx 즉시 사용(에이전트 빠른 마운트 권장)
-npx -y github:taxueseek/argo
+npx -y argo-search               # npm 릴리스판, tag 기준
+npx -y github:taxueseek/argo     # GitHub main, 최신 커밋 기준
 
 # 방식 3: git clone(개발 / 소스 수정)
 git clone https://github.com/taxueseek/argo.git
@@ -174,7 +176,7 @@ Argo는 네 가지 연동 방식을 지원합니다. 시나리오에 맞게 고�
 | **MCP Server** | 에이전트 상주 마운트 | 19개 검색 도구를 언제든 사용, 명령 한 줄로 Claude Code / Cursor / Windsurf / Codex / OpenCode / Cline에 주입, 설정 작성 전 자동 백업 |
 | **DSH 플러그인** | DeepSeek Harness 사용자 | `dsh plugin add` 한 줄로 설치, 검색과 긁기가 네이티브 1급 도구가 되어 MCP 연결에 의존하지 않고 상주 컨텍스트도 차지하지 않음. 저장 즉시 적용되는 6개 구역 설정 페이지 내장 |
 | **Skill 파일** | Claude Code / Grok Build / Kimi 등 | 스킬 패키지를 에이전트의 스킬 디렉터리에 넣으면 「좀 찾아봐」「확인해봐」에 알아서 검색 |
-| **npx 즉시 사용** | 빠르게 시험 | `npx -y github:taxueseek/argo`, 설치 없이 임시로 아무 클라이언트에 MCP를 붙이기 좋음 |
+| **npx 즉시 사용** | 빠르게 시험 | `npx -y argo-search`(npm 릴리스판) 또는 `npx -y github:taxueseek/argo`(main), 설치 없이 임시로 아무 클라이언트에 MCP를 붙이기 좋음 |
 
 네 가지 형태의 밑바탕은 같은 Python 코드이며, CLI와 MCP 도구는 일대일로 대응하므로 어느 형태로 설치해도 능력이 빠지지 않습니다.
 
@@ -277,7 +279,7 @@ composite  ≈ 0.40·selection + 0.35·absorption + 0.15·freshness + 0.10·engi
 
 ## 빠른 시작
 
-경로를 고르면 됩니다. **설치 진원은 GitHub뿐입니다**(`npx github:taxueseek/argo` 또는 `install.sh`); 현재 권장 **v2.9.8**. **`npm install argo-search`는 쓰지 마세요** — npm 레지스트리 사본은 **비공식 낡은 v1.0.1**(이 저장소가 아님, 기능 부족, 갱신 안 됨). 이 패키지는 `private: true`로 npm 오배포를 막습니다.
+경로를 고르면 됩니다. GitHub과 npm 두 진원 모두 이 저장소에서 배포하며, 현재 권장 **v2.9.8**. GitHub 경로는 `npx github:taxueseek/argo` 또는 `install.sh`로 main을 따르고, npm 경로는 `npx -y argo-search` 또는 `npm install -g argo-search`로 tag마다 배포되어 버전이 확정되고 다운로드도 작습니다. 2.9.8부터 npm 배포는 tag로 촉발된 CI가 자동 실행해 GitHub Release와 같은 소스에서 나옵니다. registry의 낡은 v1.0.1은 역사 버전이니 고정하지 마세요.
 
 **제로 설정으로 동작**: API 키 없이도 무료 엔진 + 로컬 `local_*` 엔진이 돌고, 키 없는 엔진은 스킵됩니다(키가 있으면 보통 더 좋습니다).
 
@@ -347,9 +349,11 @@ DeepSeek Harness에는 두 가지 설치:
 
 ```bash
 # A: mcp__argo__* 도구 19개 (메인 패키지 bundle, MCP 전량과 동일)
-dsh plugin --profile web add "github:taxueseek/argo"
+dsh plugin --profile web add argo-search                  # npm 릴리스판
+dsh plugin --profile web add "github:taxueseek/argo"      # GitHub main
 
 # B: 검색 도구 + wide_research 병렬 연구 오케스트레이션 (서브패키지)
+dsh plugin --profile web add @taxueseek/argo-dsh          # npm 릴리스판
 dsh plugin --profile web add "github:taxueseek/argo#main&path:packages/dsh-plugin"
 ```
 

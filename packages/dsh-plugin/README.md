@@ -5,7 +5,8 @@ DeepSeek Harness 插件：一行同时挂上 [Argo](https://github.com/taxueseek
 ## 安装
 
 ```bash
-dsh plugin --profile web add "github:taxueseek/argo#main&path:packages/dsh-plugin"
+dsh plugin --profile web add @taxueseek/argo-dsh          # npm 发布版，跟着 tag 走
+dsh plugin --profile web add "github:taxueseek/argo#main&path:packages/dsh-plugin"  # GitHub main
 ```
 
 重启 `dsh web` 后生效。

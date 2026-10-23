@@ -71,3 +71,66 @@ jobs:
           files: |
             dist/*
           generate_release_notes: true
+
+  publish-npm:
+    name: Publish npm packages
+    needs: publish-release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: https://registry.npmjs.org
+
+      # 仓库密钥里配好 NPM_TOKEN（npm automation token）后自动发布；
+      # 没配时跳过而不是让 release job 变红，历史 tag 重跑也不至于卡死。
+      - name: Check NPM_TOKEN
+        id: token
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "::warning::NPM_TOKEN 未配置，跳过 npm 发布"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify package versions match tag
+        if: steps.token.outputs.skip != 'true'
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          root=$(node -p "require('./package.json').version")
+          dsh=$(node -p "require('./packages/dsh-plugin/package.json').version")
+          echo "tag=$tag root=$root dsh=$dsh"
+          if [ "$root" != "$tag" ] || [ "$dsh" != "$tag" ]; then
+            echo "::error::版本号与 tag 不一致，先统一版本再打 tag"
+            exit 1
+          fi
+
+      # npm 对已存在的版本会 403，重跑同一 tag 时按「已发布」跳过。
+      - name: Publish argo-search
+        if: steps.token.outputs.skip != 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          v=$(node -p "require('./package.json').version")
+          if npm view "argo-search@$v" version >/dev/null 2>&1; then
+            echo "argo-search@$v 已发布，跳过"
+          else
+            npm publish
+          fi
+
+      - name: Publish @taxueseek/argo-dsh
+        if: steps.token.outputs.skip != 'true'
+        working-directory: packages/dsh-plugin
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          v=$(node -p "require('./package.json').version")
+          if npm view "@taxueseek/argo-dsh@$v" version >/dev/null 2>&1; then
+            echo "@taxueseek/argo-dsh@$v 已发布，跳过"
+          else
+            npm publish
+          fi
+

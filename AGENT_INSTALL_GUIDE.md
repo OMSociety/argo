@@ -18,6 +18,8 @@ powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.c
 
 ### 方式二：uvx / pip 即用即走（免配环境，自动隔离）
 
+> **尚未上线**：PyPI 上还没有 `argo-search`，下面两条命令执行会报找不到包。等包上传后再用，现阶段请走方式一或方式三。
+
 ```bash
 # 启动 MCP 服务
 uvx argo-search argo-mcp
@@ -29,7 +31,8 @@ pip install argo-search
 ### 方式三：npx 即用即走
 
 ```bash
-npx -y github:taxueseek/argo
+npx -y argo-search            # npm 发布版，跟着 tag 走
+npx -y github:taxueseek/argo  # GitHub main，跟着最新提交走
 ```
 
 需要 Node.js 18+ 和 Python 3.9+。
@@ -50,12 +53,13 @@ dsh plugin --profile web add "github:taxueseek/argo"
 {
   "mcpServers": {
     "argo": {
-      "command": "uvx",
-      "args": ["argo-search", "argo-mcp"]
+      "command": "npx",
+      "args": ["-y", "argo-search"]
     }
   }
 }
 ```
+PyPI 上传后也可换成 `"command": "uvx", "args": ["argo-search", "argo-mcp"]`，目前那张包还不存在，先用 npx。
 已支持一键探测与自动配置的客户端：Claude Code、Claude Desktop、Cursor、Windsurf、Codex、Zed、Roo Code、Cline、OpenCode、WorkBuddy。
 本地克隆后也可直接执行：`python3 scripts/mcp_setup.py inject --all`。
 
@@ -156,4 +160,4 @@ python3 ~/.local/share/argo/scripts/health_check.py --all
 2. **搜索结果页 / 跳转链**：不要当正文信源
 3. **社交帖**：当舆情与叙事，不当事实真值
 4. **CLI 退出码恒 0**（含断网）：成败判断走 JSON 的 `status` / `errors` 字段
-5. **npm registry 上的 `argo-search` 是非官方陈旧版**，勿用 `npm install argo-search`
+5. **npm 上的 `argo-search` 由本仓库发布**（2.9.7 起，2.9.8 起随 tag 自动发），可放心 `npm install -g argo-search`；registry 上更早的 v1.0.1 是历史版本，不要锁定到它。PyPI 目前尚未上传，`uvx argo-search` / `pip install argo-search` 暂时不可用

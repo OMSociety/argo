@@ -57,7 +57,8 @@ Together the four cover the full chain from local machine to open web to behind 
 Argo is also a DeepSeek Harness plugin. One line installs it:
 
 ```bash
-dsh plugin --profile web add "github:taxueseek/argo"
+dsh plugin --profile web add argo-search                  # npm release
+dsh plugin --profile web add "github:taxueseek/argo"      # GitHub main
 ```
 
 Restart `dsh web` and it takes effect. Search and fetch become native first-class tools: no MCP connection, no standing context overhead. There is also one `wide_research` parallel researcher and 19 MCP tools you can enable on demand. See integration forms below.
@@ -145,7 +146,8 @@ Zero config works. Three ways to install, pick your habit:
 curl -fsSL https://raw.githubusercontent.com/taxueseek/argo/main/scripts/install.sh | bash
 
 # Option 2: npx on demand (recommended for quick agent attachment)
-npx -y github:taxueseek/argo
+npx -y argo-search               # npm release, pinned to the tag
+npx -y github:taxueseek/argo     # GitHub main, follows the latest commit
 
 # Option 3: git clone (development / editing source)
 git clone https://github.com/taxueseek/argo.git
@@ -174,7 +176,7 @@ Argo supports four integration forms; pick by scenario:
 | **MCP Server** | Always-on agent attachment | 19 retrieval tools ready; one command injects Claude Code / Cursor / Windsurf / Codex / OpenCode / Cline, config backed up first |
 | **DSH plugin** | DeepSeek Harness users | One line `dsh plugin add`; search and fetch become native first-class tools, no MCP connection, no standing context overhead; ships a six-section settings page effective on save |
 | **Skill files** | Claude Code / Grok Build / Kimi, etc. | Drop the skill package into the agent's skills directory; say "look this up" or "verify this" and it searches |
-| **npx on demand** | Quick trial | `npx -y github:taxueseek/argo`, no install, good for temporarily attaching MCP to any client |
+| **npx on demand** | Quick trial | `npx -y argo-search` (npm release) or `npx -y github:taxueseek/argo` (main), no install, good for temporarily attaching MCP to any client |
 
 All four forms run the same Python code underneath; CLI and MCP tools map one to one, so no form lacks capability.
 
@@ -277,7 +279,7 @@ Results include `selection`, `absorption`, `credibility_fast`, `evidence_flags`,
 
 ## Quick start
 
-Pick any path. **GitHub is the only install source of truth** (`npx github:taxueseek/argo` or `install.sh`); current recommendation **v2.9.8**. **Do not `npm install argo-search`** — the npm registry copy is an **unofficial stale v1.0.1** (not this repo, incomplete, not updated). This package sets `private: true` so it is not published to npm by mistake.
+Pick any path. Both GitHub and npm are published from this repo; current recommendation **v2.9.8**. The GitHub route uses `npx github:taxueseek/argo` or `install.sh` and follows main. The npm route uses `npx -y argo-search` or `npm install -g argo-search`, is released per tag, and downloads less. Since 2.9.8 npm publishing runs automatically from the tag-triggered CI, in sync with the GitHub Release; the older v1.0.1 on the registry is a historical version, do not pin to it.
 
 **Zero-config works**: without API keys, free engines + local `local_*` engines run; keyed engines are skipped when missing (and usually better when present).
 
@@ -347,9 +349,11 @@ Two install paths inside DeepSeek Harness:
 
 ```bash
 # A: 19 mcp__argo__* tools (main-package bundle, same as full MCP)
-dsh plugin --profile web add "github:taxueseek/argo"
+dsh plugin --profile web add argo-search                  # npm release
+dsh plugin --profile web add "github:taxueseek/argo"      # GitHub main
 
 # B: search tools + wide_research parallel research orchestration (subpackage)
+dsh plugin --profile web add @taxueseek/argo-dsh          # npm release
 dsh plugin --profile web add "github:taxueseek/argo#main&path:packages/dsh-plugin"
 ```
 
