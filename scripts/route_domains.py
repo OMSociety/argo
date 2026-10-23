@@ -70,10 +70,103 @@ _ZH_LANG_GATED_DOMAINS = frozenset({
 })
 
 
-# ── 域预编译（内容指纹缓存） ──────────────────────────────────────────────────
+# ── 域预编译（内容指纹缓存与锚点快筛） ──────────────────────────────────────────
 
 _compiled_domains: list[dict[str, Any]] | None = None
 _compiled_domains_id: tuple | None = None  # (name, patterns/exclude_if 内容指纹)
+_compiled_domains_ref: int | None = None
+_anchor_matcher: re.Pattern | None = None
+_anchor_to_domains: dict[str, list[int]] = {}
+_unconstrained_domains: set[int] = set()
+
+
+def _extract_anchors(src: Any) -> set[str] | None:
+    """从正则源码中提取一组必须包含其一的字面锚点词集合（全小写）。
+
+    若无法提取安全锚点（如含有纯通配、字符集类 []、通用转义字符类），返回 None。
+    """
+    if not isinstance(src, str) or not src:
+        return None
+    s = re.sub(r"^\(\?[a-zA-Z]+\)", "", src)
+    s = re.sub(r"\\b", "", s)
+    if s.startswith("(") and s.endswith(")"):
+        s = s[1:-1]
+    parts: list[str] = []
+    depth = 0
+    cur: list[str] = []
+    for ch in s:
+        if ch in ("(", "["):
+            depth += 1
+        elif ch in (")", "]"):
+            depth -= 1
+        if ch == "|" and depth == 0:
+            parts.append("".join(cur))
+            cur = []
+        else:
+            cur.append(ch)
+    if cur:
+        parts.append("".join(cur))
+
+    anchors: set[str] = set()
+    for part in parts:
+        # 正则字符类与元字符无法保证字面子串存在
+        if re.search(r"\[.*?\]", part) or re.search(r"\\[wWdDsS]", part):
+            return None
+        runs = re.findall(r"[\u4e00-\u9fff]{1,}|[a-zA-Z0-9_\-\.]{2,}", part)
+        if not runs:
+            return None
+        for r in runs:
+            anchors.add(r.lower())
+    return anchors if anchors else None
+
+
+def _init_anchor_index(compiled: list[dict[str, Any]]) -> None:
+    """初始化全局锚点自动机索引（方案一：Aho-Corasick 前置快速分桶）。"""
+    global _anchor_matcher, _anchor_to_domains, _unconstrained_domains
+    _anchor_to_domains = {}
+    _unconstrained_domains = set()
+    all_anchors: set[str] = set()
+
+    for idx, domain in enumerate(compiled):
+        entries = _pattern_entries(domain)
+        if not entries:
+            _unconstrained_domains.add(idx)
+            continue
+        dom_anchors: set[str] = set()
+        unconstrained = False
+        for p in entries:
+            match_src, _ = _split_pattern_entry(p)
+            anc = _extract_anchors(match_src)
+            if anc is None:
+                unconstrained = True
+                break
+            dom_anchors.update(anc)
+        if unconstrained or not dom_anchors:
+            _unconstrained_domains.add(idx)
+        else:
+            for term in dom_anchors:
+                _anchor_to_domains.setdefault(term, []).append(idx)
+                all_anchors.add(term)
+
+    if all_anchors:
+        sorted_terms = sorted(all_anchors, key=len, reverse=True)
+        escaped = [re.escape(t) for t in sorted_terms]
+        _anchor_matcher = re.compile("|".join(escaped), re.IGNORECASE)
+    else:
+        _anchor_matcher = None
+
+
+def _get_candidate_domain_indices(query: str) -> set[int] | None:
+    """通过锚点词快速扫描返回候选域索引集合；无索引时返回 None。"""
+    if _anchor_matcher is None:
+        return None
+    candidates = set(_unconstrained_domains)
+    for m in _anchor_matcher.finditer(query):
+        term = m.group(0).lower()
+        doms = _anchor_to_domains.get(term)
+        if doms:
+            candidates.update(doms)
+    return candidates
 
 
 def _ensure_domain_compiled(domain: dict[str, Any]) -> list[tuple[re.Pattern, re.Pattern | None]]:
@@ -134,18 +227,30 @@ def _split_pattern_entry(entry: Any) -> tuple[Any, Any]:
     return entry, None
 
 
-def _domain_fires(domain: dict[str, Any], query: str) -> bool:
-    """一个域是否成立：任一触发词命中，且它自己的否决词没命中。"""
+def _domain_fires_with_span(domain: dict[str, Any], query: str) -> tuple[bool, int, int]:
+    """一个域是否成立，并返回命中的 (是否成立, match_span_start, match_span_len)。"""
     for match_re, unless_re in _ensure_domain_compiled(domain):
         if unless_re is not None and unless_re.search(query):
             continue
-        if match_re.search(query):
-            return True
-    return False
+        m = match_re.search(query)
+        if m is not None:
+            start, end = m.span()
+            return True, start, end - start
+    return False, 0, 0
+
+
+def _domain_fires(domain: dict[str, Any], query: str) -> bool:
+    """一个域是否成立：任一触发词命中，且它自己的否决词没命中。"""
+    fires, _, _ = _domain_fires_with_span(domain, query)
+    return fires
 
 
 def _get_compiled_domains(domains: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    global _compiled_domains, _compiled_domains_id
+    global _compiled_domains, _compiled_domains_id, _compiled_domains_ref
+    # 快速指针比对：当传入同一 domains 引用且已编译时 O(1) 返回，免除 97 域的 SHA1 开销
+    dom_ref = id(domains)
+    if _compiled_domains is not None and _compiled_domains_ref == dom_ref:
+        return _compiled_domains
     # 用内容指纹替代 id(domains)，避免 GC 后 id 复用导致缓存失效/错误。
     # 指纹含规则本体（只记长度会漏「改正则不改条数」的编辑），且必须覆盖
     # exclude_if / intent_required——它们和 patterns 一样会改变命中结果。
@@ -169,6 +274,8 @@ def _get_compiled_domains(domains: list[dict[str, Any]]) -> list[dict[str, Any]]
         for idx, domain in enumerate(domains)
     ]
     _compiled_domains_id = dom_fp
+    _compiled_domains_ref = dom_ref
+    _init_anchor_index(_compiled_domains)
     return _compiled_domains
 
 
@@ -311,20 +418,39 @@ def match_domains(query: str, domains: list[dict[str, Any]] | None = None,
         domains = get_domains()
     compiled = _get_compiled_domains(domains)
     hits: list[dict[str, Any]] = []
+    secondary_hits: list[tuple[dict[str, Any], float]] = []
     catch_all: dict[str, Any] | None = None
     non_zh = bool(primary_lang and primary_lang not in ("zh", "mixed", "other"))
-    for domain in compiled:
+    candidates = _get_candidate_domain_indices(query)
+    q_len = max(len(query), 1)
+
+    for idx, domain in enumerate(compiled):
         if not domain.get("patterns", []):
             catch_all = domain
             continue
         if non_zh and domain.get("name") in _ZH_LANG_GATED_DOMAINS:
             continue
-        if _domain_fires(domain, query):
-            hits.append(domain)
-        if len(hits) >= max_n:
-            break
+        if candidates is not None and idx not in candidates:
+            continue
+        fires, span_start, span_len = _domain_fires_with_span(domain, query)
+        if fires:
+            if not hits:
+                hits.append(domain)
+            else:
+                pos_ratio = span_start / q_len
+                # 方案二：跨度高（特异性强）优先提拔；同跨度下严格保持前序特化域顺位稳定
+                score = (span_len * 2.0) - (idx * 0.1) + (pos_ratio * 0.01)
+                secondary_hits.append((domain, score))
+            if len(hits) + len(secondary_hits) >= max_n:
+                break
+
+    if secondary_hits:
+        secondary_hits.sort(key=lambda x: x[1], reverse=True)
+        hits.extend(h[0] for h in secondary_hits)
+
     hits = _social_domain_first(hits)
     hits = _intent_gate(hits, query)
+    hits = hits[:max_n]
     return hits if hits else ([catch_all] if catch_all else [])
 
 
