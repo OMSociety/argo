@@ -145,9 +145,10 @@ Zero config works. Three ways to install, pick your habit:
 # Option 1: install script (recommended for long-term local use)
 curl -fsSL https://raw.githubusercontent.com/taxueseek/argo/main/scripts/install.sh | bash
 
-# Option 2: npx on demand (recommended for quick agent attachment)
-npx -y argo-search               # npm release, pinned to the tag
-npx -y github:taxueseek/argo     # GitHub main, follows the latest commit
+# Option 2: npm / npx (supported, currently 2.9.8; released per tag, version pinned)
+npm install -g argo-search       # install the CLI globally
+npx -y argo-search               # or run it without installing
+npx -y github:taxueseek/argo     # use this to follow the latest commit on main
 
 # Option 3: git clone (development / editing source)
 git clone https://github.com/taxueseek/argo.git
@@ -279,7 +280,7 @@ Results include `selection`, `absorption`, `credibility_fast`, `evidence_flags`,
 
 ## Quick start
 
-Pick any path. Both GitHub and npm are published from this repo; current recommendation **v2.9.8**. The GitHub route uses `npx github:taxueseek/argo` or `install.sh` and follows main. The npm route uses `npx -y argo-search` or `npm install -g argo-search`, is released per tag, and downloads less. Since 2.9.8 npm publishing runs automatically from the tag-triggered CI, in sync with the GitHub Release; the older v1.0.1 on the registry is a historical version, do not pin to it.
+Pick any path. **npm install is supported, current version 2.9.8**, published from this repo like GitHub. The npm route uses `npm install -g argo-search` or `npx -y argo-search`, is released per tag, with a pinned version and a smaller download. The GitHub route uses `install.sh` / `install.ps1` or `npx github:taxueseek/argo` and follows main. From now on every tag push makes CI publish both npm packages together with the GitHub Release; the older v1.0.1 on the registry is a historical version, do not pin to it.
 
 **Zero-config works**: without API keys, free engines + local `local_*` engines run; keyed engines are skipped when missing (and usually better when present).
 

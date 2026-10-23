@@ -6,7 +6,7 @@
 
 ## 安装方式
 
-> GitHub 与 npm 两个来源都由本仓库发布。GitHub 跟 main 走，npm 按 tag 发布、版本确定。
+> npm 安装已支持，当前版本 **2.9.8**。GitHub 与 npm 都由本仓库发布：GitHub 跟 main 走，npm 按 tag 发布、版本固定。
 
 ### 方式一：一键脚本（推荐本机长期用）
 
@@ -14,11 +14,12 @@
 curl -fsSL https://raw.githubusercontent.com/taxueseek/argo/main/scripts/install.sh | bash
 ```
 
-### 方式二：npx（不加装，即用即走）
+### 方式二：npm（已支持，当前 2.9.8）
 
 ```bash
-npx -y argo-search            # npm 发布版，跟着 tag 走
-npx -y github:taxueseek/argo  # GitHub main，跟着最新提交走
+npm install -g argo-search    # 全局安装 CLI
+npx -y argo-search            # 或即用即走，不装
+npx -y github:taxueseek/argo  # 要跟 main 最新提交时用这条
 ```
 
 ### 方式三：给 Agent 挂 MCP

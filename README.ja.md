@@ -145,9 +145,10 @@ dsh plugin --profile web add "github:taxueseek/argo"      # GitHub main
 # 方法 1：ワンコマンドスクリプト（本機で長期利用に推奨）
 curl -fsSL https://raw.githubusercontent.com/taxueseek/argo/main/scripts/install.sh | bash
 
-# 方法 2：npx で即時利用（Agent への素早いマウントに推奨）
-npx -y argo-search               # npm リリース版、tag に追従
-npx -y github:taxueseek/argo     # GitHub main、最新コミットに追従
+# 方法 2：npm / npx（対応済み、現在 2.9.8。tag ごとに公開、バージョン固定）
+npm install -g argo-search       # CLI をグローバルインストール
+npx -y argo-search               # またはインストールせず即時利用
+npx -y github:taxueseek/argo     # main の最新コミットに追従したい場合
 
 # 方法 3：git clone（開発 / ソース変更）
 git clone https://github.com/taxueseek/argo.git
@@ -279,7 +280,7 @@ freshness  ≈ 公開時刻（「2015 年以来」のような歴史比較年は
 
 ## クイックスタート
 
-どれか 1 つで十分です。GitHub と npm のどちらも本リポジトリから公開されており、現在推奨 **v2.9.8**。GitHub 経由は `npx github:taxueseek/argo` または `install.sh`、main に追従。npm 経由は `npx -y argo-search` または `npm install -g argo-search`、tag ごとに公開され、バージョンが確定しダウンロードも小さい。2.9.8 から npm 公開は tag トリガーの CI が自動実行し、GitHub Release と同源。registry 上の古い v1.0.1 は履歴版なので、それに固定しないでください。
+どれか 1 つで十分です。**npm インストールに対応済みで、最新版は 2.9.8**。GitHub と同じく本リポジトリから公開しています。npm 経由は `npm install -g argo-search` または `npx -y argo-search`、tag ごとに公開され、バージョンが固定されダウンロードも小さい。GitHub 経由は `install.sh` / `install.ps1` または `npx github:taxueseek/argo` で main に追従。今後は tag を打つたびに CI が npm の 2 パッケージと GitHub Release をまとめて公開します。registry 上の古い v1.0.1 は履歴版なので、それに固定しないでください。
 
 **ゼロ設定で動く**：API Key なしなら無料エンジン + ローカル `local_*`。Key があるソースは品質が上がりやすく、無いものは自動スキップ。
 

@@ -145,9 +145,10 @@ dsh plugin --profile web add "github:taxueseek/argo"      # GitHub main
 # 方式一：一键脚本（推荐本机长期用）
 curl -fsSL https://raw.githubusercontent.com/taxueseek/argo/main/scripts/install.sh | bash
 
-# 方式二：npx 即用即走（推荐 Agent 快速挂载）
-npx -y argo-search              # npm 发布版，跟着 tag 走
-npx -y github:taxueseek/argo    # GitHub main，跟着最新提交走
+# 方式二：npm / npx（已支持，当前 2.9.8；按 tag 发布，版本固定）
+npm install -g argo-search      # 全局安装 CLI
+npx -y argo-search              # 或即用即走，不装
+npx -y github:taxueseek/argo    # 要跟 main 最新提交时用这条
 
 # 方式三：git clone（开发 / 改源码）
 git clone https://github.com/taxueseek/argo.git
@@ -281,7 +282,7 @@ freshness  ≈ 发布时间（会忽略「2015 年以来」这类历史对比年
 
 ## 快速开始
 
-任选一种即可。GitHub 与 npm 两个来源都由本仓库发布，当前推荐 **v2.9.8**。GitHub 路线用 `npx github:taxueseek/argo` 或 `install.sh` / `install.ps1`，跟 main 走；npm 路线用 `npx -y argo-search` 或 `npm install -g argo-search`，按 tag 发布，版本确定、下载体积更小。2.9.8 起 npm 由打 tag 触发的 CI 自动发布，与 GitHub Release 同源；registry 上更早的 v1.0.1 是历史版本，不要锁定到它。
+任选一种即可。**npm 安装已支持，当前版本 2.9.8**，与 GitHub 同为本仓库发布。npm 路线用 `npm install -g argo-search` 或 `npx -y argo-search`，按 tag 发布、版本固定、下载体积更小；GitHub 路线用 `install.sh` / `install.ps1` 或 `npx github:taxueseek/argo`，跟 main 走。之后每次打 tag，CI 会把两个 npm 包和 GitHub Release 一起发出；registry 上更早的 v1.0.1 是历史版本，不要锁定到它。
 
 **零配置就能跑**：不配 API Key 时走免费引擎 + 本地 `local_*` 引擎；配了 Key 的源质量通常更好，没配则自动跳过。
 

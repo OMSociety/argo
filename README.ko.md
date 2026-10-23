@@ -145,9 +145,10 @@ dsh plugin --profile web add "github:taxueseek/argo"      # GitHub main
 # 방식 1: 원클릭 스크립트(로컬 장기 사용 권장)
 curl -fsSL https://raw.githubusercontent.com/taxueseek/argo/main/scripts/install.sh | bash
 
-# 방식 2: npx 즉시 사용(에이전트 빠른 마운트 권장)
-npx -y argo-search               # npm 릴리스판, tag 기준
-npx -y github:taxueseek/argo     # GitHub main, 최신 커밋 기준
+# 방식 2: npm / npx(지원됨, 현재 2.9.8, tag마다 배포·버전 고정)
+npm install -g argo-search       # CLI 전역 설치
+npx -y argo-search               # 또는 설치 없이 즉시 사용
+npx -y github:taxueseek/argo     # main 최신 커밋을 따라가려면 이 명령
 
 # 방식 3: git clone(개발 / 소스 수정)
 git clone https://github.com/taxueseek/argo.git
@@ -279,7 +280,7 @@ composite  ≈ 0.40·selection + 0.35·absorption + 0.15·freshness + 0.10·engi
 
 ## 빠른 시작
 
-경로를 고르면 됩니다. GitHub과 npm 두 진원 모두 이 저장소에서 배포하며, 현재 권장 **v2.9.8**. GitHub 경로는 `npx github:taxueseek/argo` 또는 `install.sh`로 main을 따르고, npm 경로는 `npx -y argo-search` 또는 `npm install -g argo-search`로 tag마다 배포되어 버전이 확정되고 다운로드도 작습니다. 2.9.8부터 npm 배포는 tag로 촉발된 CI가 자동 실행해 GitHub Release와 같은 소스에서 나옵니다. registry의 낡은 v1.0.1은 역사 버전이니 고정하지 마세요.
+경로를 고르면 됩니다. **npm 설치를 지원하며 최신 버전은 2.9.8**, GitHub와 마찬가지로 이 저장소에서 배포합니다. npm 경로는 `npm install -g argo-search` 또는 `npx -y argo-search`로 tag마다 배포되어 버전이 고정되고 다운로드도 작습니다. GitHub 경로는 `install.sh` / `install.ps1` 또는 `npx github:taxueseek/argo`로 main을 따릅니다. 앞으로는 tag를 만들 때마다 CI가 npm 두 패키지와 GitHub Release를 함께 배포합니다. registry의 낡은 v1.0.1은 역사 버전이니 고정하지 마세요.
 
 **제로 설정으로 동작**: API 키 없이도 무료 엔진 + 로컬 `local_*` 엔진이 돌고, 키 없는 엔진은 스킵됩니다(키가 있으면 보통 더 좋습니다).
 

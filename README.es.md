@@ -145,9 +145,10 @@ Funciona sin configuración. Tres formas de instalarlo, elige la que te acomode:
 # Opción 1: script de instalación (recomendado para uso local a largo plazo)
 curl -fsSL https://raw.githubusercontent.com/taxueseek/argo/main/scripts/install.sh | bash
 
-# Opción 2: npx al paso (recomendado para montar el agente rápido)
-npx -y argo-search               # versión npm, fijada al tag
-npx -y github:taxueseek/argo     # GitHub main, sigue el último commit
+# Opción 2: npm / npx (soportado, versión actual 2.9.8; se publica por tag, versión fija)
+npm install -g argo-search       # instala la CLI globalmente
+npx -y argo-search               # o úsalo sin instalar
+npx -y github:taxueseek/argo     # para seguir el último commit de main
 
 # Opción 3: git clone (desarrollo / modificar el código)
 git clone https://github.com/taxueseek/argo.git
@@ -279,7 +280,7 @@ Los resultados incluyen `selection`, `absorption`, `credibility_fast`, `evidence
 
 ## Inicio rápido
 
-Elige cualquier camino. Tanto GitHub como npm se publican desde este repo; recomendación actual **v2.9.8**. La ruta GitHub usa `npx github:taxueseek/argo` o `install.sh` y sigue main. La ruta npm usa `npx -y argo-search` o `npm install -g argo-search`, se publica por tag, con versión fija y menos descarga. Desde 2.9.8 la publicación en npm la ejecuta la CI al crear el tag, en sintonía con el GitHub Release; el v1.0.1 antiguo del registro es una versión histórica, no fijes esa.
+Elige cualquier camino. **La instalación por npm está soportada y la versión actual es 2.9.8**, publicada desde este repo igual que GitHub. La ruta npm usa `npm install -g argo-search` o `npx -y argo-search`, se publica por tag, con versión fija y menos descarga. La ruta GitHub usa `install.sh` / `install.ps1` o `npx github:taxueseek/argo` y sigue main. A partir de ahora, cada tag hace que la CI publique los dos paquetes npm junto con el GitHub Release; el v1.0.1 antiguo del registro es una versión histórica, no fijes esa.
 
 **Funciona sin configuración**: sin claves API corren motores gratis + `local_*` locales; los que requieren clave se omiten si faltan (y suelen mejorar cuando están).
 
