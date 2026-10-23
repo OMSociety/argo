@@ -526,7 +526,7 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 > 119 个开关按六类 MECE。原则：调试/运行配置不进模型上下文（MCP schema 不暴露）；
 > 本表由门禁与源码双向锁定——文档里的开关必须代码实存，代码新增开关必须入表。
 
-### 能力开关（39）
+### 能力开关（40）
 
 | 变量 | 作用 | 默认/备注 |
 |------|------|----------|
@@ -550,6 +550,7 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 | `ARGO_IMAGE_DB` | ('本地图片索引库路径', '默认 ~/.cache/unified-search/argo-image/index.db') | 建库与检索共用；指纹矩阵 fp.npy 与它同目录 |
 | `ARGO_LOCAL_IMAGE` | ('本地图片检索（local-image 子命令）', '默认关；=1 开启') | 要 macOS+swiftc+numpy 且先建索引，默认不启用 |
 | `ARGO_LOCAL_RERANK` | ('本地五维重排', '默认开') | 见 references/operations.md 与模块 docstring |
+| `ARGO_MAX_REDIRECTS` | ('最大重定向跳数', '默认 5；合法 1-20，越界回落默认') | 见 http_client.py `_max_redirects` |
 | `ARGO_MCPJOBS_DIR` | ('mcp-jobs 安装根', '默认随平台缓存根 argo-mcpjobs') | job.py 安装与启动共用；换位置只改这一处 |
 | `ARGO_MINHASH_DEDUPE` | ('近重复结果去重', '默认开') | 见 references/operations.md 与模块 docstring |
 | `ARGO_MOBILE_FIRST_HOSTS` | mobile first hosts | 见 references/operations.md 与模块 docstring |

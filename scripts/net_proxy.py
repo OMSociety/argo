@@ -217,6 +217,19 @@ def open_url(req: Any, timeout: float = 10.0):
     return opener.open(req, timeout=timeout)
 
 
+def _verified_tls_context():
+    """显式构造「校验开启」的 TLS 上下文（check_hostname + CERT_REQUIRED）。
+
+    默认 http.client 已用校验上下文；这里显式化，让「TLS 校验不可被静默关掉」
+    成为可测试的不变式（而不是依赖库默认）。
+    """
+    import ssl
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = True
+    ctx.verify_mode = ssl.CERT_REQUIRED
+    return ctx
+
+
 def open_connection(parsed: ParseResult, timeout: float,
                     proxy_url: str | None) -> tuple[HTTPConnection, bool]:
     """按是否走代理构造 http.client 连接。返回 (conn, via_proxy)。
@@ -224,12 +237,26 @@ def open_connection(parsed: ParseResult, timeout: float,
     https 目标 + 代理 → 到代理的 HTTPSConnection + set_tunnel（CONNECT 隧道）；
     http 目标 + 代理 → 到代理的 HTTPConnection，request 须用绝对 URL
     （见 request_selector）。
+
+    直连（无代理）：用「解析即锁定」的连接类（url_safety.Safe*Connection），
+    堵 check_url 与 connect 之间的 DNS 重绑定窗口；HTTPS 显式用校验上下文。
     """
     import http.client
     import urllib.parse
 
     target_port = parsed.port or (443 if parsed.scheme == "https" else 80)
     if not proxy_url:
+        # 直连：解析即锁定 + TLS 校验（详见 safe_conn 与 _verified_tls_context）
+        try:
+            from safe_conn import SafeHTTPConnection, SafeHTTPSConnection
+            if parsed.scheme == "https":
+                return SafeHTTPSConnection(
+                    parsed.hostname, target_port, timeout=timeout,
+                    context=_verified_tls_context()), False
+            return SafeHTTPConnection(parsed.hostname, target_port,
+                                      timeout=timeout), False
+        except ImportError:  # pragma: no cover
+            pass
         cls = (http.client.HTTPSConnection if parsed.scheme == "https"
                else http.client.HTTPConnection)
         return cls(parsed.hostname, target_port, timeout=timeout), False

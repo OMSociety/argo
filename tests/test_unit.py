@@ -747,7 +747,7 @@ class TestHttpClientEngineIntegration(unittest.TestCase):
                 return b""
 
         class _FakeConn:
-            def __init__(self, host, port, timeout=None):
+            def __init__(self, host, port, timeout=None, **kwargs):
                 seen.append(host)
 
             def request(self, method, path, headers=None):
@@ -763,8 +763,8 @@ class TestHttpClientEngineIntegration(unittest.TestCase):
 
         # .example 是保留 TLD，SSRF 防护按「解析失败→保留段」拦截；
         # 本测试只验证重定向跟随，显式放行以免 DNS 环境影响结果
-        with patch("http.client.HTTPSConnection", _FakeConn), \
-             patch("http.client.HTTPConnection", _FakeConn), \
+        with patch("safe_conn.SafeHTTPSConnection", _FakeConn), \
+             patch("safe_conn.SafeHTTPConnection", _FakeConn), \
              patch.dict("os.environ", {"ARGO_ALLOW_PRIVATE_URLS": "1"}), \
              patch.object(HttpClient, "_apply_jitter"):
             c = HttpClient(timeout=5, max_retries=0)

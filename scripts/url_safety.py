@@ -23,6 +23,8 @@ import ipaddress
 import os
 import re
 import socket
+import time
+import urllib.parse
 from urllib.parse import urlparse
 
 
@@ -184,9 +186,10 @@ def host_is_private(host: str) -> bool:
     if host_is_private_name(host):
         return True
     norm = _normalize_numeric_host(host)
-    if norm is not None and norm != host:
-        # 数字字面量变体：直接按规范化结果查表，不依赖各系统对
-        # 八进制/十六进制/单段整数解析行为的一致性
+    if norm is not None:
+        # 数字字面量：直接按规范化结果查表，不依赖 getaddrinfo。
+        # 标准点分形式（norm == host）此前会落到 getaddrinfo——既多一次系统
+        # 调用，又让「被 mock/劫持的解析器」能影响 SSRF 判定。
         return is_private_ip(norm)
     try:
         infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
@@ -234,3 +237,123 @@ def is_safe_fetch_url(url: str) -> bool:
     """便捷布尔封装：仅 http/https 且目标非私有地址。"""
     ok, _ = check_url(url)
     return ok
+
+
+def max_redirects() -> int:
+    """最大重定向跳数（默认 5，合法 1-20，越界回落默认）。"""
+    try:
+        from engine_env import get_env
+        val = int(str(get_env(["ARGO_MAX_REDIRECTS"])).strip())
+    except (TypeError, ValueError):
+        return 5
+    return val if 0 < val <= 20 else 5
+
+
+def check_redirect_target(url: str, start: float) -> dict | None:
+    """校验重定向目标是否可安全请求；被拦截返回统一错误 dict，放行返回 None。
+
+    与 resolve_redirect_chain 的逐跳校验对齐——此前 _do_get/_do_post 的
+    内联重定向循环只校验首跳，重定向到内网即可绕过 SSRF。
+    """
+    ok, reason = check_url(url)
+    if ok:
+        return None
+    return {
+        "status": 0, "headers": {}, "text": "",
+        "url": url,
+        "elapsed_ms": int((time.time() - start) * 1000),
+        "error": f"重定向目标被 SSRF 防护拦截: {reason}",
+    }
+
+
+def resolve_redirect_chain(url: str, headers: dict, timeout: float,
+                           limit: int | None = None) -> str | None:
+    """逐跳安全跟随重定向：每跳目标都过 SSRF 校验（curl 通道用）。
+
+    返回最终 URL；任一跳被拦截或超过跳数返回 None。
+    """
+    if limit is None:
+        limit = max_redirects()
+    current = url
+    for _ in range(limit):
+        ok, _reason = check_url(current)
+        if not ok:
+            return None
+        parsed = urlparse(current)
+        if parsed.scheme not in ("http", "https"):
+            return None
+        try:
+            from net_proxy import open_connection, request_selector, resolve_proxy
+            proxy_url = resolve_proxy(current)
+            conn, via_proxy = open_connection(parsed, timeout, proxy_url)
+            path = parsed.path or "/"
+            if parsed.query:
+                path += "?" + parsed.query
+            conn.request("HEAD", request_selector(parsed, path, via_proxy),
+                         headers=headers)
+            resp = conn.getresponse()
+            status = resp.status
+            location = resp.getheader("Location")
+            conn.close()
+        except Exception:
+            return None
+        if status not in (301, 302, 303, 307, 308) or not location:
+            return current
+        current = urllib.parse.urljoin(current, location)
+    return None
+
+
+# ── 解析即锁定（DNS rebinding / TOCTOU 防护）─────────────────────────────────
+#
+# check_url() 在请求前解析一次 DNS，http.client 在 connect() 时再解析一次——
+# 两次之间域名可改指内网（DNS rebinding）。下面两个连接类在 connect() 里
+# 解析一次、过滤私网、把结果钉给本次 TCP 连接，窗口关闭；SNI/Host 仍用原域名。
+
+
+def _is_ip_literal(host: str) -> bool:
+    """主机名是否为 IP 字面量（v4 / v6，含 [v6] 与 IPv4-mapped）。"""
+    h = (host or "").strip().strip("[]")
+    if not h:
+        return False
+    if ":" in h:            # IPv6（含 ::ffff:a.b.c.d）
+        return True
+    parts = h.split(".")
+    return len(parts) == 4 and all(p.isdigit() for p in parts)
+
+
+def resolve_public_addresses(host: str) -> list[str]:
+    """解析主机名 → 公网地址名单（过滤私网/保留段；fake-ip 占位段放行）。
+
+    返回空列表表示「无可连的公网地址」——调用方应拒绝连接（fail-closed）。
+    """
+    try:
+        infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+    except OSError:
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for info in infos:
+        ip = info[4][0]
+        if ip in seen:
+            continue
+        seen.add(ip)
+        if is_fake_ip_address(ip):      # 代理接管域名（占位段），不可直达内网
+            out.append(ip)
+            continue
+        if is_private_ip(ip):
+            continue
+        out.append(ip)
+    return out
+
+
+def pin_host(host: str) -> str | None:
+    """返回要钉扎的公网 IP；IP 字面量或显式放行私网时返回 None。
+
+    无可连的公网地址则抛错（fail-closed）。供 safe_conn 的连接类使用。
+    """
+    if allow_private() or _is_ip_literal(host):
+        return None
+    addrs = resolve_public_addresses(host)
+    if not addrs:
+        raise OSError(f"SSRF 防护：{host} 无可连的公网地址")
+    return addrs[0]

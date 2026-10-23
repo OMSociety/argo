@@ -200,7 +200,7 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "_QUOTA_ERROR_KEYWORDS 死导入、job.py 改从真源 cache_guard 取表，"
               "上限 983 → 982"),
     "scripts/http_client.py": (
-        1053, "HTTP 客户端（UA 轮换 + Cookie 积累 + 重试 + 主机节流）；"
+        1039, "HTTP 客户端（UA 轮换 + Cookie 积累 + 重试 + 主机节流）；"
               "2026-09-27 +8：host throttle buckets 加 LRU 淘汰（100 个上限）；"
               "2026-09-28 +10：淘汰只踢零活跃桶（_active 计数 + idle 过滤），"
               "消灭「踢掉在用桶 → 同主机限速击穿」；"
@@ -209,7 +209,10 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "2026-10-18 +26：POST 改走 conn_pool（借/还/失效换新重试一次，"
               "与 GET 同构）——anysearch 是 POST 引擎，长驻 MCP/daemon 此前每次"
               "查询重付代理后 TLS，实测同连接第二次省 322ms（anysearch）/ 561ms"
-              "（octen）；上限 1027 → 1053 随动登记"),
+              "（octen）；"
+              "2026-10-23 −14：SSRF 纵深——逐跳重定向校验与重定向链解析抽到 "
+              "url_safety（check_redirect_target / resolve_redirect_chain / "
+              "max_redirects），_http_client 只留调用点；上限 1053 → 1039 随动下调"),
     "scripts/search_rank.py": (
         991, "RRF 融合 + minhash 去重 + 五维重排；"
               "2026-10-17 口径隔离逻辑拆出 caliber_isolation.py（−79 行）；"

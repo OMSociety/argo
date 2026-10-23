@@ -534,7 +534,6 @@ class TestHttpClientLocationFix:
     """Location 未编码中文重定向：latin-1 还原 + 非 ASCII 补编码。"""
 
     def test_unquoted_cjk_location(self, monkeypatch):
-        import http.client as hc
         import urllib.parse as _up
 
         # 出口调度隔离（issue #13 配套）：本测试在连接类层面 mock，而
@@ -575,7 +574,10 @@ class TestHttpClientLocationFix:
                 return self._body
 
         from http_client import HttpClient
-        monkeypatch.setattr(hc, "HTTPSConnection", FakeConn, raising=True)
+        # 直连走 safe_conn.SafeHTTPSConnection（解析即锁定），patch 它而非
+        # http.client.HTTPSConnection——后者不影响 Safe 子类，且会在
+        # 模块级 patch 下让 super() 解析到 FakeConn 而报错。
+        monkeypatch.setattr("safe_conn.SafeHTTPSConnection", FakeConn, raising=True)
         c = HttpClient()
         resp = c._do_get("https://www.zdic.net/hans/%E9%81%93", {"User-Agent": "t"}, True)
         assert resp["status"] == 200

@@ -36,10 +36,21 @@ from contextlib import contextmanager
 from typing import Any
 
 try:
-    from url_safety import check_url
+    from url_safety import check_url, check_redirect_target
+    from url_safety import max_redirects as _max_redirects
+    from url_safety import resolve_redirect_chain
 except ImportError:  # pragma: no cover
     def check_url(url: str) -> tuple[bool, str]:
         return True, ""
+
+    def check_redirect_target(url: str, start: float) -> dict | None:
+        return None
+
+    def _max_redirects() -> int:
+        return 5
+
+    def resolve_redirect_chain(url, headers, timeout, limit=None):
+        return None
 
 
 # ─── User-Agent 轮换池 ───────────────────────────────────────────────────────
@@ -525,7 +536,7 @@ class HttpClient:
         """实际执行 GET 请求（使用 http.client，不自动解压）。"""
         start = time.time()
         current_url = url
-        redirects_left = 5 if follow_redirects else 0
+        redirects_left = _max_redirects() if follow_redirects else 0
 
         while True:
             # 构建请求头
@@ -593,6 +604,11 @@ class HttpClient:
                         ch if ord(ch) < 128 else urllib.parse.quote(ch)
                         for ch in current_url
                     )
+                # 每跳重定向目标过 SSRF 校验（与 _safe_follow_redirects 对齐）：
+                # 旧实现只校验首跳，重定向到内网即可绕过（SSRF）
+                blocked = check_redirect_target(current_url, start)
+                if blocked:
+                    return blocked
                 redirects_left -= 1
                 continue
 
@@ -664,7 +680,7 @@ class HttpClient:
         start = time.time()
         headers = _random_headers(extra_headers)
 
-        final_url = self._safe_follow_redirects(url, headers)
+        final_url = resolve_redirect_chain(url, headers, self.timeout)
         if final_url is None:
             return {"status": 0, "headers": {}, "text": "", "url": url,
                     "elapsed_ms": int((time.time() - start) * 1000),
@@ -868,7 +884,7 @@ class HttpClient:
         """
         start = time.time()
         current_url = url
-        redirects_left = 5 if follow_redirects else 0
+        redirects_left = _max_redirects() if follow_redirects else 0
         while True:
             headers = _random_headers(extra_headers)
             cookie_str = self._cookies.get_cookie_header(current_url)
@@ -914,6 +930,10 @@ class HttpClient:
                 if not loc:
                     break
                 current_url = urllib.parse.urljoin(current_url, loc)
+                # 每跳重定向目标过 SSRF 校验（与 _do_get/_safe_follow_redirects 对齐）
+                blocked = check_redirect_target(current_url, start)
+                if blocked:
+                    return blocked
                 redirects_left -= 1
                 continue
             raw_body = resp.read()
@@ -977,40 +997,6 @@ class HttpClient:
         except Exception as e:
             return {"status": 0, "headers": {}, "text": "", "url": url,
                     "elapsed_ms": 0, "error": str(e)[:200]}
-
-    def _safe_follow_redirects(self, url: str, headers: dict,
-                               max_redirects: int = 5) -> str | None:
-        """逐跳安全跟随重定向：每跳目标都过 SSRF 校验。
-
-        返回最终 URL；任一跳被拦截或超过跳数返回 None。
-        """
-        current = url
-        for _ in range(max_redirects):
-            ok, _reason = check_url(current)
-            if not ok:
-                return None
-            parsed = urllib.parse.urlparse(current)
-            if parsed.scheme not in ("http", "https"):
-                return None
-            try:
-                from net_proxy import open_connection, request_selector, resolve_proxy
-                proxy_url = resolve_proxy(current)
-                conn, via_proxy = open_connection(parsed, self.timeout, proxy_url)
-                path = parsed.path or "/"
-                if parsed.query:
-                    path += "?" + parsed.query
-                conn.request("HEAD", request_selector(parsed, path, via_proxy),
-                             headers=headers)
-                resp = conn.getresponse()
-                status = resp.status
-                location = resp.getheader("Location")
-                conn.close()
-            except Exception:
-                return None
-            if status not in (301, 302, 303, 307, 308) or not location:
-                return current
-            current = urllib.parse.urljoin(current, location)
-        return None
 
 
 # ─── 便捷函数 ────────────────────────────────────────────────────────────────

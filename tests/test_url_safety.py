@@ -173,6 +173,159 @@ class TestHttpClientGuard(unittest.TestCase):
         self.assertIn("SSRF", resp.get("error", ""))
 
 
+class _FakeResp:
+    """最小 http.client 响应替身（不联网）。"""
+
+    def __init__(self, status=200, headers=None, body=b""):
+        self.status = status
+        self._headers = list(headers or [])
+        self._body = body
+
+    def getheaders(self):
+        return list(self._headers)
+
+    def getheader(self, name, default=None):
+        for k, v in self._headers:
+            if k.lower() == name.lower():
+                return v
+        return default
+
+    def read(self):
+        return self._body
+
+
+class _FakeConn:
+    """最小 http.client 连接替身：request 空操作，getresponse 给预设响应。"""
+
+    def __init__(self, resp):
+        self._resp = resp
+
+    def request(self, *a, **k):
+        pass
+
+    def getresponse(self):
+        return self._resp
+
+
+class TestRedirectSsrfGuard(unittest.TestCase):
+    """逐跳重定向 SSRF 校验（_do_get / _do_post）。
+
+    回归的真实缝隙：旧实现只校验首跳，重定向到内网即可绕过 SSRF。
+    """
+
+    def _get(self, location):
+        from http_client import HttpClient
+        client = HttpClient(timeout=2, max_retries=0)
+        fake = _FakeConn(_FakeResp(302, [("Location", location)]))
+        with patch("conn_pool.borrow_via_net_proxy",
+                   return_value=(fake, ("k",), False)), \
+             patch("conn_pool.give_back"), patch("conn_pool.discard"), \
+             patch("url_safety.socket.getaddrinfo",
+                   return_value=[(socket.AF_INET, socket.SOCK_STREAM,
+                                  socket.IPPROTO_TCP, "", ("93.184.215.14", 0))]):
+            return client.get("https://example.com/")
+
+    def test_redirect_to_private_blocked(self):
+        resp = self._get("http://169.254.169.254/latest/meta-data/")
+        self.assertEqual(resp.get("status"), 0)
+        self.assertIn("SSRF", resp.get("error", ""))
+
+    def test_redirect_to_public_proceeds(self):
+        from http_client import HttpClient
+        client = HttpClient(timeout=2, max_retries=0)
+        queue = [_FakeResp(302, [("Location", "https://example.org/page")]),
+                 _FakeResp(200, body=b"ok")]
+
+        def fake_borrow(*a, **k):
+            return _FakeConn(queue.pop(0) if queue else _FakeResp(200)), ("k",), False
+
+        with patch("conn_pool.borrow_via_net_proxy", new=fake_borrow), \
+             patch("conn_pool.give_back"), patch("conn_pool.discard"), \
+             patch("url_safety.socket.getaddrinfo",
+                   return_value=[(socket.AF_INET, socket.SOCK_STREAM,
+                                  socket.IPPROTO_TCP, "", ("93.184.215.14", 0))]):
+            resp = client.get("https://example.com/")
+        self.assertEqual(resp.get("status"), 200)
+
+
+class TestDnsRebindingPin(unittest.TestCase):
+    """解析即锁定：TCP 只连校验过的公网 IP，堵 DNS 重绑定窗口。"""
+
+    def test_resolve_public_addresses_filters_private(self):
+        from url_safety import resolve_public_addresses
+        with patch("url_safety.socket.getaddrinfo", return_value=[
+            (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("10.0.0.5", 0)),
+            (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("93.184.215.14", 0)),
+        ]):
+            self.assertEqual(resolve_public_addresses("example.com"), ["93.184.215.14"])
+
+    def test_resolve_public_addresses_empty_when_all_private(self):
+        from url_safety import resolve_public_addresses
+        with patch("url_safety.socket.getaddrinfo", return_value=[
+            (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("192.168.1.1", 0)),
+        ]):
+            self.assertEqual(resolve_public_addresses("intranet.example"), [])
+
+    def test_safe_connection_pins_public_ip(self):
+        from safe_conn import SafeHTTPSConnection
+        conn = SafeHTTPSConnection("example.com", 443, timeout=1)
+        seen = []
+
+        def fake_create(address, timeout=None, source_address=None):
+            seen.append(address[0])
+
+            class _S:
+                def fileno(self):
+                    return -1
+
+                def setsockopt(self, *a):
+                    pass
+
+            return _S()
+
+        conn._create_connection = fake_create
+
+        class _Ctx:
+            def wrap_socket(self, sock, server_hostname=None):
+                return sock
+
+        conn._context = _Ctx()
+        with patch("url_safety.socket.getaddrinfo", return_value=[
+            (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("93.184.215.14", 0)),
+        ]):
+            conn.connect()
+        self.assertEqual(seen, ["93.184.215.14"])   # 钉的是公网 IP
+        self.assertEqual(conn.host, "example.com")    # SNI/Host 仍用原域名
+
+    def test_safe_connection_rejects_private_only(self):
+        from safe_conn import SafeHTTPSConnection
+        conn = SafeHTTPSConnection("intranet.example", 443, timeout=1)
+        with patch("url_safety.socket.getaddrinfo", return_value=[
+            (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("10.0.0.5", 0)),
+        ]):
+            with self.assertRaises(OSError):
+                conn.connect()
+
+    def test_direct_https_uses_verified_context(self):
+        """直连 HTTPS 用校验上下文（check_hostname + CERT_REQUIRED）。"""
+        import ssl
+        import urllib.parse
+        from net_proxy import open_connection
+        parsed = urllib.parse.urlparse("https://example.com/")
+        conn, via = open_connection(parsed, 5.0, None)
+        self.assertFalse(via)
+        self.assertTrue(conn._context.check_hostname)
+        self.assertEqual(conn._context.verify_mode, ssl.CERT_REQUIRED)
+
+    def test_max_redirects_config(self):
+        from http_client import _max_redirects
+        self.assertEqual(_max_redirects(), 5)
+        with patch.dict("os.environ", {"ARGO_MAX_REDIRECTS": "3"}):
+            self.assertEqual(_max_redirects(), 3)
+        with patch.dict("os.environ", {"ARGO_MAX_REDIRECTS": "99"}):
+            self.assertEqual(_max_redirects(), 5)   # 越界回落
+
+
 class TestFetchGuard(unittest.TestCase):
     """fetch 入口拦截（不联网）。"""
 
