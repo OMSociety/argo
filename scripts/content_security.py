@@ -35,6 +35,7 @@ THREAT_NAMES = {
     "payload_smuggling": "载荷走私",
     "xss_injection": "XSS 注入",
     "recursive_injection": "递归注入",
+    "credential_exposure": "凭证暴露",
 }
 
 
@@ -181,11 +182,53 @@ INJECTION_PATTERNS_EL = [
     r"υποδύσου\s+(?:τον\s+)?(?:άνθρωπο|χρήστη|διαχειριστή|σύστημα)",
 ]
 
+# 西班牙语注入
+INJECTION_PATTERNS_ES = [
+    r"(?i)ignora\s+(?:todas\s+)?(?:las\s+)?(?:instrucciones|órdenes|ordenes|reglas|indicaciones)\s+(?:anteriores|previas)",
+    r"(?i)olvida\s+(?:todas\s+)?(?:las\s+)?(?:instrucciones|órdenes|reglas)",
+    r"(?i)(?:muéstrame|muestrame|enséñame|ensename|dime|revela|imprime|exhibe)\s+(?:tu\s+)?(?:prompt\s+del\s+sistema|prompt|instrucciones|configuración|configuracion)",
+    r"(?i)ya\s+no\s+(?:eres|es)\s+(?:un\s+)?(?:asistente|bot|ia|agente)",
+    r"(?i)(?:eres|ahora\s+eres)\s+(?:una\s+)?(?:persona|humano|usuario|administrador|sistema)",
+    r"(?i)(?:actúa|actua|comporta|finge|simula)\s+(?:como|de\s+que)\s+(?:una\s+)?(?:persona|humano|usuario|administrador|sistema)",
+    r"(?i)(?:elude|evita|ignora)\s+(?:todas\s+)?(?:las\s+)?(?:restricciones|limitaciones|protecciones|reglas)",
+    r"(?i)te\s+llamas\s+(?:ChatGPT|Claude|GPT|asistente\s+de\s+ia)",
+]
+
+# 法语注入
+INJECTION_PATTERNS_FR = [
+    r"(?i)ignore\s+(?:toutes\s+)?(?:les\s+)?(?:instructions|consignes|règles|regles|ordres)\s+(?:précédentes|precedentes)",
+    r"(?i)oublie\s+(?:toutes\s+)?(?:les\s+)?(?:instructions|consignes|règles|regles)",
+    r"(?i)(?:montre|affiche|dis|révèle|revel|imprime)\s+(?:ton|votre|ta)?\s*(?:prompt\s+système|prompt|instructions|configuration)",
+    r"(?i)tu\s+n'es\s+plus\s+(?:un\s+)?(?:assistant|bot|ia|agent)",
+    r"(?i)tu\s+es\s+(?:désormais|desormais\s+)?(?:une\s+)?(?:personne|humain|utilisateur|administrateur|système|systeme)",
+    r"(?i)(?:fais\s+semblant|joue|agis)\s+(?:comme|en\s+tant\s+que)\s+(?:une\s+)?(?:personne|humain|utilisateur|administrateur|système|systeme)",
+    r"(?i)(?:contourne|évite|evite)\s+(?:toutes\s+)?(?:les\s+)?(?:restrictions|limitations|protections|règles|regles)",
+    r"(?i)ton\s+nom\s+est\s+(?:ChatGPT|Claude|GPT|assistant\s+ia)",
+]
+
+# 德语注入
+INJECTION_PATTERNS_DE = [
+    r"(?i)ignoriere\s+(?:alle\s+)?(?:vorherigen\s+)?(?:Anweisungen|Regeln|Instruktionen|Befehle)",
+    r"(?i)vergiss\s+(?:alle\s+)?(?:vorherigen\s+)?(?:Anweisungen|Regeln|Instruktionen)",
+    r"(?i)(?:zeig|zeige|erzähl|erzahl|gib\s+preis|offenbare|drucke)\s+(?:mir\s+)?(?:deinen\s+)?(?:System-?Prompt|Systemprompt|Anweisungen|Einstellungen)",
+    r"(?i)du\s+bist\s+(?:nicht\s+mehr|kein\s+mehr)\s+(?:ein\s+)?(?:Assistent|Bot|KI|Agent)",
+    r"(?i)du\s+bist\s+(?:nun\s+)?(?:ein\s+)?(?:Mensch|Benutzer|Administrator|System)",
+    r"(?i)(?:tu|gib\s+vor|verhalte\s+dich)\s+(?:als|wie)\s+(?:ein\s+)?(?:Mensch|Benutzer|Administrator|System)",
+    r"(?i)(?:umgehe|ignoriere)\s+(?:alle\s+)?(?:Einschränkungen|Einschrankungen|Beschränkungen|Beschrankungen|Schutzmaßnahmen|Schutzmassnahmen|Regeln)",
+    r"(?i)dein\s+Name\s+ist\s+(?:ChatGPT|Claude|GPT|KI-Assistent)",
+]
+
+# 拉丁语系专用表（不含英语通用，避免 en/latin 两条路重复匹配）
+INJECTION_PATTERNS_LATIN = (
+    INJECTION_PATTERNS_ES + INJECTION_PATTERNS_FR + INJECTION_PATTERNS_DE
+)
+
 # 按语系分类的注入模式表（lang_detect 主语言标签 → 模式列表）
 LANG_INJECTION_PATTERNS: dict[str, list[str]] = {
     "zh": INJECTION_PATTERNS_ZH,
     "ja": INJECTION_PATTERNS_JA,
     "ko": INJECTION_PATTERNS_KO,
+    "latin": INJECTION_PATTERNS_LATIN,
     "cyrillic": INJECTION_PATTERNS_RU,
     "arabic": INJECTION_PATTERNS_AR,
     "hebrew": INJECTION_PATTERNS_HE,
@@ -259,6 +302,21 @@ XSS_PATTERNS = [
     r"(?i)window\.location",
 ]
 
+# 凭证形态：出现在抓取正文里的密钥形状串——可能是页面自身的示例，也可能是
+# 被注入/外泄的凭证。标 credential_exposure（权重 0.5，单独命中不触发隔离，
+# 但进 threat_types 供上层判断）。
+SECRET_FORM_PATTERNS = [
+    r"sk-[A-Za-z0-9_\-]{16,}",
+    r"sk-ant-[A-Za-z0-9_\-]{16,}",
+    r"ghp_[A-Za-z0-9]{20,}",
+    r"github_pat_[A-Za-z0-9_]{20,}",
+    r"AKIA[0-9A-Z]{16}",
+    r"ASIA[0-9A-Z]{16}",
+    r"xox[baprs]-[A-Za-z0-9\-]{10,}",
+    r"AIza[0-9A-Za-z_\-]{35}",
+    r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----",
+]
+
 # 检测但不过度脱敏的文件路径类模式
 _NO_REDACT_PATTERNS: frozenset = frozenset({
     r"(?i)/etc/passwd",
@@ -317,6 +375,7 @@ WEIGHTS = {
     "payload_smuggling": 0.9,
     "xss_injection": 0.9,
     "recursive_injection": 1.0,
+    "credential_exposure": 0.5,
 }
 
 
@@ -348,6 +407,7 @@ class ContentScrubber:
         threats.extend(self._detect_exfiltration(normalized))
         threats.extend(self._detect_impersonation(normalized))
         threats.extend(self._detect_xss(normalized))
+        threats.extend(self._detect_secret_forms(normalized))
 
         # 阶段 3：语义意图分析
         threats.extend(self._semantic_analysis(normalized))
@@ -467,9 +527,10 @@ class ContentScrubber:
         if lang == "zh" or lang == "mixed":
             patterns.extend(INJECTION_PATTERNS_ZH)
         for key, plist in LANG_INJECTION_PATTERNS.items():
-            if lang == key:
+            # en 与 latin 共享拉丁模式：ES/FR/DE 注入多为 ASCII 或带扩展字符，
+            # 纯 ASCII 时 lang_detect 判 en，漏掉它们等于给拉丁注入留门
+            if lang == key or (lang == "en" and key == "latin"):
                 patterns.extend(plist)
-        # en/latin 落到英文通用（已有）
         return tuple(patterns)
 
     def _detect_injections(self, text: str, lang: str = "other") -> list[ThreatDetection]:
@@ -484,6 +545,11 @@ class ContentScrubber:
 
     def _detect_xss(self, text: str) -> list[ThreatDetection]:
         return self._match_patterns(text, XSS_PATTERNS, "xss_injection", 0.9)
+
+    def _detect_secret_forms(self, text: str) -> list[ThreatDetection]:
+        """凭证形态检测（输出侧防护）：正文里的密钥形状串。"""
+        return self._match_patterns(text, SECRET_FORM_PATTERNS,
+                                    "credential_exposure", 0.7)
 
     @staticmethod
     def _match_patterns(text: str, patterns: list[str],
