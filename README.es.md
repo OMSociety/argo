@@ -24,7 +24,7 @@
 <p align="center">
   <img alt="license" src="https://img.shields.io/badge/license-Apache_2.0-blue">
   <img alt="python" src="https://img.shields.io/badge/python-3.9+-green">
-  <img alt="version" src="https://img.shields.io/badge/version-2.9.8-informational">
+  <img alt="version" src="https://img.shields.io/badge/version-2.9.9-informational">
   <img alt="engines" src="https://img.shields.io/badge/engines-272-orange">
   <img alt="mcp" src="https://img.shields.io/badge/MCP-19%20tools-purple">
 </p>
@@ -145,7 +145,7 @@ Funciona sin configuración. Tres formas de instalarlo, elige la que te acomode:
 # Opción 1: script de instalación (recomendado para uso local a largo plazo)
 curl -fsSL https://raw.githubusercontent.com/taxueseek/argo/main/scripts/install.sh | bash
 
-# Opción 2: npm / npx (soportado, versión actual 2.9.8; se publica por tag, versión fija)
+# Opción 2: npm / npx (soportado, versión actual 2.9.9; se publica por tag, versión fija)
 npm install -g argo-search       # instala la CLI globalmente
 npx -y argo-search               # o úsalo sin instalar
 npx -y github:taxueseek/argo     # para seguir el último commit de main
@@ -280,7 +280,7 @@ Los resultados incluyen `selection`, `absorption`, `credibility_fast`, `evidence
 
 ## Inicio rápido
 
-Elige cualquier camino. **La instalación por npm está soportada y la versión actual es 2.9.8**, publicada desde este repo igual que GitHub. La ruta npm usa `npm install -g argo-search` o `npx -y argo-search`, se publica por tag, con versión fija y menos descarga. La ruta GitHub usa `install.sh` / `install.ps1` o `npx github:taxueseek/argo` y sigue main. A partir de ahora, cada tag hace que la CI publique los dos paquetes npm junto con el GitHub Release; el v1.0.1 antiguo del registro es una versión histórica, no fijes esa.
+Elige cualquier camino. **La instalación por npm está soportada y la versión actual es 2.9.9**, publicada desde este repo igual que GitHub. La ruta npm usa `npm install -g argo-search` o `npx -y argo-search`, se publica por tag, con versión fija y menos descarga. La ruta GitHub usa `install.sh` / `install.ps1` o `npx github:taxueseek/argo` y sigue main. A partir de ahora, cada tag hace que la CI publique los dos paquetes npm junto con el GitHub Release; el v1.0.1 antiguo del registro es una versión histórica, no fijes esa.
 
 **Funciona sin configuración**: sin claves API corren motores gratis + `local_*` locales; los que requieren clave se omiten si faltan (y suelen mejorar cuando están).
 
@@ -465,13 +465,15 @@ python3 scripts/search.py --list-engines
 | `deep` | investigación, sondeos | calidad primero; más motores |
 | `budget` | cuota justa | control de cuota; degrada al agotarse |
 
-### Conjunto aproximado de capacidades (v2.9.8)
+### Conjunto aproximado de capacidades (v2.9.9)
 
 Lo que hace Argo, en una frase: manda cada pregunta a las fuentes adecuadas según dominio e idioma, ordena lo que vuelve por credibilidad y devuelve al agente material que puede ordenar y verificar. Búsqueda, captura, verificación de evidencia y búsqueda de archivos locales comparten una sola tubería, 19 herramientas MCP se corresponden una a una con los comandos CLI, así que ninguna capacidad falta en la forma que instales. Algunos comandos sueltos completan el conjunto: argo tweet empaqueta un post de X, argo auth gestiona el estado de sesión y argo job agrega ofertas de empleo. El catálogo completo, con coste, clave y estado de cada fuente, está en docs/ENGINE_CATALOG.md: 272 fuentes, 235 sin clave, 97 dominios.
 
 Instalado como plugin DSH, estas capacidades se convierten en herramientas nativas del host: la búsqueda y el fetch de la ruta caliente vienen activos por defecto, las herramientas de forense de cola larga se activan en la página de ajustes y los 28 interruptores de comportamiento del propio argo (caché, reordenación, deduplicación, guardia, proxy, TTL y demás) salieron de las variables de entorno para entrar en el panel. Las claves van al almacén de credenciales del host, nunca se muestran y todo cambio surte efecto al guardar.
 
 Las últimas versiones arreglaron cada una una clase de problemas.
+
+v2.9.9 es una versión de seguridad en profundidad y calidad de entrega. El motor de seguridad de contenido puntuaba pero no detenía: una página de inyección de alto riesgo entraba tal cual en la tubería. Ahora todo lo que supera el umbral de riesgo se aísla, el texto limpio sustituye al original y no llega a la puntuación de evidencia. La salida de red gana dos capas de defensa: las redirecciones se validan salto a salto y la dirección resuelta se fija a la conexión, cerrando la ventana de reencadernación DNS. En el despacho, los resultados de motores lentos abandonados por la parada temprana ya no se tiran: se recolectan en segundo plano, se entregan como siempre si terminan dentro de la ventana de gracia y su rendimiento real por fin llega al aprendiz. Un barrido de seis familias de escenarios reales acotó cinco clases de enrutado erróneo: consultas financieras de A-share, diligencia debida / facturación / búsqueda de empresa por persona, práctica legal civil, prospectos de medicamentos y guías de escritura de papers caen donde deben. Novedades: `argo engine add` conecta un motor nuevo en un paso, y la página de ajustes de DSH estrena una tarjeta de observación de rutas con combos de herramientas recomendadas.
 
 v2.9.8 es una versión de precisión de enrutado y cierre del ciclo de feedback. Los tres problemas del issue #18 —«latest» enviado a noticias en tiempo real, people_daily devolviendo su feed por defecto cuando no hay coincidencia, y local_bing coincidiendo solo con «2026»— se reprodujeron y corrigieron. Al reproducir consultas reales por la misma vía se acotaron 16 clases más de falsos disparadores: «nieve» dentro de nombres de marca, «Volcano Engine» dentro de nombres de producto, «iconos» en diagnóstico de UI, «código» dentro de campos mercantiles/financieros y «tipo de cambio» dentro de consultas de código/bibliotecas. Una puerta de cobertura SERP y la validación cruzada CJK evitan que «devolvió algo» cuente como «es relevante». Gracias a @wpp666 por la reproducción y el diagnóstico.
 
@@ -692,12 +694,22 @@ argo/
 
 Solo las tres versiones más recientes. El historial completo está en el [historial de cambios](#historial-de-cambios) y el detalle de cada versión en [Releases](https://github.com/taxueseek/argo/releases).
 
-### Próxima versión: búsqueda de Tencent Yuanbao + tres fuentes más sin clave + lista estructurada de fallos
+### v2.9.9: seguridad en profundidad + los resultados de fuentes lentas ya no se descartan + cinco clases de enrutado erróneo cerradas
 
-- **Búsqueda de Yuanbao**: fuente china de primera mano y voz oficial, complementaria a la mezcla de portales y autopublicaciones de bocha y byted; ocupa el 2.º puesto del dominio general chino como cobertura de autoridad. Clave: `ARGO_YUANBAO_API_KEY`
-- **Tres fuentes más sin clave**: `tavily_free`, `keenable_free` y el retorno anónimo de `exa` funcionan sin configurar ninguna clave
+- **El texto de alto riesgo ya no llega al contexto**: el motor de seguridad de contenido pasa de «solo puntuar» a «aislar + sustitución limpia»; el texto con `risk_score ≥ 0.5` se reemplaza por su versión limpia y queda fuera de la puntuación de evidencia. Activado por defecto; `ARGO_CONTENT_RISK_GATE=0` para anularlo en emergencia
+- **Defensa en profundidad de la salida de red**: validación de redirecciones salto a salto (`ARGO_MAX_REDIRECTS`, por defecto 5) + resolución y fijación inmediata, cerrando la ventana de reencadernación DNS
+- **Los resultados de fuentes lentas abandonadas por la parada temprana ya no se descartan**: los motores abandonados pasan a recolectarse en segundo plano; lo que termine dentro de `ARGO_TAIL_COMPLETE_S` (por defecto 3 s, 0=apagado) se entrega como siempre y registra una puntuación real, con los resultados fusionados en la caché tras deduplicar
+- **Cinco clases de enrutado erróneo cerradas**: consultas financieras de A-share a `stock_query`, diligencia debida / facturación / persona-a-empresa a `company_search`, práctica legal civil a `flk_law`, prospectos de medicamentos que ya no roba el token «uso», y guías de escritura de papers que ya no caen en búsqueda académica
+- **`argo engine add`**: alta de un motor nuevo en un paso; la cadena manual de spec/env/validación/sincronización/combo/lista blanca se convierte en un solo comando
+- **Aprendizaje por cubos de escenario + paquete de plugin ZCode**: el enrutado ya distingue «fuerte en el dominio A, débil en el B»; canal directo skill+CLI y panel de cero tokens enviados a zcode-plugins
+
+### v2.9.8: auditoría de precisión de enrutado + búsqueda de Tencent Yuanbao + tres fuentes más sin clave + lista estructurada de fallos
+
+- **issue #18/#19 todos corregidos**: «latest» enviado a noticias en tiempo real, feed por defecto de people_daily, local_bing coincidiendo solo con «2026», validación cruzada CJK siempre 0, caída nocturna con log vacío; 16 clases isomorfas de falsos disparadores acotadas de paso
+- **Búsqueda de Yuanbao**: fuente china de primera mano y voz oficial, en el 2.º puesto del dominio general chino como cobertura de autoridad. Clave: `ARGO_YUANBAO_API_KEY`
+- **Tres fuentes más sin clave**: `tavily_free`, `keenable_free` y el retorno anónimo de `exa`
 - **Fallos sobre los que se puede actuar**: cada fallo indica su origen y su clase, y dice si reintentar, cambiar de fuente o configurar una clave, junto a un nivel de confianza `meta.uncertainty`
-- **Capa de configuración local `config.local.yaml`**: los ajustes de esta máquina ya no se escriben en la configuración pública que acompaña a cada versión
+- **Capa de configuración local `config.local.yaml`**: los ajustes de esta máquina ya no se escriben en la configuración pública
 - **Nueva sección «Engines» en la página de ajustes de DSH**: los 28 interruptores de comportamiento de argo salen de las variables de entorno y pasan al panel
 
 ### v2.9.7: consolidación de arquitectura + el host delega la obtención de páginas en argo + License pasa a Apache-2.0
@@ -708,20 +720,13 @@ Solo las tres versiones más recientes. El historial completo está en el [histo
 - **Una clave nueva recupera el siguiente salto**: los motores con cuota agotada ya no esperan a que venza su ventana de recuperación, y la caché de enrutado se recalcula
 - **Ejecutar JS desde crawl / research / MCP ya no se cae**
 
-### v2.9.6: DeepSeek Search + operadores de consulta + fin del doble pago del mismo POST
-
-- **Nuevo motor `deepseek_search`**: 445-510 ms, el único de los tres que cubre clasificación de autoridad, rerank_score y fecha de publicación; `--since/--until` funciona de verdad. Se factura por llamada y requiere su propia `DEEPSEEK_API_KEY`; sin clave se omite
-- **Operadores de consulta bajo un solo contrato**: `site:` / `-site:` / `-término` / `lang:` / `after:` / `before:` se analizan de forma uniforme, y `site:` aplica un filtrado posterior real
-- **El mismo POST ya no se paga dos veces**: la reutilización del pool de conexiones ahorra 320 ms (anysearch) / 561 ms (octen) en la segunda petición de una misma conexión
-- **Dos defectos de enlaces y ordenación corregidos**: todos los resultados de un motor puntuaban igual y aplanaban la salida; los redirect shells de Bing sin restaurar costaron sus resultados al 40,2 % de las consultas en 7 días
-- **Las decisiones de enrutado tienen puerta de instantánea**: una inversión de rutas se vuelve un golden diffeable en lugar de cambiar en silencio
-
 ---
 
 ## Historial de cambios
 
 | Versión | Notas |
 |---------|-------|
+| **v2.9.9** | **Seguridad en profundidad + los resultados de fuentes lentas ya no se descartan + cinco clases de enrutado erróneo cerradas**: texto de alto riesgo aislado con sustitución limpia (fuera de la puntuación de evidencia), validación de redirecciones salto a salto y fijación contra reencadernación DNS; las fuentes lentas abandonadas por la parada temprana se recolectan en segundo plano (`ARGO_TAIL_COMPLETE_S`) y registran su puntuación real; un barrido de seis familias de escenarios reales cierra el enrutado erróneo de academia/finanzas/empresas/legal/farma; además `argo engine add` en un paso, aprendizaje por cubos de escenario y el paquete de plugin ZCode. Ver [notas de la versión](docs/RELEASE_NOTES_v2.9.9.md). |
 | **v2.9.8** | **Auditoría de precisión de enrutado + fixes de issue #18/#19 + aislamiento de estado en tests**: reproducción de consultas reales y acotado de 16 clases de falsos disparadores (marcas, productos, campos, subcadenas ASCII); puerta de cobertura SERP y validación cruzada CJK; ledger nocturno con log vacío, feed por defecto de people_daily y guardia de caché corregidos; estado adaptive/breaker aislado por test. Gracias a @wpp666 por la reproducción y el diagnóstico. Ver [notas de la versión](docs/RELEASE_NOTES_v2.9.8.md). |
 | **v2.9.7** | **Consolidación de arquitectura + seam web_fetch DSH + License a Apache-2.0**: MIT → Apache 2.0; el fetch del huésped pasa por argo (redirect shells, desafíos JS); 18 motores de invocación explícita fuera del pool, para que el modo auto no facture por error. |
 | **v2.9.6** | **Motor DeepSeek Search + contrato de operadores de consulta + agrupación de conexiones + puerta de instantáneas de enrutado**: `deepseek_search` nuevo y activo por defecto (se omite sin clave): 445-510 ms con `--since`/`--until`; conexiones agrupadas ahorran 320-561 ms; `site:` y `lang:` filtran de verdad. |

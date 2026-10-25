@@ -24,7 +24,7 @@
 <p align="center">
   <img alt="license" src="https://img.shields.io/badge/license-Apache_2.0-blue">
   <img alt="python" src="https://img.shields.io/badge/python-3.9+-green">
-  <img alt="version" src="https://img.shields.io/badge/version-2.9.8-informational">
+  <img alt="version" src="https://img.shields.io/badge/version-2.9.9-informational">
   <img alt="engines" src="https://img.shields.io/badge/engines-272-orange">
   <img alt="mcp" src="https://img.shields.io/badge/MCP-19%20tools-purple">
 </p>
@@ -145,7 +145,7 @@ Zero config works. Three ways to install, pick your habit:
 # Option 1: install script (recommended for long-term local use)
 curl -fsSL https://raw.githubusercontent.com/taxueseek/argo/main/scripts/install.sh | bash
 
-# Option 2: npm / npx (supported, currently 2.9.8; released per tag, version pinned)
+# Option 2: npm / npx (supported, currently 2.9.9; released per tag, version pinned)
 npm install -g argo-search       # install the CLI globally
 npx -y argo-search               # or run it without installing
 npx -y github:taxueseek/argo     # use this to follow the latest commit on main
@@ -280,7 +280,7 @@ Results include `selection`, `absorption`, `credibility_fast`, `evidence_flags`,
 
 ## Quick start
 
-Pick any path. **npm install is supported, current version 2.9.8**, published from this repo like GitHub. The npm route uses `npm install -g argo-search` or `npx -y argo-search`, is released per tag, with a pinned version and a smaller download. The GitHub route uses `install.sh` / `install.ps1` or `npx github:taxueseek/argo` and follows main. From now on every tag push makes CI publish both npm packages together with the GitHub Release; the older v1.0.1 on the registry is a historical version, do not pin to it.
+Pick any path. **npm install is supported, current version 2.9.9**, published from this repo like GitHub. The npm route uses `npm install -g argo-search` or `npx -y argo-search`, is released per tag, with a pinned version and a smaller download. The GitHub route uses `install.sh` / `install.ps1` or `npx github:taxueseek/argo` and follows main. From now on every tag push makes CI publish both npm packages together with the GitHub Release; the older v1.0.1 on the registry is a historical version, do not pin to it.
 
 **Zero-config works**: without API keys, free engines + local `local_*` engines run; keyed engines are skipped when missing (and usually better when present).
 
@@ -423,13 +423,15 @@ python3 scripts/search.py --list-engines
 | `deep` | research, surveys | quality first; more engines allowed |
 | `budget` | tight quota | quota control; degrade when exhausted |
 
-### Rough capability set (v2.9.8)
+### Rough capability set (v2.9.9)
 
 What Argo does, in one sentence: it sends each question to the right sources by domain and language, ranks what comes back by credibility, and hands the agent material it can sort and verify. Search, fetch, evidence checking and local file search share one pipeline, the 19 MCP tools map one-to-one onto CLI commands, so nothing is missing whichever form you install. A few standalone commands round it out: argo tweet packs an X post, argo auth handles login state, argo job aggregates job listings. The full catalog, with cost, key and status per source, sits in docs/ENGINE_CATALOG.md: **272 sources (235 usable with no key), 97 domains**.
 
 Installed as a DSH plugin, these capabilities become native host tools: the hot-path search and fetch are on by default, the long-tail forensics tools toggle on in the settings page, and argo's own 28 behaviour switches (cache, rerank, dedup, guard, proxy, TTLs and the rest) moved out of environment variables and into the panel. Keys go into the host credential store, are never echoed, and every change takes effect on save.
 
 The last few releases each fixed one class of problems.
+
+v2.9.9 is a security-and-delivery-quality release. The content-security engine used to score web content but not stop it: a high-risk injection page went straight into the pipeline. Now anything over the risk threshold is quarantined, the cleaned text replaces the original, and it never reaches the evidence score. The network egress gains two layers of defense: redirects are validated hop by hop, and the resolved address is pinned to the connection, closing the DNS-rebinding window. On the dispatch side, results from slow engines abandoned by early-stop are no longer thrown away: they are collected in the background, delivered as usual if they finish within the grace window, and their real performance finally reaches the learner. A six-family scan of real-world scenarios tightened five classes of mis-routing: A-share financial queries, corporate due-diligence / invoicing / person-to-company lookups, civil-law practice, drug leaflets and paper-writing how-tos all land where they should. New this round: `argo engine add` wires a new engine up in one step, and the DSH settings page gains a route-observation card with tool recommendation combos.
 
 v2.9.8 is a routing-precision and feedback-loop release. The three problems in issue #18 — "latest" being routed into realtime news, people_daily returning its default feed when nothing matches, and local_bing matching only "2026" — were all reproduced and fixed. Replaying real queries along the same lines tightened 16 more classes of false triggers: "snow" inside brand names, "Volcano Engine" inside product names, UI-troubleshooting "icons", "code" inside business/finance field names, and "exchange rate" inside code/library queries. A SERP coverage gate and CJK cross-validation now stop "it returned something" from counting as "it is relevant". Thanks to @wpp666 for the reproduction and diagnosis.
 
@@ -650,12 +652,22 @@ argo/
 
 Only the three most recent versions. Full history in the [changelog](#changelog); per-release detail on [Releases](https://github.com/taxueseek/argo/releases).
 
-### Next version: Tencent Yuanbao search + three more keyless sources + a structured failure list
+### v2.9.9: security in depth + slow-source results no longer dropped + five mis-routing classes closed
 
-- **Yuanbao search**: a first-hand, official-voice Chinese source that complements the portal-and-self-media mix of bocha and byted; sits 2nd in the Chinese-general domain as an authority hedge. Key: `ARGO_YUANBAO_API_KEY`
-- **Three more sources usable with no key**: `tavily_free`, `keenable_free` and the `exa` anonymous fallback now work with no key configured at all
+- **High-risk page text can no longer reach the context**: the content-security engine upgrades from "score only" to "quarantine + clean replacement"; text with `risk_score ≥ 0.5` is replaced by its cleaned version and excluded from the evidence score. On by default; `ARGO_CONTENT_RISK_GATE=0` for an emergency override
+- **Network egress defense in depth**: redirects validated hop by hop (`ARGO_MAX_REDIRECTS`, default 5) + resolve-and-pin, closing the DNS-rebinding window
+- **Results from slow engines abandoned by early-stop are no longer dropped**: abandoned engines are collected in the background; whatever finishes within `ARGO_TAIL_COMPLETE_S` (default 3s, 0=off) is delivered as usual and recorded as a real score, with results merged back into the cache
+- **Five mis-routing classes closed**: A-share financial queries to `stock_query`, corporate due-diligence / invoicing / person-to-company to `company_search`, civil-law practice to `flk_law`, drug leaflets no longer stolen by the "usage" token, paper-writing how-tos no longer routed to academic search
+- **`argo engine add`**: one-step engine onboarding; the manual spec/env/validate/sync/combo/allowlist chain becomes a single command
+- **Bucketed scenario learning + ZCode plugin package**: routing can now tell "strong in domain A, weak in domain B"; skill+CLI direct channel and a zero-token panel shipped to zcode-plugins
+
+### v2.9.8: routing precision audit + Tencent Yuanbao search + three more keyless sources + a structured failure list
+
+- **issue #18/#19 all fixed**: `latest` mis-routed into realtime news, people_daily default feed, local_bing matching only "2026", Chinese cross-validation always 0, nightly crash on empty logs; 16 more isomorphic false-trigger classes tightened along the way
+- **Yuanbao search**: a first-hand, official-voice Chinese source, sitting 2nd in the Chinese-general domain as an authority hedge. Key: `ARGO_YUANBAO_API_KEY`
+- **Three more sources usable with no key**: `tavily_free`, `keenable_free` and the `exa` anonymous fallback
 - **Failures you can act on**: each failure names its source and class and says whether to retry, switch sources or configure a key, alongside a `meta.uncertainty` confidence level
-- **Local config overlay `config.local.yaml`**: machine-local tuning is no longer written into the public config shipped with each release
+- **Local config overlay `config.local.yaml`**: machine-local tuning is no longer written into the public config
 - **A new "Engines" section on the DSH settings page**: argo's 28 behaviour switches move out of environment variables and into the panel
 
 ### v2.9.7: architecture consolidation + host web fetching handed to argo + License moved to Apache-2.0
@@ -666,20 +678,13 @@ Only the three most recent versions. Full history in the [changelog](#changelog)
 - **A new key recovers on the next hop**: quota-exhausted engines no longer wait for their recovery window, and the routing cache is recomputed
 - **Running JS from crawl / research / MCP no longer crashes**
 
-### v2.9.6: DeepSeek Search + query operators + no double-paying for the same POST
-
-- **New `deepseek_search` engine**: 445-510ms, the only one of the three covering authority tiering, rerank_score and publish time; `--since/--until` genuinely works. Billed per call, needs your own `DEEPSEEK_API_KEY` and is skipped automatically without one
-- **Query operators behind one contract**: `site:` / `-site:` / `-term` / `lang:` / `after:` / `before:` are parsed uniformly, and `site:` performs real post-filtering
-- **The same POST is no longer paid for twice**: connection-pool reuse saves 320ms (anysearch) / 561ms (octen) on the second request over one connection
-- **Two link-resolution and ranking defects fixed**: results from one engine all scoring the same had flattened the output; Bing redirect shells left unresolved cost 40.2% of queries their results over 7 days
-- **Routing decisions are snapshot-gated**: routing flips become a diffable golden instead of changing silently
-
 ---
 
 ## Changelog
 
 | Version | Notes |
 |---------|-------|
+| **v2.9.9** | **Security in depth + slow-source results no longer dropped + five mis-routing classes closed**: high-risk text quarantined with cleaned replacement (excluded from the evidence score), hop-by-hop redirect validation and DNS-rebinding pinning; slow engines abandoned by early-stop are collected in the background (`ARGO_TAIL_COMPLETE_S`) and their real scores recorded; a six-family real-scenario scan closes academic/finance/corporate/legal/pharma mis-routing; plus `argo engine add` one-step onboarding, bucketed scenario learning, and the ZCode plugin package. See [release notes](docs/RELEASE_NOTES_v2.9.9.md). |
 | **v2.9.8** | **Routing precision audit + issue #18/#19 fixes + test-state isolation**: replayed real queries and tightened 16 classes of false triggers (brand/product names, field names, ASCII substrings); added the SERP coverage gate and CJK cross-validation; fixed the empty-log nightly ledger, people_daily default feed, and cached-result guarding; isolated adaptive/breaker state per test. Thanks to @wpp666 for the reproduction and diagnosis. See [release notes](docs/RELEASE_NOTES_v2.9.8.md). |
 | **v2.9.7** | **Architecture consolidation + DSH web_fetch seam + License to Apache-2.0**: MIT → Apache License 2.0. Host web_fetch now flows through argo's fetch chain (HTTP first, browser upgrade on JS challenges), and explicit-only engines leave the routing pool so auto mode cannot bill them by accident. |
 | **v2.9.6** | **DeepSeek Search engine + query operator contract + transport connection pooling + routing snapshot gate**: New `deepseek_search` engine, on by default (445-510ms; skipped without a key). Query operators (`site:`, `-term`, `lang:`, `after:`, `before:`) share one contract with real post-filtering; POST pooling saves 320-561ms per request. |

@@ -16,7 +16,7 @@ macOS / Linux 直接跑。Windows 用 PowerShell：
 powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/taxueseek/argo/main/scripts/install.ps1 | iex"
 ```
 
-### 方式二：npm / npx（已支持，当前 2.9.8）
+### 方式二：npm / npx（已支持，当前 2.9.9）
 
 ```bash
 npm install -g argo-search    # 全局安装 CLI
@@ -24,7 +24,7 @@ npx -y argo-search            # 或即用即走，不装
 npx -y github:taxueseek/argo  # 要跟 main 最新提交时用这条
 ```
 
-需要 Node.js 18+ 和 Python 3.9+。npm 上的 `argo-search` 由本仓库发布，当前版本 2.9.8，按 tag 更新。
+需要 Node.js 18+ 和 Python 3.9+。npm 上的 `argo-search` 由本仓库发布，当前版本 2.9.9，按 tag 更新。
 
 ### 方式三：uvx / pip（尚未上线）
 
@@ -41,7 +41,7 @@ pip install argo-search
 ### 方式四：DSH 插件
 
 ```bash
-dsh plugin --profile web add argo-search                   # npm 发布版，当前 2.9.8
+dsh plugin --profile web add argo-search                   # npm 发布版，当前 2.9.9
 dsh plugin --profile web add "github:taxueseek/argo"       # GitHub main
 ```
 
@@ -162,4 +162,4 @@ python3 ~/.local/share/argo/scripts/health_check.py --all
 2. **搜索结果页 / 跳转链**：不要当正文信源
 3. **社交帖**：当舆情与叙事，不当事实真值
 4. **CLI 退出码恒 0**（含断网）：成败判断走 JSON 的 `status` / `errors` 字段
-5. **npm 安装已支持**：`argo-search` 由本仓库发布，最新版本 2.9.8，可放心 `npm install -g argo-search` 或 `npx -y argo-search`；registry 上更早的 v1.0.1 是历史版本，不要锁定到它。PyPI 目前尚未上传，`uvx argo-search` / `pip install argo-search` 暂时不可用
+5. **npm 安装已支持**：`argo-search` 由本仓库发布，最新版本 2.9.9，可放心 `npm install -g argo-search` 或 `npx -y argo-search`；registry 上更早的 v1.0.1 是历史版本，不要锁定到它。PyPI 目前尚未上传，`uvx argo-search` / `pip install argo-search` 暂时不可用

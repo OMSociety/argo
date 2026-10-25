@@ -24,7 +24,7 @@
 <p align="center">
   <img alt="license" src="https://img.shields.io/badge/license-Apache_2.0-blue">
   <img alt="python" src="https://img.shields.io/badge/python-3.9+-green">
-  <img alt="version" src="https://img.shields.io/badge/version-2.9.8-informational">
+  <img alt="version" src="https://img.shields.io/badge/version-2.9.9-informational">
   <img alt="engines" src="https://img.shields.io/badge/engines-272-orange">
   <img alt="mcp" src="https://img.shields.io/badge/MCP-19%20tools-purple">
 </p>
@@ -145,7 +145,7 @@ dsh plugin --profile web add "github:taxueseek/argo"      # GitHub main
 # 方式一：一键脚本（推荐本机长期用）
 curl -fsSL https://raw.githubusercontent.com/taxueseek/argo/main/scripts/install.sh | bash
 
-# 方式二：npm / npx（已支持，当前 2.9.8；按 tag 发布，版本固定）
+# 方式二：npm / npx（已支持，当前 2.9.9；按 tag 发布，版本固定）
 npm install -g argo-search      # 全局安装 CLI
 npx -y argo-search              # 或即用即走，不装
 npx -y github:taxueseek/argo    # 要跟 main 最新提交时用这条
@@ -282,7 +282,7 @@ freshness  ≈ 发布时间（会忽略「2015 年以来」这类历史对比年
 
 ## 快速开始
 
-任选一种即可。**npm 安装已支持，当前版本 2.9.8**，与 GitHub 同为本仓库发布。npm 路线用 `npm install -g argo-search` 或 `npx -y argo-search`，按 tag 发布、版本固定、下载体积更小；GitHub 路线用 `install.sh` / `install.ps1` 或 `npx github:taxueseek/argo`，跟 main 走。之后每次打 tag，CI 会把两个 npm 包和 GitHub Release 一起发出；registry 上更早的 v1.0.1 是历史版本，不要锁定到它。
+任选一种即可。**npm 安装已支持，当前版本 2.9.9**，与 GitHub 同为本仓库发布。npm 路线用 `npm install -g argo-search` 或 `npx -y argo-search`，按 tag 发布、版本固定、下载体积更小；GitHub 路线用 `install.sh` / `install.ps1` 或 `npx github:taxueseek/argo`，跟 main 走。之后每次打 tag，CI 会把两个 npm 包和 GitHub Release 一起发出；registry 上更早的 v1.0.1 是历史版本，不要锁定到它。
 
 **零配置就能跑**：不配 API Key 时走免费引擎 + 本地 `local_*` 引擎；配了 Key 的源质量通常更好，没配则自动跳过。
 
@@ -496,13 +496,15 @@ python3 -m pytest tests/test_unit.py -q             # 单测（可选）
 | `deep` | 调研、综述 | 质量优先，可多用引擎 |
 | `budget` | 额度紧 | 配额控制，用完降级 |
 
-### 当前大致能力（v2.9.8）
+### 当前大致能力（v2.9.9）
 
 Argo 干的事，一句话能说完：把一个问题按领域和语言分给合适的源，取回结果后按可信度排个序，交回给 Agent 的是能排序、能复核的材料。搜索、抓取、核验、本机文件检索走同一条管线，19 个 MCP 工具和 CLI 命令一一对应，装哪种形态都不缺能力。另有几个单点命令随用随取：argo tweet 打包 X 帖子，argo auth 管登录态，argo job 聚合招聘信息。
 
 装成 DSH 插件后，这些能力直接变成宿主的原生工具：高频的搜索与抓取默认就开，长尾取证能力在设置页里按需勾选，argo 本体的 28 个行为开关（缓存、重排、去重、守卫、代理、TTL 等）也从环境变量搬进了面板。密钥写进宿主凭证库，明文不回显，改完即生效。
 
 最近几个版本各修了一类问题。
+
+v2.9.9 做的是安全与交付质量。内容安全引擎原先只评分不拦截，高风险注入页照样进上下文；现在评分过阈值就隔离，用清洗后的正文替换原文，也不再进核验证据。网络出口补了两道纵深：重定向逐跳校验，DNS 解析结果钉死在当次连接上。调度侧，早停弃置的慢源交付不再丢弃：转后台收割，三秒内完成的照常交付并记进学习器。路由上，六族真实场景扫描收了五类误路由，A 股财务查询、企业尽调/开票/人查公司、民事实务、药品说明书、论文写作 howto 各归其位。另有 argo engine add 一键接入新引擎，DSH 设置页新增路由观测卡片与工具推荐组合。
 
 v2.9.8 做的是路由精度与反馈闭环。issue #18 报告的三件事——「latest」被误判进实时新闻、人民网匹配不到时回默认 feed、local_bing 只命中「2026」——都已复现并修掉；顺着这条线回放真实查询，又把 16 类同类误触发收窄：品牌名里的「雪」、产品名里的「火山引擎」、UI 排障里的「图标」、工商与金融字段里的「代码」、代码语境里的「汇率」等。SERP 覆盖率门与 CJK 交叉验证同时落地，避免「有结果就算相关」。感谢 @wpp666 提供的复现与定位。
 
@@ -771,13 +773,23 @@ argo/
 
 只列最近三个版本。完整历史见[版本记录](#版本记录)，逐版详情见 [Releases](https://github.com/taxueseek/argo/releases)。
 
-### 下一版：腾讯元宝搜索 + 免 key 三源 + 结构化失败清单
+### v2.9.9：安全纵深 + 慢源交付不丢 + 五类误路由收口
 
-- **新增元宝搜索**：中文一手 / 官方口径源，与 bocha、byted 的「门户 + 自媒体」互补；进中文通用域第 2 位做权威源对冲；key 用 `ARGO_YUANBAO_API_KEY`
-- **免 key 可用面再扩三源**：`tavily_free`、`keenable_free`、`exa` 匿名回退，不配任何 key 也能用
-- **失败能照着处置**：失败按来源与类别给出「可重试 / 换源 / 去配 key」与建议，结果同时带 `meta.uncertainty` 综合可信度
-- **本机配置覆盖层 `config.local.yaml`**：本机调优不再写进随版发布的公共配置
-- **DSH 设置页新增「引擎」分区**：argo 本体的 28 个行为开关从环境变量搬进面板
+- **高风险正文进不了上下文**：内容安全引擎从「只评分」升级为「隔离+清洗替换」，`risk_score ≥ 0.5` 的正文被清洗后正文替换、不进证据分；默认开，`ARGO_CONTENT_RISK_GATE=0` 应急放行
+- **网络出口纵深防御**：重定向逐跳校验（`ARGO_MAX_REDIRECTS`，默认 5）+ 解析即锁定，封堵 DNS 重绑定窗口
+- **早停弃置的慢源交付不再丢**：弃置引擎转后台收割，`ARGO_TAIL_COMPLETE_S`（默认 3s，0=关）内完成即照常交付并记真实成绩，交付去重合并回缓存
+- **五类误路由收口**：A 股财务查询进 `stock_query`、企业尽调/开票/人查公司进 `company_search`、民事实务进 `flk_law`、药品说明书不再被「用法」抢走、论文写作 howto 不再落学术域
+- **`argo engine add`**：新引擎一键接入，spec/env/验证/同步/combo/白名单的人工多步链编排成一步
+- **场景分桶学习 + ZCode 插件包**：路由能区分「引擎在 A 域强、B 域弱」；skill+CLI 直连与零 token 面板进 zcode-plugins
+
+### v2.9.8：路由精度审计 + 腾讯元宝搜索 + 免 key 三源 + 结构化失败清单
+
+- **issue #18/#19 全修**：`latest` 误判实时新闻、人民网默认 feed、local_bing 只命中「2026」、中文交叉验证恒 0、nightly 空日志崩溃；顺线收窄 16 类同构误触发
+- **新增元宝搜索**：中文一手/官方口径源，进中文通用域第 2 位做权威源对冲；key 用 `ARGO_YUANBAO_API_KEY`
+- **免 key 可用面扩三源**：`tavily_free`、`keenable_free`、`exa` 匿名回退，不配 key 也能用
+- **失败能照着处置**：失败按来源与类别给出「可重试/换源/去配 key」，结果带 `meta.uncertainty` 综合可信度
+- **本机配置覆盖层 `config.local.yaml`**：本机调优不再写进公共配置
+- **DSH 设置页新增「引擎」分区**：28 个行为开关从环境变量搬进面板
 
 ### v2.9.7：架构收口 + 宿主网页抓取交给 argo + License 转 Apache-2.0
 
@@ -787,20 +799,13 @@ argo/
 - **换新 key 下一跳就恢复**：配额耗尽的引擎不再等恢复窗口到点，路由缓存同步重算
 - **crawl / research / MCP 里跑 JS 不再崩**
 
-### v2.9.6：DeepSeek Search 接入 + 查询操作符 + 传输层去重付费
-
-- **新增 `deepseek_search` 官方引擎**：延迟 445-510ms，权威分级 / rerank_score / 发布时间三项唯一全覆盖，`--since/--until` 时间窗真正生效；按次计费，需自备 `DEEPSEEK_API_KEY`，无 key 自动跳过
-- **查询操作符收敛为契约层**：`site:` / `-site:` / `-词` / `lang:` / `after:` / `before:` 统一处理，`site:` 做真正的后置过滤
-- **同一个 POST 不再重复付费**：连接池复用，同连接第二次请求省 320ms（anysearch）/ 561ms（octen）
-- **两处取链与排序缺陷修复**：同引擎结果同分导致输出退化；Bing 跳转壳不还原导致近 7 天 40.2% 查询空手而归
-- **路由决策有了快照门**：路由翻转变成可 diff 的 golden，不再静默变脸
-
 ---
 
 ## 版本记录
 
 | 版本 | 说明 |
 |------|------|
+| **v2.9.9** | **安全纵深 + 慢源交付不丢 + 五类误路由收口**：高风险正文隔离+清洗替换（不进证据分）、逐跳重定向校验与 DNS 重绑定封堵；早停弃置的慢源转后台收割（`ARGO_TAIL_COMPLETE_S`），学习器记真实成绩；六族真实场景扫描收口学术/财务/企业/法律/医药误路由；`argo engine add` 一键接引擎、场景分桶学习、ZCode 插件包。详见 [发布说明](docs/RELEASE_NOTES_v2.9.9.md) |
 | **v2.9.8** | **路由精度审计 + issue #18/#19 修复 + 测试态隔离**：回放真实查询收窄 16 类误触发（品牌名/产品名/字段名/ASCII 子串），SERP 覆盖率门与 CJK 交叉验证落地；nightly 空日志、people_daily 默认 feed、缓存命中守卫一并收口；全量测试按用例隔离 adaptive/熔断状态。感谢 @wpp666 的复现与定位。详见 [发布说明](docs/RELEASE_NOTES_v2.9.8.md) |
 | **v2.9.7** | **架构收口 + DSH web_fetch 占位 + License 转 Apache-2.0**：宿主 web_fetch 改走 argo 抓取链，JS 挑战页与跨源跳转从失败变成功；18 个 explicit_only 引擎从路由候选池剔除，堵住 auto 档误调付费引擎扣费；熔断、记账、配额恢复与路由缓存一批状态契约收口。 |
 | **v2.9.6** | **DeepSeek Search 接入 + 查询操作符契约 + 传输层去重付费 + 路由快照门**：新引擎 `deepseek_search` 默认启用（445-510ms，权威分级 / rerank_score / 时间窗唯一全覆盖）；查询操作符收敛为契约层；POST 连接池复用省 320-561ms/次；路由决策变成可 diff 的 golden。 |
