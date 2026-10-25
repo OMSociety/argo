@@ -173,6 +173,9 @@ def test_every_rule_compiles_and_survives_compilation():
         ("code_search", "统一社会信用代码 查询"),
         # image_search unless（2026-10-23）：菜单栏图标排障不是找图
         ("image_search", "菜单栏图标不显示"),
+        # company_search unless（2026-10-25）：办事指南形态（流程/怎么办）不是
+        # 主体尽调查询，新词表（注销/开票/税号…）不得误吸
+        ("company_search", "公司注销流程 怎么办"),
     ],
 )
 def test_unless_has_a_negative_case(domain_name, query):
@@ -192,7 +195,7 @@ def test_unless_declared_domains_are_covered_by_negative_cases():
     covered = {"weather_query", "geo_places", "academic", "fund_query", "org_entity",
                "fx_query", "cls_telegraph_search", "em_news_search", "legal",
                "anime_encyclopedia", "art_museum", "chinese_tech_deep",
-               "code_search", "image_search"}
+               "code_search", "image_search", "company_search"}
     declared = {d.get("name") for d in DOMAINS
                 if any(_split_pattern_entry(p)[1] for p in _entries_of(d))}
     missing = sorted(declared - covered)

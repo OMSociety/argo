@@ -907,6 +907,18 @@
    "src": "ROUTE_MATRIX"
   },
   {
+   "query": "公司注销流程 怎么办",
+   "domain": "chinese_general",
+   "kind": "regex",
+   "engines": [
+    "bocha",
+    "yuanbao"
+   ],
+   "expect": null,
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
    "query": "刑法 司法解释 判例",
    "domain": "legal",
    "kind": "regex",
@@ -1302,6 +1314,42 @@
    "src": "ROUTE_MATRIX"
   },
   {
+   "query": "晨曦合成科技有限公司 开票信息 税号",
+   "domain": "company_search",
+   "kind": "tfidf",
+   "engines": [
+    "opencorporates",
+    "yuanbao"
+   ],
+   "expect": "company_search",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "晨曦合成科技有限公司 招聘",
+   "domain": "chinese_general",
+   "kind": "regex",
+   "engines": [
+    "bocha",
+    "yuanbao"
+   ],
+   "expect": null,
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "晨曦合成科技有限公司 注销了吗",
+   "domain": "company_search",
+   "kind": "regex",
+   "engines": [
+    "opencorporates",
+    "yuanbao"
+   ],
+   "expect": "company_search",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
    "query": "最新新闻 今天发生 突发",
    "domain": "news_realtime",
    "kind": "tfidf",
@@ -1310,6 +1358,18 @@
     "zhihu_global"
    ],
    "expect": "news_realtime",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "李合成 担任法定代表人的公司",
+   "domain": "company_search",
+   "kind": "regex",
+   "engines": [
+    "opencorporates",
+    "yuanbao"
+   ],
+   "expect": "company_search",
    "forbid": null,
    "src": "ROUTE_MATRIX"
   },

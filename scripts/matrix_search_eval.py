@@ -269,6 +269,24 @@ ROUTE_MATRIX: list[dict[str, Any]] = [
      "domain": "company_search", "primary": "opencorporates", "scenario": "company"},
     {"id": "R_zh_company_regcap", "q": "字节跳动 注册资本 变更", "lang": "zh",
      "domain": "company_search", "primary": "opencorporates", "scenario": "company"},
+    # 2026-10-25 补（企业主体查询 MECE 类目）：尽调风险（注销/经营异常）、开票
+    # （开票信息/税号）、人查公司（担任法定代表人/名下公司）三类此前落
+    # org_entity 的 wikidata 组合——wikidata 对中文企业 7 天空结果率 82%，
+    # company_search 的元宝才是交付源。config.yaml 两域词表成对改动
+    # （org_entity 让位 unless + company_search 收口 match/unless），改一处
+    # 必须同步另一处。企业名/人名一律合成名（对外脱敏纪律，v2.9.8 同款）。
+    {"id": "R_zh_company_risk", "q": "晨曦合成科技有限公司 注销了吗", "lang": "zh",
+     "domain": "company_search", "primary": "opencorporates", "scenario": "company"},
+    {"id": "R_zh_company_invoice", "q": "晨曦合成科技有限公司 开票信息 税号", "lang": "zh",
+     "domain": "company_search", "primary": "opencorporates", "scenario": "company"},
+    {"id": "R_zh_company_person", "q": "李合成 担任法定代表人的公司", "lang": "zh",
+     "domain": "company_search", "primary": "opencorporates", "scenario": "company"},
+    # 双向锁（v2.9.8 纪律）：新词表不得误吸非主体查询——办事指南是 howto、
+    # 招聘是求职，都不该进尽调域
+    {"id": "R_zh_company_not_howto", "q": "公司注销流程 怎么办", "lang": "zh",
+     "domain_not": ["company_search", "org_entity"], "scenario": "company"},
+    {"id": "R_zh_company_not_job", "q": "晨曦合成科技有限公司 招聘", "lang": "zh",
+     "domain_not": ["company_search"], "scenario": "company"},
 
     # ── 媒体/音乐 ──
     {"id": "R_en_media", "q": "Taylor Swift album", "lang": "en",
@@ -1132,6 +1150,20 @@ def _summarize(c: Checker) -> dict[str, Any]:
 
 
 def main() -> int:
+    # PyYAML 缺失时 config 会**静默**回落到内置默认引擎集（垂直域引擎全不在），
+    # route 段整片假红（2026-10-25 实测：无 yaml 的解释器跑出 94 FAIL，带 yaml
+    # 重跑 197 全绿——错误根因是解释器不是路由）。离线金标验的是路由语义，
+    # 没有真实 spec 就没有语义：硬失败，不产出误导性报告。
+    try:
+        import yaml  # noqa: F401
+    except ImportError as exc:
+        print(
+            f"[matrix] PyYAML 不可用（{exc}）：config 将静默降级到内置默认引擎集，"
+            "route 段会整片假红。请用带 PyYAML 的解释器运行"
+            "（bin/argo 启动器的 _pick_python 会自动挑），或先 pip install pyyaml。",
+            file=sys.stderr,
+        )
+        return 2
     ap = argparse.ArgumentParser(description="多语言×引擎×场景 矩阵测试")
     ap.add_argument("--offline", action="store_true")
     ap.add_argument("--live", action="store_true")
