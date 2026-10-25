@@ -150,3 +150,50 @@ def test_merge_payloads_emits(tele_dir):
     assert r["conflicts"] == len(out["conflicts"])
     assert r["public_engine"] == "local_bing"
     assert r["login_engine"] == "ego_browser_bing"
+
+
+# ── 夹具守卫（2026-10-25）：query 流注册表白名单 ──────────────────────────────
+# 黑名单（is_synthetic_run）追不全新夹具名，生产 query.jsonl 曾三次漏进表外
+# 引擎（最近 2026-10-24）；守卫在唯一落盘口反向判定。真值每次现取
+# （get_registry 自带 mtime 指纹缓存），无进程级缓存需要用例间复位。
+
+def test_guard_drops_fixture_engine_query(tele_dir):
+    assert usage_log.emit("query", {"query": "q 25", "count": 1,
+                                    "engines_used": ["quick_primary", "slow_backup"]}) is False
+    assert usage_log.emit("query", {"query": "e2e abort probe 35", "count": 1,
+                                    "engines_used": ["slow"]}) is False
+    assert _read_lines(tele_dir, "query") == []
+
+
+def test_guard_keeps_registry_engine_query(tele_dir):
+    assert usage_log.emit("query", {"query": "真实查询", "count": 5,
+                                    "engines_used": ["yuanbao", "octen"]})
+    rows = _read_lines(tele_dir, "query")
+    assert len(rows) == 1 and rows[0]["engines_used"] == ["yuanbao", "octen"]
+
+
+def test_guard_alias_and_missing_field_pass(tele_dir):
+    # 改名前历史别名豁免（与 usage_log_clean._ALIAS_KEEP 同账）
+    assert usage_log.emit("query", {"query": "旧条目", "engines_used": ["openlibrary"]})
+    # engines_used 缺失 / 空列表不是夹具信号，照常记录
+    assert usage_log.emit("query", {"query": "无引擎字段"})
+    assert usage_log.emit("query", {"query": "空列表", "engines_used": []})
+    assert len(_read_lines(tele_dir, "query")) == 3
+
+
+def test_guard_scoped_to_query_stream(tele_dir):
+    # route 流的格式测试本身用假名（e0..e14，见 test_tail_reads_recent），
+    # 守卫不得越界拦截其他流
+    assert usage_log.emit("route", {"engine": "e0", "engines": ["e0", "slow_backup"]})
+    assert len(_read_lines(tele_dir, "route")) == 1
+
+
+def test_guard_fail_open_when_registry_broken(tele_dir, monkeypatch):
+    import engines as engines_mod
+
+    def _boom():
+        raise RuntimeError("registry unavailable")
+
+    monkeypatch.setattr(engines_mod, "available_engines", _boom)
+    # 注册表不可用：守卫失效放行——不能因守卫丢真日志（fail-open）
+    assert usage_log.emit("query", {"query": "x", "engines_used": ["whatever"]})

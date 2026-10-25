@@ -6,6 +6,7 @@
   - 失败静默：任何异常都吞掉返回 False，绝不拖累搜索主路径
   - 目录可注入：ARGO_USAGE_LOG_DIR 覆盖（测试隔离），默认 <状态目录>/usage_log/
   - 总开关：ARGO_USAGE_LOG=0 / false 完全关闭
+  - 夹具守卫：query 流 engines_used 出现注册表外引擎名即判测试夹具，整条拒写
   - 脱敏：query 等敏感字段由调用方截断，本模块不放大
 
 Schema（每条一行 JSON，UTF-8）：
@@ -68,12 +69,56 @@ def _enabled() -> bool:
     return env_flag("ARGO_USAGE_LOG")
 
 
+# 引擎改名前的历史别名（表外但真实）：与 usage_log_clean._ALIAS_KEEP 同一账。
+_RENAMED_ALIAS_KEEP = frozenset({"openlibrary", "bing"})
+
+
+def _canonical_engines() -> frozenset[str]:
+    """注册表引擎名全集（含历史别名豁免）。注册表加载失败返回空集——
+    守卫随之失效放行（fail-open）：守卫是防脏数据的，不能反过来丢真日志。
+
+    不做外层缓存：available_engines 走 get_registry 的 mtime 指纹自愈，每次
+    现取才能看见「daemon 常驻期间新增的本地引擎」；外层冻结只会把新引擎的
+    真日志误杀成夹具。每次构建 frozenset 是微秒级，query 流每搜索只写一条。
+    """
+    try:
+        from engines import available_engines
+        return frozenset(available_engines()) | _RENAMED_ALIAS_KEEP
+    except Exception:
+        return frozenset()
+
+
+def _fixture_engines(record: dict[str, Any]) -> list[str]:
+    """query 记录里的注册表外引擎名（别名豁免后）。
+
+    engines_used 缺失/非列表/为空一律视为无夹具信号：真实搜索的该字段
+    永远是引擎 id 列表，守卫只对「有列表且含表外名」的形态做判定。
+    """
+    used = record.get("engines_used")
+    if not isinstance(used, list) or not used:
+        return []
+    canon = _canonical_engines()
+    if not canon:
+        return []
+    return [e for e in used if not isinstance(e, str) or e not in canon]
+
+
 def emit(stream: str, record: dict[str, Any]) -> bool:
     """追加一条日志记录到 <usage_log_dir>/<stream>.jsonl。
 
     失败静默返回 False，绝不抛异常；记录内会补 ts / stream / version。
     """
     if not _enabled():
+        return False
+    if stream == "query" and _fixture_engines(record):
+        # 夹具守卫（2026-10-25）：测试夹具引擎名（fast / slow / quick_primary
+        # 这类注册表外名）屡次写进生产 query.jsonl（conftest 的
+        # ARGO_USAGE_LOG=0 与 is_synthetic_run 的黑名单各漏过一批，最近一次
+        # 2026-10-24），stats 的均值与最慢/高频引擎榜随之失真。黑名单永远
+        # 追不全新夹具名，这里在唯一落盘口用注册表白名单反向判定：表外名
+        # 即夹具，整条拒写。存量清理走 usage_log_clean.py（隔离不删除）。
+        # 只拦 query 流：route/recovery 的字段形态与测试惯例不同（route 的
+        # 格式测试本身用 e0..e14 假名），且实测污染只发生在 query 流。
         return False
     try:
         line = json.dumps(

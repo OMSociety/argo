@@ -198,6 +198,12 @@ class TestWgRrfEngineWeighting:
         assert _engine_weight("wikipedia") > 1.0 > _engine_weight("twitter")
         assert _engine_weight("arxiv") == _ENGINE_FUSION_WEIGHTS["arxiv"]
         assert _engine_weight("不存在的引擎") == 1.0  # 未知源保持中性
+        # 2026-10-25 补表回归锁：学术聚合与官方一手数据必须高于基线
+        # （core 实测为学术域唯一交货源，此前表外拿 1.0 是实证缺口）
+        for eng in ("core", "openreview", "sec_edgar", "egov_law", "openstd"):
+            assert _engine_weight(eng) > 1.0, eng
+        for eng in ("zenodo", "datacite"):
+            assert _engine_weight(eng) > 1.0, eng  # 仓库类略低档，仍在基线上
 
     def test_merged_source_takes_best_static_weakest_reliability(self):
         from search import _engine_weight

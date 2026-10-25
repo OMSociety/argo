@@ -214,7 +214,7 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "url_safety（check_redirect_target / resolve_redirect_chain / "
               "max_redirects），_http_client 只留调用点；上限 1053 → 1039 随动下调"),
     "scripts/search_rank.py": (
-        991, "RRF 融合 + minhash 去重 + 五维重排；"
+        997, "RRF 融合 + minhash 去重 + 五维重排；"
               "2026-10-17 口径隔离逻辑拆出 caliber_isolation.py（−79 行）；"
               "2026-10-17 +4：_attach_selection_signals 接 authority_level 离散"
               "等级（DeepSeek 语义 0-4，映射与上游采信逻辑在 rank_signals）+"
@@ -232,7 +232,10 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "（可选依赖、判定逻辑全部在 rank_signals.fuzzy_near_dup，本文件只留"
               "调用点与数据行豁免排序注释）；"
               "2026-10-16 +1：_content_sig 末尾接 normalize_title_suffix 剥站后缀"
-              "（跨站同文对差异几乎全在结尾后缀，零依赖；归一化逻辑在 rank_signals）"),
+              "（跨站同文对差异几乎全在结尾后缀，零依赖；归一化逻辑在 rank_signals）；"
+              "2026-10-25 +6：_ENGINE_FUSION_WEIGHTS 补 12 个学术聚合/官方一手源"
+              "（core/openreview/sec_edgar/egov_law/openstd 等=1.3、zenodo/datacite=1.2；"
+              "实证缺口：学术域查询常由 core 独家交付却拿 1.0 基线，表内注释有当日实测）"),
     "scripts/search_pipeline.py": (
         926, "搜索编排主管线（路由→分派→融合→恢复→漏斗输出）；"
              "2026-10-23 −8：融合输入改 serp_kill_log.clean_engine_lists"

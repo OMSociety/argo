@@ -96,6 +96,12 @@ _ENGINE_FUSION_WEIGHTS: dict[str, float] = {
     "stackoverflow": 1.1, "imdb": 1.2, "thesportsdb": 1.2, "itunes": 1.2,
     "finviz": 1.2, "sina_quote": 1.2, "tencent_quote": 1.2, "eastmoney": 1.2,
     "fred": 1.3, "worldbank": 1.3, "nbs_stats": 1.3, "eurostat": 1.3, "fx_rate": 1.2, "frankfurter": 1.2,
+    # 2026-10-25 补表：学术聚合与官方一手数据此前表外=1.0 基线。实证缺口：
+    # 学术域查询常由 core 独家交付（当日实测组合里 arxiv/local_pubmed 零结果、
+    # 只 core 有货）却拿基线权重；官方 open data / 法律 / 标准系同理。
+    "core": 1.3, "openreview": 1.3, "zenodo": 1.2, "datacite": 1.2,
+    "sec_edgar": 1.3, "federal_register": 1.3, "eu_opendata": 1.3,
+    "egov_law": 1.3, "openstd": 1.3, "who_gho": 1.3, "usgs": 1.3, "nasa_cmr": 1.3,
     # 通用引擎（基线）
     "duckduckgo": 1.0, "local_bing": 1.0, "local_duckduckgo": 1.0,
     "local_google": 1.0, "anysearch": 1.05, "byted": 1.1, "bocha": 1.0,
