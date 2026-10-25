@@ -287,6 +287,32 @@ ROUTE_MATRIX: list[dict[str, Any]] = [
      "domain_not": ["company_search", "org_entity"], "scenario": "company"},
     {"id": "R_zh_company_not_job", "q": "晨曦合成科技有限公司 招聘", "lang": "zh",
      "domain_not": ["company_search"], "scenario": "company"},
+    # ── 2026-10-25 六族 MECE 扫描（学术/金融财务/法律/医药）──
+    # 全部为真实场景类目，企业名/人名保持合成名（脱敏纪律）。每处 config 改动
+    # 都有成对的 unless 让位，反例见 tests/test_domain_rule_schema.py。
+    {"id": "R_zh_stock_financials", "q": "贵州茅台 2025 年报 营收", "lang": "zh",
+     "domain": "stock_query", "primary": "sina_quote", "scenario": "finance"},
+    {"id": "R_zh_stock_valuation", "q": "贵州茅台 市盈率 估值", "lang": "zh",
+     "domain": "stock_query", "primary": "sina_quote", "scenario": "finance"},
+    # zh 财务词形不得落美股域（sec_companyfacts 只认 CIK，A 股全废）
+    {"id": "R_zh_usfund_yields_cn", "q": "宁德时代 毛利率 现金流", "lang": "zh",
+     "domain_not": ["us_fundamentals"], "scenario": "finance"},
+    # 民事实务（劳动/借贷）此前落 chinese_general，flk_law 才是交付源
+    {"id": "R_zh_legal_labor", "q": "劳动合同解除 赔偿 N+1", "lang": "zh",
+     "domain": "legal", "primary": "anysearch", "scenario": "legal"},
+    {"id": "R_zh_legal_lending", "q": "民间借贷 利率 司法保护上限", "lang": "zh",
+     "domain": "legal", "primary": "anysearch", "scenario": "legal"},
+    # 药品说明书此前被 code_search 的「用法」子串抢走（GitHub/MDN 答不了药）
+    {"id": "R_zh_medical_drug_label", "q": "布洛芬 说明书 用法用量", "lang": "zh",
+     "domain": "medical", "primary": "clinicaltrials", "scenario": "medical"},
+    # 综述语境不被模型目录抢（models_dev 答不了综述）
+    {"id": "R_zh_survey_not_modelcard", "q": "大模型 长上下文 综述", "lang": "zh",
+     "domain_not": ["ai_model"], "scenario": "academic"},
+    # 论文写作 howto / 年报模板 howto 不进学术域与行情域
+    {"id": "R_zh_academic_not_howto", "q": "怎么写论文 查重 降重", "lang": "zh",
+     "domain_not": ["academic"], "scenario": "academic"},
+    {"id": "R_zh_stock_not_howto", "q": "年报 模板 怎么写", "lang": "zh",
+     "domain_not": ["stock_query", "us_fundamentals"], "scenario": "finance"},
 
     # ── 媒体/音乐 ──
     {"id": "R_en_media", "q": "Taylor Swift album", "lang": "en",
@@ -467,7 +493,15 @@ ROUTE_MATRIX: list[dict[str, Any]] = [
     {"id": "R_stackoverflow_search", "q": "stackoverflow 编程问题 代码问题", "lang": "zh", "domain": "stackoverflow_search", "primary": "stackoverflow", "scenario": "code"},
     {"id": "R_standards", "q": "国家标准 国标 标准号", "lang": "zh", "domain": "standards", "primary": "std_samr", "scenario": "academic"},
     {"id": "R_tech_deep", "q": "deep dive 架构 实践", "lang": "zh", "domain": "tech_deep", "primary": "arxiv", "scenario": "tech"},
-    {"id": "R_us_fundamentals", "q": "营收 净利润 财务数据 苹果", "lang": "zh", "domain": "us_fundamentals", "primary": "sec_companyfacts", "scenario": "finance"},
+    # 2026-10-25 约定更新：zh 词形财务查询统一走 stock_query（sina/eastmoney
+    # 双地覆盖，与「XX 股价」分流同构）；本域收英文词形与美股语境。代价是
+    # zh 美股财务查询损失 sec 结构化精度，换来 A 股企业不再落只认 CIK 的
+    # sec_companyfacts 全空——两害取其轻，成对改动注释见 config us_fundamentals。
+    # 英文方向的域锁定另见 R_us_fundamentals_en。
+    {"id": "R_us_fundamentals", "q": "营收 净利润 财务数据 苹果", "lang": "zh",
+     "domain": "stock_query", "primary": "sina_quote", "scenario": "finance"},
+    {"id": "R_us_fundamentals_en", "q": "apple annual revenue net income", "lang": "en",
+     "domain": "us_fundamentals", "primary": "sec_companyfacts", "scenario": "finance"},
     {"id": "R_us_legal", "q": "supreme court 判例 precedent", "lang": "en", "domain": "us_legal", "primary": "federal_register", "scenario": "legal"},
     {"id": "R_web_archive", "q": "网页快照 历史网页 wayback", "lang": "zh", "domain": "web_archive", "primary": "wikipedia", "scenario": "general"},
     {"id": "R_web_docs", "q": "mozilla developer fetch 属性", "lang": "en", "domain": "web_docs", "primary": "mdn", "scenario": "code"},

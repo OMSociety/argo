@@ -197,7 +197,13 @@ domains:
   name: us_fundamentals
   parallel: false
   patterns:
-  - (?i)(营收|营业收入|净利润|净利|利润|财务数据|财务指标|annual\s+revenue|revenue|net\s+income|earnings|financials|fundamentals|balance\s+sheet|资产负债表|现金流|cash\s+flow|\bEPS\b|每股收益|总资产|总负债|毛利)
+  # 2026-10-25 补 unless：zh 词形的财务查询一律让位 stock_query（sina/eastmoney
+  # 对 A/US 两地上市都能交付，sec_companyfacts 只认 CIK，宁德时代这类 A 股
+  # 企业落本域全废）——与「XX 股价」既有分流约定同构：zh 词走 stock_query，
+  # 英文词形或美股语境才进本域。与 stock_query 新增的财务 pattern 成对出现，
+  # 改一处必须同步另一处。
+  - match: '(?i)(营收|营业收入|净利润|净利|利润|财务数据|财务指标|annual\s+revenue|revenue|net\s+income|earnings|financials|fundamentals|balance\s+sheet|资产负债表|现金流|cash\s+flow|\bEPS\b|每股收益|总资产|总负债|毛利)'
+    unless: '(?i)(A股|沪深|沪市|深市|上证|深证|北交所|创业板|科创板|年报|季报|财报|营收|营业收入|净利润|净利|利润|财务数据|财务指标|资产负债表|现金流|每股收益|总资产|总负债|毛利)'
   primary: sec_companyfacts
 
 - desc: 美股筛选/分析（Finviz + Seeking Alpha；须排在 stock_query 前，避免「美股/ticker」被 A 股域吸走）
@@ -235,6 +241,15 @@ domains:
   - (?i)(\bstock\b|stock price|share price|market\s+cap)
   - A股|港股|股票|ETF|板块
   - (资金流|主力资金|北向|龙虎榜|大宗交易|换手率)
+  # 2026-10-25 补：财务数值/估值类。A/US 分流沿用「XX 股价」既有约定——
+  # zh 词且无美股标记进本域（sina/eastmoney 双地覆盖），美股标记与 10-K
+  # 让位 us_*。裸「财报/年报」是披露浏览归 financial_news（「英伟达 财报」
+  # 是双向锁既有约定），本域只收数值/估值词形；howto（怎么写年报/模板）
+  # 让位通用域。实测 A 股企业「年报 营收」「市盈率 估值」此前分别落
+  # us_fundamentals 与 chinese_general。us_fundamentals 同日加了对应的
+  # zh 词形 unless，两处成对。
+  - match: '(?i)(营收|营业收入|净利润|净利|利润|毛利率|市盈率|市净率|股息率|净资产收益率|\bROE\b|估值|现金流)'
+    unless: '(?i)(美股|NASDAQ|NYSE|纳斯达克|标普|10-?[KQ]|\bSEC\b|EDGAR|怎么写|模板|格式|范文|入门|公告)'
   primary: sina_quote
   quote: true
   early_stop_min_results: 1
@@ -845,7 +860,10 @@ domains:
   parallel: false
   patterns:
   - (?i)\b(LLM|GPT|Claude|Gemini|GLM|Llama|Mistral|DeepSeek|Qwen|Grok)\b
-  - (?i)(模型|model).{0,24}(价格|pricing|多少钱|上下文|context|token|支持视觉|vision|能力|对比|免费|开源)
+  # 2026-10-25 补 unless：综述/论文语境让位给 tech_deep（openalex/arxiv）——
+  # 实测「大模型 长上下文 综述」被本域 models_dev 抢走，模型目录答不了综述。
+  - match: '(?i)(模型|model).{0,24}(价格|pricing|多少钱|上下文|context|token|支持视觉|vision|能力|对比|免费|开源)'
+    unless: '(?i)(综述|survey|论文|文献|研究进展|预印本|state\s+of\s+the\s+art|SOTA)'
   - (?i)(API price|pricing|context window|token limit|vision model|tool call)
   # 点查域意图豁免词（语义见 route_domains.intent_required）
   # 扩展（2026-10-06）：意图门 token 门槛降到 4 后，4 token 的真点查
@@ -883,6 +901,12 @@ domains:
   # 「裁判文书 判决书」落本域用 anysearch/byted 搜，而 wenshu 才是裁判文书权威源。
   - match: '(?i)(刑法|民法|司法解释|判例|法规|裁判文书|案由|案号|法院判决)'
     unless: '(?i)(裁判文书|判决书|裁定书|wenshu|court\.gov)'
+  # 2026-10-25 补：民事实务类（劳动/借贷/婚姻家事/侵权赔偿）——实测
+  # 「劳动合同解除 赔偿」「民间借贷 利率 司法保护上限」落 chinese_general，
+  # 而 flk_law/anysearch 能交付法条与实务口径。unless 锁求职（岗位/薪资）
+  # 与模板下载形态。
+  - match: '(?i)(劳动合同|工伤|民间借贷|借贷纠纷|借贷利率|婚姻|离婚|继承|遗产|侵权责任|交通肇事|仲裁申请|赔偿金|经济补偿|竞业限制)'
+    unless: '(?i)(岗位|招聘|薪资|待遇|面试|简历|模板|范文|下载)'
   primary: anysearch
 - desc: 裁判文书检索
   engines_combo:
@@ -924,6 +948,11 @@ domains:
   - (?i)(临床试验|clinical trial|nct\d+|clinicaltrials\.gov|openfda|fda 药品|药品说明书|药物标签|drug label|适应症|不良反应)
   - (?i)(medicine|pharmaceutical|dosage|contraindication|药物|药品|处方药|\botc\b)
   - (?i)(症状|用药|适应症|临床|临床指南|诊疗指南|医学指南|用药指南|治疗指南|副作用|禁忌|诊断|治疗|病因)
+  # 2026-10-25 补：药品说明书/用法用量类——实测「某药 说明书 用法用量」被
+  # code_search 的「用法」子串抢走（GitHub/MDN 答不了药）。unless 锁软件/
+  # 硬件语境的说明书。code_search 同日加了对应药品语境 unless，两处成对。
+  - match: '(?i)(说明书|用法用量|服用剂量|一次吃多少|一天几次)'
+    unless: '(?i)(软件|硬件|固件|安装|接口|\bAPI\b|\bAPP\b|app|产品说明)'
   - '(?i)(WHO|世界卫生组织).{0,12}(通报|疫情|卫生|指标|统计)'
   - '(?i)(公共卫生|卫生指标|疾病负担|死亡率|发病率|卫生统计)'
   primary: clinicaltrials
@@ -1333,7 +1362,11 @@ domains:
   # 中文论文语境词此前是缺口：规则里有英文 preprint，却没有「预印本」。
   # 实测「生物医学预印本」因此一个域都不命中，掉进通用兜底（combo 变成
   # bocha+anysearch），biorxiv/openreview 这些已实现的源永远轮不上。
-  - (?i)(论文|\bpaper\b|预印本|preprint|arXiv|bioRxiv|medRxiv|DOI|引用|citation|学术|文献|期刊|学报|综述|同行评议|影响因子|openalex|crossref|europe pmc|dblp|PubMed|知网|万方|维普)
+  # 2026-10-25 补 unless：论文写作/评审的 howto 形态（怎么写/查重/盲审/开题）
+  # 不是找论文——实测两类都落本域，arxiv 答不了写作技巧。只否决这一条，
+  # 「综述 论文」等真检索语境不受影响。
+  - match: '(?i)(论文|\bpaper\b|预印本|preprint|arXiv|bioRxiv|medRxiv|DOI|引用|citation|学术|文献|期刊|学报|综述|同行评议|影响因子|openalex|crossref|europe pmc|dblp|PubMed|知网|万方|维普)'
+    unless: '(?i)(怎么写|查重|降重|盲审|开题|致谢|选题|范文|抄袭|写作技巧|参考文献格式)'
   - \b\d{4}\.\d{4,5}\b
   # 2026-09-30：模型名词表拆成独立条目并挂 unless。此前裸 (?i)...|BERT|GPT)
   # 是子串匹配，「chatgpt 使用技巧」「如何用 GPT 写周报」「gpt-5 发布」这类
@@ -1411,7 +1444,10 @@ domains:
   # 裸「开源」太宽：品牌/产品句（「雪原 开源 投研 搜索工具」）也会
   # 命中，GitHub 慢源要 7s 且只回一条。只收「开源项目/代码/仓库/库/软件/
   # 框架」这类明确指向代码仓库的说法；有 github/源码 的查询仍走本域。
-  - (?i)(github|source code|源码|开源\s*(项目|代码|仓库|库|软件|框架)|函数|实现|用法|snippet)
+  # 2026-10-25 补 unless：药品语境让位 medical——「用法」子串会命中
+  # 「用法用量」（实测药品说明书查询被 GitHub/MDN 接走）。
+  - match: '(?i)(github|source code|源码|开源\s*(项目|代码|仓库|库|软件|框架)|函数|实现|用法|snippet)'
+    unless: '(?i)(用法用量|说明书|不良反应|禁忌|症状|服用|剂量|药品|药物)'
   # 「统一社会信用代码」是工商登记字段，不是代码搜索。拆出「代码」单条，
   # 让 company_search（更靠后）能接到这类查询。
   - match: '(?i)(代码)'

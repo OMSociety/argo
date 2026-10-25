@@ -176,6 +176,21 @@ def test_every_rule_compiles_and_survives_compilation():
         # company_search unless（2026-10-25）：办事指南形态（流程/怎么办）不是
         # 主体尽调查询，新词表（注销/开票/税号…）不得误吸
         ("company_search", "公司注销流程 怎么办"),
+        # ── 2026-10-25 六族 MECE 扫描的新 unless 反例 ──
+        # ai_model：综述语境让位学术/深潜域
+        ("ai_model", "大模型 长上下文 综述"),
+        # us_fundamentals：zh 财务词形让位 stock_query（A 股企业落美股 API 全废）
+        ("us_fundamentals", "宁德时代 毛利率 现金流"),
+        # stock_query：年报模板是 howto 不是行情
+        ("stock_query", "年报 模板 怎么写"),
+        # legal：求职语境不进民事实务词表
+        ("legal", "AI搜索产品经理 岗位职责"),
+        # medical：软件安装说明不是药品说明书
+        ("medical", "软件 安装 说明书"),
+        # code_search：药品语境的「用法」子串让位 medical
+        ("code_search", "布洛芬 说明书 用法用量"),
+        # academic：论文写作/评审 howto 不是找论文
+        ("academic", "怎么写论文 查重 降重"),
     ],
 )
 def test_unless_has_a_negative_case(domain_name, query):
@@ -195,7 +210,8 @@ def test_unless_declared_domains_are_covered_by_negative_cases():
     covered = {"weather_query", "geo_places", "academic", "fund_query", "org_entity",
                "fx_query", "cls_telegraph_search", "em_news_search", "legal",
                "anime_encyclopedia", "art_museum", "chinese_tech_deep",
-               "code_search", "image_search", "company_search"}
+               "code_search", "image_search", "company_search",
+               "ai_model", "us_fundamentals", "stock_query", "medical"}
     declared = {d.get("name") for d in DOMAINS
                 if any(_split_pattern_entry(p)[1] for p in _entries_of(d))}
     missing = sorted(declared - covered)

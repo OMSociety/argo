@@ -260,6 +260,18 @@
    "src": "ROUTE_MATRIX"
   },
   {
+   "query": "apple annual revenue net income",
+   "domain": "us_fundamentals",
+   "kind": "regex",
+   "engines": [
+    "sec_companyfacts",
+    "anysearch"
+   ],
+   "expect": "us_fundamentals",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
    "query": "best wood for beginner woodworking",
    "domain": "general_search",
    "kind": "tfidf",
@@ -931,6 +943,18 @@
    "src": "ROUTE_MATRIX"
   },
   {
+   "query": "劳动合同解除 赔偿 N+1",
+   "domain": "legal",
+   "kind": "tfidf",
+   "engines": [
+    "anysearch",
+    "byted"
+   ],
+   "expect": "legal",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
    "query": "北京 今天 天气",
    "domain": "weather_query",
    "kind": "tfidf",
@@ -1158,6 +1182,18 @@
    "src": "SUBSTRING_ACCIDENTS"
   },
   {
+   "query": "大模型 长上下文 综述",
+   "domain": "academic",
+   "kind": "tfidf",
+   "engines": [
+    "arxiv",
+    "openreview"
+   ],
+   "expect": null,
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
    "query": "如何学习机器学习",
    "domain": "chinese_tech_deep",
    "kind": "tfidf",
@@ -1178,6 +1214,18 @@
     "yuanbao"
    ],
    "expect": "company_search",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "宁德时代 毛利率 现金流",
+   "domain": "stock_query",
+   "kind": "tfidf",
+   "engines": [
+    "sina_quote",
+    "local_openstreetmap"
+   ],
+   "expect": null,
    "forbid": null,
    "src": "ROUTE_MATRIX"
   },
@@ -1230,6 +1278,30 @@
    "src": "SUBSTRING_ACCIDENTS"
   },
   {
+   "query": "布洛芬 说明书 用法用量",
+   "domain": "medical",
+   "kind": "tfidf",
+   "engines": [
+    "clinicaltrials",
+    "anysearch"
+   ],
+   "expect": "medical",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "年报 模板 怎么写",
+   "domain": "chinese_general",
+   "kind": "regex",
+   "engines": [
+    "bocha",
+    "yuanbao"
+   ],
+   "expect": null,
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
    "query": "库里 球队",
    "domain": "sports_search",
    "kind": "tfidf",
@@ -1262,6 +1334,18 @@
     "baidu_hot"
    ],
    "expect": "hot_trending",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "怎么写论文 查重 降重",
+   "domain": "chinese_general",
+   "kind": "tfidf",
+   "engines": [
+    "bocha",
+    "yuanbao"
+   ],
+   "expect": null,
    "forbid": null,
    "src": "ROUTE_MATRIX"
   },
@@ -1442,6 +1526,18 @@
     "defillama"
    ],
    "expect": "crypto_search",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "民间借贷 利率 司法保护上限",
+   "domain": "legal",
+   "kind": "tfidf",
+   "engines": [
+    "anysearch",
+    "byted"
+   ],
+   "expect": "legal",
    "forbid": null,
    "src": "ROUTE_MATRIX"
   },
@@ -1771,13 +1867,13 @@
   },
   {
    "query": "营收 净利润 财务数据 苹果",
-   "domain": "us_fundamentals",
+   "domain": "stock_query",
    "kind": "tfidf",
    "engines": [
-    "sec_companyfacts",
-    "anysearch"
+    "sina_quote",
+    "tencent_quote"
    ],
-   "expect": "us_fundamentals",
+   "expect": "stock_query",
    "forbid": null,
    "src": "ROUTE_MATRIX"
   },
@@ -1838,6 +1934,30 @@
     "anysearch"
    ],
    "expect": "shopping",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "贵州茅台 2025 年报 营收",
+   "domain": "stock_query",
+   "kind": "regex",
+   "engines": [
+    "sina_quote",
+    "tencent_quote"
+   ],
+   "expect": "stock_query",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
+  },
+  {
+   "query": "贵州茅台 市盈率 估值",
+   "domain": "stock_query",
+   "kind": "tfidf",
+   "engines": [
+    "sina_quote",
+    "tencent_quote"
+   ],
+   "expect": "stock_query",
    "forbid": null,
    "src": "ROUTE_MATRIX"
   },
