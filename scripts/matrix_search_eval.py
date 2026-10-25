@@ -1183,18 +1183,62 @@ def _summarize(c: Checker) -> dict[str, Any]:
     }
 
 
+def _reexec_with_yaml() -> bool:
+    """缺 PyYAML 时改用带依赖的解释器重入；exec 成功则不返回。
+
+    why：config 在无 yaml 时静默回落内置默认引擎集，route 段整片假红
+    （2026-10-25 实测：同机无 yaml 的解释器跑出 94 FAIL、带 yaml 的全绿）。
+    bin/argo 启动器的 _pick_python 会自动挑解释器，但分享场景里用户会直接
+    `python3 scripts/matrix_search_eval.py`——解释器版本不该卡住人。候选序：
+    ARGO_PYTHON（与启动器同一权威覆盖）→ PATH 上的 python3.14/3.13/3.15/
+    3.12 → python3；每个候选真跑一次 `import yaml` 验证（探测约 100ms，
+    评测不是热路径）。已重入过仍缺（_ARGO_MATRIX_REEXEC 标记）则放弃，
+    避免套娃。
+    """
+    import os
+    import shutil
+    import subprocess
+
+    if os.environ.get("_ARGO_MATRIX_REEXEC") == "1":
+        return False
+    cands = []
+    env_py = os.environ.get("ARGO_PYTHON", "").strip()
+    if env_py:
+        cands.append(env_py)
+    cands += [shutil.which("python3.%d" % m) or "" for m in (14, 13, 15, 12)]
+    cands.append(shutil.which("python3") or "")
+    for cand in cands:
+        if not cand:
+            continue
+        if os.path.realpath(cand) == os.path.realpath(sys.executable):
+            continue  # 当前解释器已证明缺 yaml，跳过
+        try:
+            probe = subprocess.run([cand, "-c", "import yaml"],
+                                   capture_output=True, timeout=30)
+        except Exception:
+            continue
+        if probe.returncode == 0:
+            os.environ["_ARGO_MATRIX_REEXEC"] = "1"
+            print("[matrix] 当前解释器缺 PyYAML，改用 %s 重入" % cand,
+                  file=sys.stderr)
+            os.execv(cand, [cand, sys.argv[0], *sys.argv[1:]])
+    return False
+
+
 def main() -> int:
     # PyYAML 缺失时 config 会**静默**回落到内置默认引擎集（垂直域引擎全不在），
     # route 段整片假红（2026-10-25 实测：无 yaml 的解释器跑出 94 FAIL，带 yaml
-    # 重跑 197 全绿——错误根因是解释器不是路由）。离线金标验的是路由语义，
-    # 没有真实 spec 就没有语义：硬失败，不产出误导性报告。
+    # 重跑 197 全绿——错误根因是解释器不是路由）。先自愈换解释器重入
+    # （3.15/3.14 等版本差异不再卡用户），换无可换才硬失败退出。
     try:
         import yaml  # noqa: F401
     except ImportError as exc:
+        _reexec_with_yaml()
         print(
-            f"[matrix] PyYAML 不可用（{exc}）：config 将静默降级到内置默认引擎集，"
-            "route 段会整片假红。请用带 PyYAML 的解释器运行"
-            "（bin/argo 启动器的 _pick_python 会自动挑），或先 pip install pyyaml。",
+            f"[matrix] PyYAML 不可用（{exc}）且候选解释器（ARGO_PYTHON 与 PATH "
+            "上的 python3.x）均缺：config 将静默降级到内置默认引擎集，route 段"
+            "会整片假红。请 pip install pyyaml，或设 ARGO_PYTHON 指向带依赖的"
+            "解释器。",
             file=sys.stderr,
         )
         return 2
