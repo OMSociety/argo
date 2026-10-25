@@ -1,10 +1,10 @@
 {
   "summary": {
-    "ok": 197,
+    "ok": 212,
     "fail": 0,
     "warn": 1,
     "by_status": {
-      "PASS": 197,
+      "PASS": 212,
       "FAIL": 0,
       "WARN": 1
     },
@@ -25,7 +25,7 @@
         "WARN": 0
       },
       "route": {
-        "PASS": 118,
+        "PASS": 133,
         "FAIL": 0,
         "WARN": 0
       },
@@ -132,8 +132,8 @@
     },
     "route_by_scenario": {
       "finance": {
-        "ok": 11,
-        "n": 11
+        "ok": 16,
+        "n": 16
       },
       "macro": {
         "ok": 3,
@@ -160,8 +160,20 @@
         "n": 5
       },
       "company": {
-        "ok": 2,
-        "n": 2
+        "ok": 7,
+        "n": 7
+      },
+      "legal": {
+        "ok": 8,
+        "n": 8
+      },
+      "medical": {
+        "ok": 1,
+        "n": 1
+      },
+      "academic": {
+        "ok": 9,
+        "n": 9
       },
       "media": {
         "ok": 10,
@@ -170,10 +182,6 @@
       "weather": {
         "ok": 4,
         "n": 4
-      },
-      "academic": {
-        "ok": 7,
-        "n": 7
       },
       "chem": {
         "ok": 1,
@@ -210,20 +218,16 @@
       "community": {
         "ok": 6,
         "n": 6
-      },
-      "legal": {
-        "ok": 6,
-        "n": 6
       }
     },
     "route_by_lang": {
       "zh": {
-        "ok": 72,
-        "n": 72
+        "ok": 86,
+        "n": 86
       },
       "en": {
-        "ok": 32,
-        "n": 32
+        "ok": 33,
+        "n": 33
       },
       "ja": {
         "ok": 6,
@@ -1142,6 +1146,262 @@
         "engine": "opencorporates",
         "combo": [
           "opencorporates",
+          "yuanbao"
+        ],
+        "primary_lang": "zh"
+      }
+    },
+    {
+      "name": "route:R_zh_company_risk",
+      "status": "PASS",
+      "detail": "domain=company_search eng=opencorporates combo=['opencorporates', 'yuanbao'] lang=zh",
+      "meta": {
+        "id": "R_zh_company_risk",
+        "q": "晨曦合成科技有限公司 注销了吗",
+        "scenario": "company",
+        "lang": "zh",
+        "domain": "company_search",
+        "engine": "opencorporates",
+        "combo": [
+          "opencorporates",
+          "yuanbao"
+        ],
+        "primary_lang": "zh"
+      }
+    },
+    {
+      "name": "route:R_zh_company_invoice",
+      "status": "PASS",
+      "detail": "domain=company_search eng=opencorporates combo=['opencorporates', 'yuanbao'] lang=zh",
+      "meta": {
+        "id": "R_zh_company_invoice",
+        "q": "晨曦合成科技有限公司 开票信息 税号",
+        "scenario": "company",
+        "lang": "zh",
+        "domain": "company_search",
+        "engine": "opencorporates",
+        "combo": [
+          "opencorporates",
+          "yuanbao"
+        ],
+        "primary_lang": "zh"
+      }
+    },
+    {
+      "name": "route:R_zh_company_person",
+      "status": "PASS",
+      "detail": "domain=company_search eng=opencorporates combo=['opencorporates', 'yuanbao'] lang=zh",
+      "meta": {
+        "id": "R_zh_company_person",
+        "q": "李合成 担任法定代表人的公司",
+        "scenario": "company",
+        "lang": "zh",
+        "domain": "company_search",
+        "engine": "opencorporates",
+        "combo": [
+          "opencorporates",
+          "yuanbao"
+        ],
+        "primary_lang": "zh"
+      }
+    },
+    {
+      "name": "route:R_zh_company_not_howto",
+      "status": "PASS",
+      "detail": "domain=chinese_general eng=bocha combo=['bocha', 'yuanbao'] lang=zh",
+      "meta": {
+        "id": "R_zh_company_not_howto",
+        "q": "公司注销流程 怎么办",
+        "scenario": "company",
+        "lang": "zh",
+        "domain": "chinese_general",
+        "engine": "bocha",
+        "combo": [
+          "bocha",
+          "yuanbao"
+        ],
+        "primary_lang": "zh"
+      }
+    },
+    {
+      "name": "route:R_zh_company_not_job",
+      "status": "PASS",
+      "detail": "domain=chinese_general eng=bocha combo=['bocha', 'yuanbao'] lang=zh",
+      "meta": {
+        "id": "R_zh_company_not_job",
+        "q": "晨曦合成科技有限公司 招聘",
+        "scenario": "company",
+        "lang": "zh",
+        "domain": "chinese_general",
+        "engine": "bocha",
+        "combo": [
+          "bocha",
+          "yuanbao"
+        ],
+        "primary_lang": "zh"
+      }
+    },
+    {
+      "name": "route:R_zh_stock_financials",
+      "status": "PASS",
+      "detail": "domain=stock_query eng=sina_quote combo=['sina_quote', 'tencent_quote'] lang=zh",
+      "meta": {
+        "id": "R_zh_stock_financials",
+        "q": "贵州茅台 2025 年报 营收",
+        "scenario": "finance",
+        "lang": "zh",
+        "domain": "stock_query",
+        "engine": "sina_quote",
+        "combo": [
+          "sina_quote",
+          "tencent_quote"
+        ],
+        "primary_lang": "zh"
+      }
+    },
+    {
+      "name": "route:R_zh_stock_valuation",
+      "status": "PASS",
+      "detail": "domain=stock_query eng=sina_quote combo=['sina_quote', 'tencent_quote'] lang=zh",
+      "meta": {
+        "id": "R_zh_stock_valuation",
+        "q": "贵州茅台 市盈率 估值",
+        "scenario": "finance",
+        "lang": "zh",
+        "domain": "stock_query",
+        "engine": "sina_quote",
+        "combo": [
+          "sina_quote",
+          "tencent_quote"
+        ],
+        "primary_lang": "zh"
+      }
+    },
+    {
+      "name": "route:R_zh_usfund_yields_cn",
+      "status": "PASS",
+      "detail": "domain=stock_query eng=sina_quote combo=['sina_quote', 'local_openstreetmap'] lang=zh",
+      "meta": {
+        "id": "R_zh_usfund_yields_cn",
+        "q": "宁德时代 毛利率 现金流",
+        "scenario": "finance",
+        "lang": "zh",
+        "domain": "stock_query",
+        "engine": "sina_quote",
+        "combo": [
+          "sina_quote",
+          "local_openstreetmap"
+        ],
+        "primary_lang": "zh"
+      }
+    },
+    {
+      "name": "route:R_zh_legal_labor",
+      "status": "PASS",
+      "detail": "domain=legal eng=anysearch combo=['anysearch', 'byted'] lang=zh",
+      "meta": {
+        "id": "R_zh_legal_labor",
+        "q": "劳动合同解除 赔偿 N+1",
+        "scenario": "legal",
+        "lang": "zh",
+        "domain": "legal",
+        "engine": "anysearch",
+        "combo": [
+          "anysearch",
+          "byted"
+        ],
+        "primary_lang": "zh"
+      }
+    },
+    {
+      "name": "route:R_zh_legal_lending",
+      "status": "PASS",
+      "detail": "domain=legal eng=anysearch combo=['anysearch', 'byted'] lang=zh",
+      "meta": {
+        "id": "R_zh_legal_lending",
+        "q": "民间借贷 利率 司法保护上限",
+        "scenario": "legal",
+        "lang": "zh",
+        "domain": "legal",
+        "engine": "anysearch",
+        "combo": [
+          "anysearch",
+          "byted"
+        ],
+        "primary_lang": "zh"
+      }
+    },
+    {
+      "name": "route:R_zh_medical_drug_label",
+      "status": "PASS",
+      "detail": "domain=medical eng=clinicaltrials combo=['clinicaltrials', 'anysearch', 'openfda', 'local_pubmed'] lang=zh",
+      "meta": {
+        "id": "R_zh_medical_drug_label",
+        "q": "布洛芬 说明书 用法用量",
+        "scenario": "medical",
+        "lang": "zh",
+        "domain": "medical",
+        "engine": "clinicaltrials",
+        "combo": [
+          "clinicaltrials",
+          "anysearch",
+          "openfda",
+          "local_pubmed"
+        ],
+        "primary_lang": "zh"
+      }
+    },
+    {
+      "name": "route:R_zh_survey_not_modelcard",
+      "status": "PASS",
+      "detail": "domain=academic eng=arxiv combo=['arxiv', 'openreview', 'local_pubmed', 'core'] lang=zh",
+      "meta": {
+        "id": "R_zh_survey_not_modelcard",
+        "q": "大模型 长上下文 综述",
+        "scenario": "academic",
+        "lang": "zh",
+        "domain": "academic",
+        "engine": "arxiv",
+        "combo": [
+          "arxiv",
+          "openreview",
+          "local_pubmed",
+          "core"
+        ],
+        "primary_lang": "zh"
+      }
+    },
+    {
+      "name": "route:R_zh_academic_not_howto",
+      "status": "PASS",
+      "detail": "domain=chinese_general eng=bocha combo=['bocha', 'yuanbao'] lang=zh",
+      "meta": {
+        "id": "R_zh_academic_not_howto",
+        "q": "怎么写论文 查重 降重",
+        "scenario": "academic",
+        "lang": "zh",
+        "domain": "chinese_general",
+        "engine": "bocha",
+        "combo": [
+          "bocha",
+          "yuanbao"
+        ],
+        "primary_lang": "zh"
+      }
+    },
+    {
+      "name": "route:R_zh_stock_not_howto",
+      "status": "PASS",
+      "detail": "domain=chinese_general eng=bocha combo=['bocha', 'yuanbao'] lang=zh",
+      "meta": {
+        "id": "R_zh_stock_not_howto",
+        "q": "年报 模板 怎么写",
+        "scenario": "finance",
+        "lang": "zh",
+        "domain": "chinese_general",
+        "engine": "bocha",
+        "combo": [
+          "bocha",
           "yuanbao"
         ],
         "primary_lang": "zh"
@@ -2476,19 +2736,37 @@
     {
       "name": "route:R_us_fundamentals",
       "status": "PASS",
-      "detail": "domain=us_fundamentals eng=sec_companyfacts combo=['sec_companyfacts', 'anysearch'] lang=zh",
+      "detail": "domain=stock_query eng=sina_quote combo=['sina_quote', 'tencent_quote'] lang=zh",
       "meta": {
         "id": "R_us_fundamentals",
         "q": "营收 净利润 财务数据 苹果",
         "scenario": "finance",
         "lang": "zh",
+        "domain": "stock_query",
+        "engine": "sina_quote",
+        "combo": [
+          "sina_quote",
+          "tencent_quote"
+        ],
+        "primary_lang": "zh"
+      }
+    },
+    {
+      "name": "route:R_us_fundamentals_en",
+      "status": "PASS",
+      "detail": "domain=us_fundamentals eng=sec_companyfacts combo=['sec_companyfacts', 'anysearch'] lang=en",
+      "meta": {
+        "id": "R_us_fundamentals_en",
+        "q": "apple annual revenue net income",
+        "scenario": "finance",
+        "lang": "en",
         "domain": "us_fundamentals",
         "engine": "sec_companyfacts",
         "combo": [
           "sec_companyfacts",
           "anysearch"
         ],
-        "primary_lang": "zh"
+        "primary_lang": "en"
       }
     },
     {
