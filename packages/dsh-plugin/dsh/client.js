@@ -48,6 +48,9 @@ window.__ModuleLoader__.load({
         tabAdvanced: '高级',
         tabDashboard: '看板',
         dashboardTitle: '运行监控与健康态看板',
+        routeHealthTitle: '路由观测',
+        routeHealthHint: '最近的路由决策与引擎状态（宿主提供时显示）。',
+        routeHealthFallback: '在终端运行 `argo stats` 或 `argo engine list` 查看路由健康、引擎成功率与配额消耗。',
         dashboardHint: '实时监控常驻 MCP 连接池、上游搜索源拓扑与额度状态，提供一键预设与快速调优。',
         poolTitle: '常驻 MCP 连接池监控',
         poolStatusHealthy: '就绪（正常）',
@@ -83,6 +86,8 @@ window.__ModuleLoader__.load({
         concurrency: '并发连接数',
         toolsTitle: '原生工具',
         toolsHint: '勾选即注册为原生一等工具（CLI 单发，不依赖 MCP）。长尾工具只在需要时开，避免每轮工具面膨胀。',
+        toolPresetTitle: '推荐组合',
+        toolPresetHint: '按场景一键套用（会覆盖当前勾选）。工具分区见下方。',
         coreTools: '高频路径',
         longTools: '长尾取证',
         nativeTimeout: '单次调用超时 (ms)',
@@ -163,6 +168,9 @@ window.__ModuleLoader__.load({
         tabAdvanced: 'Advanced',
         tabDashboard: 'Dashboard',
         dashboardTitle: 'Runtime Monitoring & Health Dashboard',
+        routeHealthTitle: 'Routing telemetry',
+        routeHealthHint: 'Recent routing decisions and engine status (when provided by the host).',
+        routeHealthFallback: 'Run `argo stats` or `argo engine list` in a terminal to inspect routing health, engine success rates and quota usage.',
         dashboardHint: 'Real-time overview of the resident MCP connection pool, upstream search engine matrix, and quick workflow presets.',
         poolTitle: 'Resident MCP Pool Monitoring',
         poolStatusHealthy: 'Ready (Healthy)',
@@ -198,6 +206,8 @@ window.__ModuleLoader__.load({
         concurrency: 'Concurrent connections',
         toolsTitle: 'Native tools',
         toolsHint: 'Checked tools register as native first-class tools (single-shot CLI, no MCP). Enable long-tail tools only when needed.',
+        toolPresetTitle: 'Recommended sets',
+        toolPresetHint: 'Apply a scenario preset in one click (replaces current selection). See the grouped tools below.',
         coreTools: 'Hot path',
         longTools: 'Long tail',
         nativeTimeout: 'Per-call timeout (ms)',
@@ -259,25 +269,41 @@ window.__ModuleLoader__.load({
       },
     };
 
+    // 工具分区（场景化）：核心 / 取证 / 本地 / 长尾。
+    // 旧版只有 core/long 两组，16 个长尾工具平铺，新用户不知道该开哪些；
+    // 按使用场景分组后，配合下方「推荐组合」卡可以一键套用。
     const TOOLS = [
-      { id: 'argo_search', group: 'core', zh: '统一搜索', en: 'Unified search' },
-      { id: 'argo_fetch', group: 'core', zh: '智能抓取', en: 'Smart fetch' },
-      { id: 'argo_evidence', group: 'long', zh: '来源可信度评估', en: 'Source credibility' },
-      { id: 'argo_local_search', group: 'long', zh: '本机文件搜索', en: 'Local file search' },
-      { id: 'argo_local_read', group: 'long', zh: '本机文件读取', en: 'Local file read' },
-      { id: 'argo_recompute', group: 'long', zh: '可复算执行器', en: 'Recompute' },
-      { id: 'argo_clarify', group: 'long', zh: '意图消歧', en: 'Intent clarification' },
-      { id: 'argo_crawl', group: 'long', zh: '站点级爬取', en: 'Site crawl' },
-      { id: 'argo_social_search', group: 'long', zh: '社交平台搜索', en: 'Social search' },
-      { id: 'argo_article', group: 'long', zh: '公众号全文', en: 'WeChat article' },
-      { id: 'argo_job', group: 'long', zh: '招聘聚合', en: 'Job aggregation' },
-      { id: 'argo_extract', group: 'long', zh: '结构化提取', en: 'Structured extract' },
-      { id: 'argo_preflight', group: 'long', zh: '批量 URL 预检', en: 'URL preflight' },
-      { id: 'argo_pdf', group: 'long', zh: 'PDF 提取', en: 'PDF extract' },
-      { id: 'argo_screenshot', group: 'long', zh: '网页截图', en: 'Screenshot' },
-      { id: 'argo_answer', group: 'long', zh: '带引用直答', en: 'Cited answer' },
-      { id: 'argo_watch', group: 'long', zh: '网页变化监控', en: 'Page watch' },
-      { id: 'argo_cite', group: 'long', zh: 'DOI 引用生成', en: 'DOI citation' },
+      { id: 'argo_search', group: 'core', zh: '统一搜索', en: 'Unified search', sceneZh: '日常一问的首选', sceneEn: 'Default for everyday queries' },
+      { id: 'argo_fetch', group: 'core', zh: '智能抓取', en: 'Smart fetch', sceneZh: '读某个具体页面', sceneEn: 'Read a specific page' },
+      { id: 'argo_evidence', group: 'forensics', zh: '来源可信度评估', en: 'Source credibility', sceneZh: '高后果问题的证据分级', sceneEn: 'Grade evidence for high-stakes answers' },
+      { id: 'argo_clarify', group: 'forensics', zh: '意图消歧', en: 'Intent clarification', sceneZh: '查询有歧义时先消歧', sceneEn: 'Disambiguate an ambiguous query' },
+      { id: 'argo_crawl', group: 'forensics', zh: '站点级爬取', en: 'Site crawl', sceneZh: '整站/多页采集', sceneEn: 'Site-level or multi-page collection' },
+      { id: 'argo_extract', group: 'forensics', zh: '结构化提取', en: 'Structured extract', sceneZh: '从页面抽表格/字段', sceneEn: 'Extract tables/fields from a page' },
+      { id: 'argo_pdf', group: 'forensics', zh: 'PDF 提取', en: 'PDF extract', sceneZh: '读 PDF 正文', sceneEn: 'Read PDF text' },
+      { id: 'argo_screenshot', group: 'forensics', zh: '网页截图', en: 'Screenshot', sceneZh: '取证留档/看渲染结果', sceneEn: 'Archive or inspect a rendered page' },
+      { id: 'argo_article', group: 'forensics', zh: '公众号全文', en: 'WeChat article', sceneZh: '读公众号文章正文', sceneEn: 'Read a WeChat article' },
+      { id: 'argo_local_search', group: 'local', zh: '本机文件搜索', en: 'Local file search', sceneZh: '搜本机笔记/代码', sceneEn: 'Search local notes/code' },
+      { id: 'argo_local_read', group: 'local', zh: '本机文件读取', en: 'Local file read', sceneZh: '读本机文件', sceneEn: 'Read a local file' },
+      { id: 'argo_recompute', group: 'local', zh: '可复算执行器', en: 'Recompute', sceneZh: '本地可复算任务（需授权）', sceneEn: 'Local recompute (needs authorization)' },
+      { id: 'argo_social_search', group: 'longtail', zh: '社交平台搜索', en: 'Social search', sceneZh: '舆情/UGC 采集', sceneEn: 'Sentiment / UGC collection' },
+      { id: 'argo_job', group: 'longtail', zh: '招聘聚合', en: 'Job aggregation', sceneZh: '招聘/岗位聚合', sceneEn: 'Job aggregation' },
+      { id: 'argo_preflight', group: 'longtail', zh: '批量 URL 预检', en: 'URL preflight', sceneZh: '批量检查 URL 可达性', sceneEn: 'Batch-check URL reachability' },
+      { id: 'argo_answer', group: 'longtail', zh: '带引用直答', en: 'Cited answer', sceneZh: '在给定语料里直答', sceneEn: 'Answer from a given corpus' },
+      { id: 'argo_watch', group: 'longtail', zh: '网页变化监控', en: 'Page watch', sceneZh: '盯页面变化', sceneEn: 'Watch a page for changes' },
+      { id: 'argo_cite', group: 'longtail', zh: 'DOI 引用生成', en: 'DOI citation', sceneZh: '生成引用条目', sceneEn: 'Generate a citation' },
+    ];
+
+    // 分区展示名 + 推荐组合（场景化，让用户一键套用而不是逐个勾选）
+    const TOOL_GROUPS = [
+      { id: 'core', zh: '高频路径', en: 'Hot path' },
+      { id: 'forensics', zh: '取证与核验', en: 'Forensics' },
+      { id: 'local', zh: '本机', en: 'Local' },
+      { id: 'longtail', zh: '长尾', en: 'Long tail' },
+    ];
+    const TOOL_PRESETS = [
+      { id: 'daily', zh: '日常', en: 'Daily', tools: ['argo_search', 'argo_fetch'], descZh: '一问一搜，最快', descEn: 'Fastest for simple queries' },
+      { id: 'research', zh: '研究', en: 'Research', tools: ['argo_search', 'argo_fetch', 'argo_evidence', 'argo_clarify'], descZh: '加证据分级与消歧', descEn: 'Add evidence grading + disambiguation' },
+      { id: 'forensics', zh: '取证', en: 'Forensics', tools: ['argo_search', 'argo_fetch', 'argo_crawl', 'argo_pdf', 'argo_screenshot', 'argo_extract'], descZh: '整站/多页/PDF 留档', descEn: 'Site/multi-page/PDF archiving' },
     ];
 
     const KEYS = [
@@ -617,6 +643,8 @@ window.__ModuleLoader__.load({
       const [envBusy, setEnvBusy] = useState('');
       const [engineFilter, setEngineFilter] = useState('');
       const [keyFilter, setKeyFilter] = useState('');
+      // 路由观测（宿主经 remote 事件推送；无推送时卡片显示终端命令提示）
+      const [routeHealth, setRouteHealth] = useState(null);
 
       const dirty = useRef(new Set());
       // 读-改-写共享配置字段（keyRefs / nativeTools / argoEnv）时读实时快照，
@@ -672,10 +700,14 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         if (props.view === 'summary') return undefined;
         void refreshCredentials();
-        const off = props.remote && typeof props.remote.$on === 'function'
-          ? props.remote.$on('credentials/reference-updated', () => { void refreshCredentials(); })
-          : undefined;
-        return typeof off === 'function' ? off : undefined;
+        const offs = [];
+        if (props.remote && typeof props.remote.$on === 'function') {
+          const offCreds = props.remote.$on('credentials/reference-updated', () => { void refreshCredentials(); });
+          const offRoute = props.remote.$on('route-health/updated', (data) => { setRouteHealth(data); });
+          if (typeof offCreds === 'function') offs.push(offCreds);
+          if (typeof offRoute === 'function') offs.push(offRoute);
+        }
+        return () => { for (const off of offs) off(); };
       }, [state]);
 
       const edit = (key, text) => {
@@ -776,6 +808,14 @@ window.__ModuleLoader__.load({
         const ordered = TOOLS.map((tool) => tool.id).filter((toolId) => current.has(toolId));
         for (const extra of current) if (!ordered.includes(extra)) ordered.push(extra);
         void setField('nativeTools', ordered);
+      };
+
+      // 推荐组合：一键套用一组工具（场景化分区之上的快捷入口）。
+      // 只增不减会覆盖用户已有勾选，所以是「设为这组」而非「追加这组」。
+      const applyToolPreset = async (tools) => {
+        const ordered = TOOLS.map((tool) => tool.id).filter((toolId) => tools.includes(toolId));
+        for (const extra of tools) if (!ordered.includes(extra)) ordered.push(extra);
+        await props.set('nativeTools', ordered);
       };
 
       const saveKey = async (ref) => {
@@ -975,8 +1015,8 @@ window.__ModuleLoader__.load({
         ? h('p', { style: error ? S.error : S.notice, role: 'status' }, message)
         : h('p', { style: S.status }, disabled ? t('readonly') : '');
 
-      const coreTools = TOOLS.filter((tool) => tool.group === 'core');
-      const longTools = TOOLS.filter((tool) => tool.group === 'long');
+      // 按 TOOL_GROUPS 顺序分组渲染（场景化分区，替代旧的 core/long 两分）
+      const toolsByGroup = (gid) => TOOLS.filter((tool) => tool.group === gid);
       const toolCheckbox = (tool) => h('label', { key: tool.id, style: S.check }, [
         h('input', {
           key: 'i',
@@ -1100,6 +1140,19 @@ window.__ModuleLoader__.load({
           ]),
         ]));
 
+        // 路由观测卡：宿主经 remote 事件推送 routeHealth 时展示最近路由决策；
+        // 未推送时给出终端命令提示——不让面板空白，也不假装有数据。
+        panel.push(h(Card, { key: 'route', title: t('routeHealthTitle'), hint: t('routeHealthHint') }, [
+          routeHealth && Array.isArray(routeHealth.samples) && routeHealth.samples.length > 0
+            ? h('div', { key: 'rows', style: { display: 'flex', flexDirection: 'column', gap: 6 } },
+                routeHealth.samples.slice(0, 5).map((row, i) =>
+                  h('div', { key: 'r' + i, style: S.keyRow }, [
+                    h('span', { key: 'q', style: S.label }, String(row.query || '').slice(0, 40)),
+                    h('span', { key: 'd', style: S.sub }, `${row.domain || '-'} · ${row.engine || '-'}`),
+                  ])))
+            : h('p', { key: 'hint', style: S.hint }, t('routeHealthFallback')),
+        ]));
+
         panel.push(h(Card, { key: 'presets', title: t('presetTitle'), hint: t('presetHint') }, [
           h('div', { key: 'grid', style: S.presetGrid }, [
             h('div', {
@@ -1219,15 +1272,27 @@ window.__ModuleLoader__.load({
       }
 
       if (tab === 'tools') {
+        panel.push(h(Card, { key: 'presets', title: t('toolPresetTitle'), hint: t('toolPresetHint') }, [
+          h('div', { key: 'grid', style: S.presetGrid }, TOOL_PRESETS.map((preset) =>
+            h('button', {
+              key: preset.id, type: 'button', disabled,
+              style: S.presetCard(false),
+              onClick: () => { void applyToolPreset(preset.tools); },
+            }, [
+              h('div', { key: 't', style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } }, [
+                h('span', { key: 'title', style: S.label }, lang === 'en' ? preset.en : preset.zh),
+                h('span', { key: 'badge', style: S.badge('blue') }, String(preset.tools.length) + ' 工具'),
+              ]),
+              h('span', { key: 'd', style: S.sub }, lang === 'en' ? preset.descEn : preset.descZh),
+            ]))),
+        ]));
         panel.push(h(Card, { key: 'tools', title: t('toolsTitle'), hint: t('toolsHint') }, [
-          h('div', { key: 'core', style: { display: 'flex', flexDirection: 'column', gap: 4 } }, [
-            h('span', { key: 'l', style: S.label }, t('coreTools')),
-            h('div', { key: 'g', style: S.toolGrid }, coreTools.map(toolCheckbox)),
-          ]),
-          h('div', { key: 'div', style: S.divider }),
-          h('div', { key: 'long', style: { display: 'flex', flexDirection: 'column', gap: 4 } }, [
-            h('span', { key: 'l', style: S.label }, t('longTools')),
-            h('div', { key: 'g', style: S.toolGrid }, longTools.map(toolCheckbox)),
+          ...TOOL_GROUPS.map((grp, gi) => [
+            gi > 0 ? h('div', { key: 'div' + gi, style: S.divider }) : null,
+            h('div', { key: grp.id, style: { display: 'flex', flexDirection: 'column', gap: 4 } }, [
+              h('span', { key: 'l', style: S.label }, lang === 'en' ? grp.en : grp.zh),
+              h('div', { key: 'g', style: S.toolGrid }, toolsByGroup(grp.id).map(toolCheckbox)),
+            ]),
           ]),
           h('div', { key: 'g2', style: S.grid }, [
             h(NumberField, {
@@ -1526,6 +1591,7 @@ window.__ModuleLoader__.load({
     // 生成产物）同名同集合，ENGINE_TOGGLES 必须与 index.js 的 ARGO_ENV_SPECS
     // 同名同集合——两边任何一边增删而另一边没跟上，测试即红。
     exports.TOOLS = TOOLS;
+    exports.TOOL_GROUPS = TOOL_GROUPS;
     exports.ENGINE_TOGGLES = ENGINE_TOGGLES;
 
     return module.exports;

@@ -62,6 +62,7 @@ import {
 import {
   getMcpPoolStats,
   resetMcpPool,
+  getRouteHealth,
 } from './diagnostics.js'
 
 /**
@@ -450,6 +451,18 @@ export function apply(ctx, providedConfig = {}) {
   }
 
   const nativeRegistrations = new Map()
+  // 路由观测推送：原生工具执行后读 argo 使用日志，经 remote 事件推给设置面板。
+  // 失败静默（诊断是增值，不是依赖）；无 remote 事件总线时跳过。
+  const emitRouteHealth = () => {
+    try {
+      if (!ctx.remote || typeof ctx.remote.$emit !== 'function') return
+      const data = getRouteHealth()
+      if (Array.isArray(data.samples) && data.samples.length > 0) {
+        ctx.remote.$emit('route-health/updated', data)
+      }
+    } catch { /* ignore */ }
+  }
+
   const syncNativeTools = () => {
     const desired = asStringArray(config.nativeTools, 20)
     for (const [kind, dispose] of nativeRegistrations) {
@@ -459,7 +472,16 @@ export function apply(ctx, providedConfig = {}) {
     }
     for (const kind of desired) {
       if (nativeRegistrations.has(kind)) continue
-      nativeRegistrations.set(kind, ctx.tools.register(makeNativeTool(config, kind)))
+      const tool = makeNativeTool(config, kind)
+      const originalExecute = tool.execute
+      if (typeof originalExecute === 'function') {
+        tool.execute = async (args, exec) => {
+          const result = await originalExecute(args, exec)
+          emitRouteHealth()
+          return result
+        }
+      }
+      nativeRegistrations.set(kind, ctx.tools.register(tool))
     }
   }
   syncNativeTools()

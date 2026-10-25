@@ -122,9 +122,10 @@ test('client TOOLS mirror native-tools.mjs (drift gate)', () => {
   const specNames = Object.keys(NATIVE_TOOLS).sort()
   const toolIds = [...mod.TOOLS].map((tool) => tool.id).sort()
   assert.deepEqual(toolIds, specNames, '面板 TOOLS 与原生工具规格表漂移，请同步两边')
+  const groupIds = new Set([...mod.TOOL_GROUPS].map((grp) => grp.id))
   for (const tool of mod.TOOLS) {
     assert.ok(tool.zh && tool.en, `tool ${tool.id} 缺双语标签`)
-    assert.ok(tool.group === 'core' || tool.group === 'long', `tool ${tool.id} 分组非法`)
+    assert.ok(groupIds.has(tool.group), `tool ${tool.id} 分组非法: ${tool.group}`)
   }
 })
 

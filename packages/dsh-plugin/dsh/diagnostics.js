@@ -5,6 +5,49 @@
  * 避免状态探查逻辑与核心检索逻辑耦合。
  */
 
+import { existsSync, readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+
+/**
+ * 读 argo 的本地使用日志，汇总成「路由观测」卡片数据。
+ *
+ * 数据来源与 stats_cli.py / usage_log.py 同一处（<state>/usage_log/*.jsonl），
+ * 只读、不写、不出本机。argo 未运行过（无日志）时返回 { samples: [] }，
+ * 面板据此显示终端命令提示——不假装有数据。
+ *
+ * @param {string} [stateDir] - argo 状态目录；缺省用 ARGO_STATE_DIR 或平台惯例
+ * @param {number} [limit] - 最近几条
+ */
+export function getRouteHealth(stateDir, limit = 10) {
+  const dir = stateDir
+    || process.env.ARGO_STATE_DIR
+    || join(homedir(), '.cache', 'unified-search')
+  const samples = []
+  try {
+    const routePath = join(dir, 'usage_log', 'route.jsonl')
+    if (existsSync(routePath)) {
+      const lines = readFileSync(routePath, 'utf8').split('\n').filter(Boolean)
+      for (const line of lines.slice(-limit)) {
+        try {
+          const row = JSON.parse(line)
+          if (row && typeof row === 'object') {
+            samples.push({
+              query: row.query || row.original_query || '',
+              engine: row.engine || (row.decision && row.decision.engine) || '',
+              domain: row.domain || (row.decision && row.decision.domain) || '',
+              confidence: row.confidence || (row.decision && row.decision.confidence) || '',
+              reason: row.reason || (row.decision && row.decision.reason) || '',
+              ts: row.ts || row.timestamp || '',
+            })
+          }
+        } catch { /* 单行坏数据不影响其余 */ }
+      }
+    }
+  } catch { /* 读不到就空 */ }
+  return { samples, source: 'usage_log/route.jsonl', stateDir: dir }
+}
+
 /**
  * 获取当前常驻 MCP 连接池的运行时指标。
  *
