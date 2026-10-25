@@ -502,6 +502,20 @@ def _get_engines_combo(domain: dict[str, Any], enabled: set[str], mode: str = "a
     # 学习器在此处首次解析（惰性，见模块顶部 _get_learner）：走到这里说明
     # 真的要装配 combo，这笔钱躲不掉；不进本函数的路径（缓存命中等）不付。
     _adaptive_learner = _get_learner()
+
+    # 场景分桶取分（2026-10-24）：优先用 (engine, domain, lang) 的桶分，
+    # 桶无样本时 adaptive.get_score 自动回退全局分。判据与旧口径一致，
+    # 只是多了一个维度——「引擎在 A 域强、B 域弱」现在可被路由区分。
+    _dom_name = str(domain.get("name") or "")
+    _q_lang = str((features or {}).get("primary_lang") or "")
+
+    def _score_of(e: str) -> float:
+        try:
+            return _adaptive_learner.get_score(e, _dom_name, _q_lang)
+        except TypeError:
+            # 旧版 adaptive（无 domain/lang 形参）回退全局分
+            return _adaptive_learner.get_score(e)
+
     combo = domain.get("engines_combo", [])
     primary = domain.get("primary", "anysearch")
     fallback = domain.get("fallback")
@@ -581,7 +595,7 @@ def _get_engines_combo(domain: dict[str, Any], enabled: set[str], mode: str = "a
     # 成员与 fallback，自动进入恢复链 L3 兜底。
     if primary and (
             _adaptive_learner is None
-            or _adaptive_learner.get_score(primary) >= _VERTICAL_FLOOR):
+            or _score_of(primary) >= _VERTICAL_FLOOR):
         protect.add(primary)
     # 仅 modal_card 整 combo 免 cost 裁剪（结构化路径不可被 anysearch 顶替）
     if domain_name == "modal_card":
@@ -608,14 +622,14 @@ def _get_engines_combo(domain: dict[str, Any], enabled: set[str], mode: str = "a
         # 自动回归 combo，且它仍是域 fallback（恢复链 L3 候选）。
         if domain_name in _VERTICAL_PROTECT:
             protect = {e for e in original
-                       if _adaptive_learner.get_score(e) >= _VERTICAL_FLOOR
+                       if _score_of(e) >= _VERTICAL_FLOOR
                        } | protect
         filtered = [
             e for e in filtered
             if e in protect
             or (e == primary
-                and _adaptive_learner.get_score(e) >= _VERTICAL_FLOOR)
-            or _adaptive_learner.get_score(e) >= 0.3
+                and _score_of(e) >= _VERTICAL_FLOOR)
+            or _score_of(e) >= 0.3
         ]
         if not filtered:
             filtered = original
@@ -662,7 +676,7 @@ def _get_engines_combo(domain: dict[str, Any], enabled: set[str], mode: str = "a
                     seen_fam.add(f)
                     members = [x for x in rest if _fam(x) == f]
                     if len(members) > 1:
-                        scored = [(x, _adaptive_learner.get_score(x)) for x in members]
+                        scored = [(x, _score_of(x)) for x in members]
                         top_score = max(s for _, s in scored)
                         laggards = [x for x, s in scored if top_score - s >= 0.15]
                         if laggards and len(laggards) < len(scored):

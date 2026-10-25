@@ -82,6 +82,21 @@ def quality_factor(avg_quality: float | None, sum_quality: float | int | None) -
                min(QUALITY_FACTOR_MAX, 0.75 + 0.5 * avg))
 
 
+def scenario_of(decision: dict | None) -> dict[str, str]:
+    """从路由决策里抽 (domain, lang) 场景标签，供 record 分桶使用。
+
+    独立成函数（而非写在 search_pipeline 的 record 调用里）是为了让
+    search_pipeline 的 record 调用保持 3 行——它是祖父文件（行数上限门禁），
+    把场景抽取塞进调用点会让它超限。
+    """
+    d = decision or {}
+    feats = d.get("features") or {}
+    return {
+        "domain": str(d.get("domain") or ""),
+        "lang": str(feats.get("primary_lang") or ""),
+    }
+
+
 class AdaptiveLearner:
     """自适应学习引擎：追踪引擎表现并输出推荐分数。"""
 
@@ -166,8 +181,18 @@ class AdaptiveLearner:
             # 同理补列。历史行 quality=0 表示「当时没回写质量」，不是「质量为零」——
             # 评分侧以 SUM(quality) > 0 判定有无数据，故这批行不会拉低任何引擎。
             conn.execute("ALTER TABLE engine_perf ADD COLUMN quality REAL DEFAULT 0.0")
+        if "domain" not in cols:
+            # 场景分桶（2026-10-24）：domain/lang 让学习器能表达「这个引擎在
+            # A 域强、B 域弱」。历史行留空串 = 「未分桶」，回退全局分。
+            conn.execute("ALTER TABLE engine_perf ADD COLUMN domain TEXT NOT NULL DEFAULT ''")
+        if "lang" not in cols:
+            conn.execute("ALTER TABLE engine_perf ADD COLUMN lang TEXT NOT NULL DEFAULT ''")
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_perf_engine_time ON engine_perf(engine, created_at)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_perf_engine_scenario "
+            "ON engine_perf(engine, domain, lang, created_at)"
         )
         cutoff = time.time() - WINDOW_DAYS * 86400
         conn.execute("DELETE FROM engine_perf WHERE created_at < ?", (cutoff,))
@@ -175,8 +200,13 @@ class AdaptiveLearner:
         conn.commit()
 
     def record(self, engine: str, success: bool, latency_ms: float, cost: float = 0.0,
-               empty: bool = False, quality: float | None = None):
+               empty: bool = False, quality: float | None = None,
+               domain: str = "", lang: str = ""):
         """记录一次引擎调用结果。
+
+        ``domain`` / ``lang`` 是**可选场景标签**（默认空 = 不回退旧调用方）：
+        给出时按 (engine, domain, lang) 分桶学习，让「引擎在 A 域强、B 域弱」
+        可表达；不给时与旧口径完全一致（全局单桶）。见 ``get_score``。
 
         ``empty=True`` 表示「引擎正常，但这次查询它没有结果」——与「失败」是
         两回事，见 `get_score` 的说明。默认 False 保持旧调用方行为不变。
@@ -187,6 +217,8 @@ class AdaptiveLearner:
         `SUM(quality) > 0` 判定有无数据，故未回写的行不会拖累任何引擎。
         """
         q = 0.0 if quality is None else max(0.0, min(1.0, float(quality)))
+        dom = str(domain or "")[:64]
+        lg = str(lang or "")[:16]
         with self._lock:
             if not hasattr(self, "_session_engines"):
                 self._session_engines = set()
@@ -194,18 +226,64 @@ class AdaptiveLearner:
             conn = self._connect()
             conn.execute(
                 "INSERT INTO engine_perf "
-                "(engine, success, latency_ms, cost, created_at, empty, quality) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "(engine, success, latency_ms, cost, created_at, empty, quality, domain, lang) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (engine, 1 if success else 0, latency_ms, cost, time.time(),
-                 1 if empty else 0, q),
+                 1 if empty else 0, q, dom, lg),
             )
             if getattr(self, "_batch_depth", 0) > 0:
                 self._batch_dirty = True
             else:
                 conn.commit()
-            self._score_cache.pop(engine, None)
+            # 清掉该引擎的全部缓存键（含场景分桶键），见 get_score 的缓存口径
+            for _k in [k for k in self._score_cache if k[0] == engine]:
+                self._score_cache.pop(_k, None)
 
-    def get_score(self, engine: str) -> float:
+    def _score_from_row(self, row) -> float:
+        """把一条聚合行转成 0~1 推荐分（口径见 get_score）。"""
+        total, judged, judged_ok, avg_latency, avg_cost, avg_q, sum_q, last_ts = row
+        total = int(total or 0)
+        judged = int(judged or 0)
+        if not total:
+            return 0.5
+        last_ts = float(last_ts or 0)
+        if last_ts and (time.time() - last_ts) > STALE_AFTER_SECONDS:
+            return 0.5
+        if judged == 0:
+            return 0.5
+        success_rate = (judged_ok or 0) / judged
+        latency_factor = min(1.0, 2000.0 / max(avg_latency or 2000, 1))
+        cost_factor = max(0.3, 1.0 - (avg_cost or 0.0) * 10)
+        return round(success_rate * latency_factor * cost_factor
+                     * quality_factor(avg_q, sum_q), 4)
+
+    def _global_row(self, engine: str):
+        cutoff = time.time() - WINDOW_DAYS * 86400
+        return self._connect().execute(
+            "SELECT COUNT(*), "
+            "       SUM(CASE WHEN empty = 0 THEN 1 ELSE 0 END), "
+            "       SUM(CASE WHEN empty = 0 THEN success ELSE 0 END), "
+            "       AVG(latency_ms), AVG(cost), "
+            "       AVG(quality), SUM(quality), MAX(created_at) "
+            "FROM engine_perf WHERE engine = ? AND created_at > ?",
+            (engine, cutoff),
+        ).fetchone()
+
+    def _bucket_row(self, engine: str, domain: str, lang: str):
+        cutoff = time.time() - WINDOW_DAYS * 86400
+        return self._connect().execute(
+            "SELECT COUNT(*), "
+            "       SUM(CASE WHEN empty = 0 THEN 1 ELSE 0 END), "
+            "       SUM(CASE WHEN empty = 0 THEN success ELSE 0 END), "
+            "       AVG(latency_ms), AVG(cost), "
+            "       AVG(quality), SUM(quality), MAX(created_at) "
+            "FROM engine_perf WHERE engine = ? AND created_at > ? "
+            "AND domain = ? AND lang = ?",
+            (engine, cutoff, domain, lang),
+        ).fetchone()
+
+    def get_score(self, engine: str, domain: str | None = None,
+                  lang: str | None = None) -> float:
         """获取引擎的综合推荐分数（0.0 ~ 1.0）。
 
         **只按「有明确结果」的调用算成功率**（`empty=0`）。
@@ -219,50 +297,32 @@ class AdaptiveLearner:
         openalex(0.29)、hackernews(0.10)、twitter(0.17)、open_library(0.17)。
 
         延迟与成本仍按全部调用统计——空结果也是真实开销。
+
+        **场景分桶**（2026-10-24）：给 `domain` / `lang` 时，按 (engine, domain,
+        lang) 聚合出「桶分」，与全局分加权融合（桶样本 <3 时权重 0.3，≥3 时 0.5）。
+        这让「引擎在 A 域强、B 域弱」可表达，新引擎也能在建议域里被更快识别。
+        桶为空时回退全局分——旧调用方（不传 domain/lang）行为逐位不变。
         """
+        key = (engine, domain or "", lang or "")
         now = time.time()
-        cached = self._score_cache.get(engine)
+        cached = self._score_cache.get(key)
         if cached and cached[1] > now:
             return cached[0]
 
         with self._lock:
-            cached = self._score_cache.get(engine)
+            cached = self._score_cache.get(key)
             if cached and cached[1] > now:
                 return cached[0]
-            cutoff = now - WINDOW_DAYS * 86400
-            conn = self._connect()
-            row = conn.execute(
-                "SELECT COUNT(*), "
-                "       SUM(CASE WHEN empty = 0 THEN 1 ELSE 0 END), "
-                "       SUM(CASE WHEN empty = 0 THEN success ELSE 0 END), "
-                "       AVG(latency_ms), AVG(cost), "
-                "       AVG(quality), SUM(quality), MAX(created_at) "
-                "FROM engine_perf WHERE engine = ? AND created_at > ?",
-                (engine, cutoff),
-            ).fetchone()
-        total, judged, judged_ok, avg_latency, avg_cost, avg_q, sum_q, last_ts = row
-        total = int(total or 0)
-        judged = int(judged or 0)
-        if not total:
-            score = 0.5  # 无数据时中性分
-        else:
-            # 数据过时恢复：最后一次调用距今过久 → 中性分，给恢复探测机会
-            last_ts = float(last_ts or 0)
-            if last_ts and (now - last_ts) > STALE_AFTER_SECONDS:
-                score = 0.5
-            elif judged == 0:
-                # 窗口内全是空结果：没有任何可判定健康与否的调用 → 中性分。
-                # 给中性分而不是 0：否则「每次都只是没搜到」会把源打死。
-                score = 0.5
-            else:
-                success_rate = (judged_ok or 0) / judged
-                latency_factor = min(1.0, 2000.0 / max(avg_latency or 2000, 1))
-                cost_factor = max(0.3, 1.0 - (avg_cost or 0.0) * 10)
-                q_factor = quality_factor(avg_q, sum_q)
-                score = round(success_rate * latency_factor * cost_factor
-                              * q_factor, 4)
+            score = self._score_from_row(self._global_row(engine))
+            if domain or lang:
+                brow = self._bucket_row(engine, domain or "", lang or "")
+                b_judged = int(brow[1] or 0)
+                if b_judged > 0:
+                    b_score = self._score_from_row(brow)
+                    w = 0.5 if b_judged >= 3 else 0.3
+                    score = round((1 - w) * score + w * b_score, 4)
 
-        self._score_cache[engine] = (score, now + self.SCORE_CACHE_TTL)
+        self._score_cache[key] = (score, now + self.SCORE_CACHE_TTL)
         return score
 
     def get_ranking(self) -> list[tuple[str, float]]:

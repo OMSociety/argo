@@ -772,7 +772,7 @@ def finalize(req: _SearchRequest, run: _SearchRun, hooks: Any) -> dict[str, Any]
     # 自适应学习（单事务批量写入 + cache_guard 统一状态态过滤）
     try:
         import contextlib
-        from adaptive import get_learner
+        from adaptive import get_learner, scenario_of
         learner = get_learner()
         _outcome_of = {o.get("engine"): o
                        for o in engine_outcomes if isinstance(o, dict)}
@@ -797,7 +797,7 @@ def finalize(req: _SearchRequest, run: _SearchRun, hooks: Any) -> dict[str, Any]
                         quality = None
                 learner.record(eng, success=success, latency_ms=latency,
                                cost=0.0 if cost >= 0.85 else 0.001, empty=empty,
-                               quality=quality)
+                               quality=quality, **scenario_of(decision))
     except ImportError:
         pass
     except Exception as e:
