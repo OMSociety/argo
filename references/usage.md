@@ -599,7 +599,7 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 | `ARGO_YUANBAO_API_KEY` | 对应引擎/服务的凭据（腾讯元宝搜索，官方名 `TENCENTCLOUD_WSA_APIKEY` 同样识别） | 缺密钥=该源跳过或降级 |
 | `ARGO_ZHIHU_ACCESS_SECRET` | 对应引擎/服务的凭据 | 缺密钥=该源跳过或降级 |
 
-### 行为调参（34）
+### 行为调参（35）
 
 | 变量 | 作用 | 默认/备注 |
 |------|------|----------|
@@ -617,6 +617,7 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 | `ARGO_BUDGET_FILE` | 预算文件路径覆盖 | 默认 `~/.config/argo/budgets.json`；多环境隔离时用 |
 | `ARGO_PAID_BUDGET_BYPASS` | 单次绕过月度预算 | =1 时显式/自动调用都不检查预算；用于临时排障，不改变配置 |
 | `ARGO_ADAPTIVE_TAIL` | 尾宽按 backup 引擎历史 P75 分层（快源等满/慢源早收工） | 默认关；=1 开启（2026-10-16 三轮交错 A/B 未证实收益，对拍记录在本机 docs-local/调度对拍_尾宽分层与并发_2026-10-16.md，属本地归档不随发布件分发） |
+| `ARGO_TAIL_COMPLETE_S` | 早停后台补全的收割宽限（秒）：弃置引擎宽限内完成则记学习器真实成绩并把交付合并进 L2 缓存 | 默认 3；0=关闭（回到纯丢弃）。CLI 由 atexit 等待、输出已先行；MCP/daemon 常驻进程自然收割。证据见 docs/QUALITY_OF_SLOW_SOURCES.md |
 | `ARGO_ADMISSION_TTL_S` | 行为阈值/预算调参 | 默认经实测校准，勿轻动 |
 | `ARGO_DAEMON` | 允许 search 在 daemon 不在位时自动后台拉起（显式 opt-in） | 默认关；=1 开启。`argo daemon start` 手动启动的实例不受此开关影响；`ARGO_NO_DAEMON=1` 优先 |
 | `ARGO_DAEMON_TIMEOUT` | daemon 快路径客户端等待上限（秒） | 默认 120；deep 长查询可调大 |

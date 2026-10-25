@@ -156,6 +156,9 @@ class _SearchRun:
     useful_ms: int = 0
     dispatch_tail: dict[str, int] = field(default_factory=dict)
     early_stopped: bool = False
+    # 早停弃置且仍存活的 (engine, holder, now_fn)：finalize 交给
+    # tail_completion 后台收割。纯数据字段，不改变任何既有阶段的行为。
+    stranded: tuple = ()
     budget_used_ms: int | None = None
     budget_total_ms: int | None = None
     elapsed: int = 0
@@ -802,6 +805,21 @@ def finalize(req: _SearchRequest, run: _SearchRun, hooks: Any) -> dict[str, Any]
         pass
     except Exception as e:
         _log(f"自适应学习记录跳过: {type(e).__name__}")
+
+    # 早停后台补全（2026-10-25）：弃置引擎的交付不再丢弃，宽限内完成的
+    # 记学习器真实成绩 + 合并写 L2 缓存（ARGO_TAIL_COMPLETE_S 控制，0=关）。
+    # 放在缓存写与学习记账之后：补全读的是刚写的主缓存条目；主响应已定，
+    # 这里的一切都是锦上添花，异常 fail-open。
+    if run.stranded:
+        try:
+            from tail_completion import hand_off
+            hand_off(run.stranded, query=query,
+                     cache_engine_key=cache_engine_key,
+                     max_results=max_results, domain=domain,
+                     mode=mode, depth=depth, decision=decision,
+                     skip_cache=skip_cache, cache_instance=cache)
+        except Exception as e:
+            _log(f"后台补全移交跳过: {type(e).__name__}")
 
     # 语言偏好：记录本轮查询语 + 输出观测快照（默认中英 + 系统 + 习惯）
     lang_pref_info: dict[str, Any] | None = None

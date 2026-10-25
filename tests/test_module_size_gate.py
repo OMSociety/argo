@@ -172,7 +172,10 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "dispatch+恢复链」结构性循环，12 行；策略常量在 cache_guard."
               "RECOVERED_DEGRADED_TTL）；随动上限 1357 → 1385"),
     "scripts/engine_dispatch.py": (
-        982, "引擎编排调度器（wave-1 竞速 / wave-2 补全 / 串行对冲 / 收账）；"
+        991, "引擎编排调度器（wave-1 竞速 / wave-2 补全 / 串行对冲 / 收账）；"
+              "2026-10-25 +9：早停弃置的 (engine, holder, now_fn) 收进 stranded"
+              "随 DispatchResult 外露（cancelled 记账逐位不变，交付改由"
+              "tail_completion 后台收割），上限 982 → 991 随动登记；"
               "2026-10-21 −36：DispatchResult 与墙钟记账拆到 dispatch_result.py"
               "（纯数据、无 IO；顺带把尾等待从 wasted 单值拆成 tail/abandoned "
               "两个可行动量），上限 1019 → 983；"
@@ -237,7 +240,10 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "（core/openreview/sec_edgar/egov_law/openstd 等=1.3、zenodo/datacite=1.2；"
               "实证缺口：学术域查询常由 core 独家交付却拿 1.0 基线，表内注释有当日实测）"),
     "scripts/search_pipeline.py": (
-        926, "搜索编排主管线（路由→分派→融合→恢复→漏斗输出）；"
+        944, "搜索编排主管线（路由→分派→融合→恢复→漏斗输出）；"
+             "2026-10-25 +18：run.stranded 字段 + finalize 末尾交 tail_completion"
+             "后台收割（早停弃置交付不丢，ARGO_TAIL_COMPLETE_S 控制），"
+             "上限 926 → 944 随动登记；"
              "2026-10-23 −8：融合输入改 serp_kill_log.clean_engine_lists"
              "（守卫同时覆盖缓存命中，issue #18），上限 933 → 926；"
              "2026-10-22 解耦优化（-143 行）：恢复执行器 _recovery_executor 与 "

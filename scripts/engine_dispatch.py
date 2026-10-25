@@ -602,6 +602,10 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
     # 早停弃置引擎已花的墙钟（并行资源浪费，不是用户等待）；记账口径见
     # dispatch_result 模块注释。
     abandoned_ms: list[float] = []
+    # 早停弃置且仍存活的 (engine, holder, now_fn)：交 tail_completion 后台
+    # 收割（2026-10-25）。now_fn 跟 _now 走——t0_mono 传入时整套是单调钟，
+    # 收割线程不能用墙钟去减 holder["t0"]。
+    stranded: list[tuple[str, dict[str, Any], Any]] = []
     first_result_at: float | None = None
     first_sufficient_at: float | None = None
     # 配额批次的构造在调用方：flush 必须发生在**最后一个 _ingest 之后**，
@@ -699,6 +703,10 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
                     # 弃置的引擎白花的墙钟计入 wasted（见 abandoned_ms）：
                     # 它是「调度多花了多少」的量，不是「多等了多久」。
                     abandoned_ms.append(lat_ms)
+                    # 弃置≠丢弃交付：holder 交给后台收割（宽限内完成则记
+                    # 学习器真实成绩 + 合并写缓存，见 tail_completion）。
+                    # 主响应与上面这笔 cancelled 记账逐位不变。
+                    stranded.append((eng, holder, _now))
                     _ingest(eng, [],
                             classify_outcome(eng, [], lat_ms, "cancelled"),
                             lat_ms)
@@ -979,4 +987,5 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
         first_sufficient_ms=_acc["first_sufficient_ms"],
         tail_wait_ms=_acc["tail_wait_ms"],
         abandoned_engine_ms=_acc["abandoned_engine_ms"],
+        stranded=stranded,
     )

@@ -76,10 +76,25 @@ skillsmp             1     0.354    -0.217    3538
 |---|---|---|
 | 缩全局尾宽（1.5s → 0.6s） | ❌ 不做 | 省 202s/2721 条，代价是 225 次高相关度交付 |
 | 按源降权「低质慢源」（mdn/crates/models_dev） | ✅ 已有机制 | 自适应学习器已在做，不需要尾宽代劳 |
-| 让慢源**不拖住快源**（并行 + 早交付 + 后台补全） | ✅ 正确方向 | 速度与完整性不互斥；这才是「不牺牲准确性提速度」 |
+| 让慢源**不拖住快源**（并行 + 早交付 + 后台补全） | ✅ 已落地 | 见下节 |
 
 第三条是真正该做的：慢源的价值在**覆盖**，不在**同步等待**。把它从「阻塞项」
 变成「补齐项」，既拿到它的交付，也不让用户等它。
+
+## 落地（2026-10-25 同日）
+
+`scripts/tail_completion.py`：engine_dispatch 早停弃置引擎时把 (engine,
+holder, now_fn) 随 DispatchResult.stranded 外露（cancelled 记账逐位不变），
+finalize 移交后台收割——宽限（ARGO_TAIL_COMPLETE_S，默认 3s，0=关）内
+完成的：学习器记真实成绩（含 domain/lang 场景标签），交付按 URL 去重合并
+写回 L2 combo 缓存；CLI 由 atexit 等宽限（输出已先行），MCP/daemon 常驻
+进程自然收割。timeout 弃置不收（引擎确实超窗，补全等于鼓励慢源）。
+
+端到端实证（本机）：「Claude Skills 教程 定价」查询 skillsmp 被弃置
+990ms，收割线程等到其 2205ms 完成交付，adaptive 落了一条
+`success=1 / lat=2205 / quality=0.167 / domain=skill_search` 的真实成绩——
+旧机制下这条记录不存在（cancelled 被 should_record_adaptive 跳过），
+慢源的真实表现从没进过学习器。
 
 ## 复现
 

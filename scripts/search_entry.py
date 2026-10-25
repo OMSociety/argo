@@ -392,4 +392,5 @@ def dispatch(req: _SearchRequest, run: _SearchRun, hooks: _SearchHooks) -> _Sear
         quota_batch=quota_batch,
         run_one=_run_one,
         ingest=_ingest,
+        stranded=_dispatch.stranded,
     )

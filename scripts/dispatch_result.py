@@ -39,20 +39,26 @@ class DispatchResult:
     （deep 等无预算模式 total 为 None）。搜索输出把它挂进 timing.budget，
     让「这次离预算上限还有多远」可观测，而不必反推 process_ms。
 
+    `stranded`：早停弃置且仍存活的引擎 ``[(engine, holder, now_fn), ...]``，
+    交 tail_completion 后台收割（学习器记真实成绩 + 合并写 L2 缓存）。主响应
+    与 cancelled 记账不受它影响——它改的是「交付被丢弃」这一件事。
+
     记账字段的语义与历史见模块 docstring；`wasted_ms` 仅为兼容别名。
     """
 
     __slots__ = ("raw_results", "engine_outcomes", "engine_latency",
                  "wasted_ms", "early_stopped", "run_one", "ingest",
                  "budget_used_ms", "budget_total_ms", "useful_ms",
-                 "first_sufficient_ms", "tail_wait_ms", "abandoned_engine_ms")
+                 "first_sufficient_ms", "tail_wait_ms", "abandoned_engine_ms",
+                 "stranded")
 
     def __init__(self, raw_results: Any, engine_outcomes: Any,
                  engine_latency: Any, wasted_ms: int, early_stopped: bool,
                  run_one: Any, ingest: Any, budget_used_ms: int | None = None,
                  budget_total_ms: int | None = None, useful_ms: int = 0,
                  first_sufficient_ms: int = 0, tail_wait_ms: int = 0,
-                 abandoned_engine_ms: int | None = None) -> None:
+                 abandoned_engine_ms: int | None = None,
+                 stranded: Any = ()) -> None:
         self.raw_results = raw_results
         self.engine_outcomes = engine_outcomes
         self.engine_latency = engine_latency
@@ -68,6 +74,7 @@ class DispatchResult:
         # 旧调用方只传 wasted_ms：别名取同一值，不引入第二个真源。
         self.abandoned_engine_ms = (wasted_ms if abandoned_engine_ms is None
                                     else abandoned_engine_ms)
+        self.stranded = tuple(stranded or ())
 
 
 def summarize_dispatch(*, wall_ms: int, contributed_ms: list[float],
