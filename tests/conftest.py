@@ -88,6 +88,25 @@ if os.path.isdir(_BIN_DIR):
 # 断言随之失败——而单独跑两个文件都绿。与 ARGO_STATE_DIR 同一理由：
 # 跨用例共享的进程级状态必须每用例清空。
 @pytest.fixture(autouse=True)
+def _isolate_measure_clock():
+    """计时测量层的每用例隔离（2026-10-25）。
+
+    虚拟时钟与预算锚点都是**进程级**状态：任何一个用例在 ``task_deadline``
+    作用域外抛错、或让被测代码延迟执行，锚点就会泄漏到后面的用例，表现为
+    「不相干的用例报等待越界」，且只在全量套件里出现、单跑全绿。与
+    ``ARGO_STATE_DIR`` 同一理由：跨用例共享的进程级状态必须每用例复位。
+    """
+    try:
+        import _measure
+    except ImportError:
+        yield
+        return
+    _measure.reset()
+    yield
+    _measure.reset()
+
+
+@pytest.fixture(autouse=True)
 def _isolate_conn_pool():
     import sys
     from pathlib import Path

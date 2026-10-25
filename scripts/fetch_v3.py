@@ -53,7 +53,7 @@ if SCRIPT_DIR not in sys.path:
 
 # 渲染层（第二级A）：TinyFish 直连渲染，独立模块以保持本文件聚焦主链调度
 import fetch_render_tinyfish as _render_tinyfish
-
+from clock_bridge import clock  # 统一时钟（测试=虚拟；生产=monotonic）
 # 质量信号层（第三级）：来源分类 / 页面类型 / 质量分 / 内容安全
 import fetch_quality as _quality
 
@@ -1353,14 +1353,14 @@ def fetch_v3(url: str, max_chars: int = 8000, timeout: float = 8.0,
                 deadline_s = float(os.environ.get("ARGO_FETCH_DEADLINE_S", "60") or 60)
             except ValueError:
                 deadline_s = 60.0
-        t_chain0 = time.monotonic()
+        t_chain0 = clock()
         deadline_hit = {"flag": False}
 
         def _budget_left() -> float:
             """剩余降级预算；耗尽时置标记并返回 -1（调用方停止升级）。"""
             if deadline_s <= 0:
                 return 1.0
-            left = deadline_s - (time.monotonic() - t_chain0)
+            left = deadline_s - (clock() - t_chain0)
             if left <= 0:
                 deadline_hit["flag"] = True
                 return -1.0

@@ -1,3 +1,6 @@
+
+
+from _measure import sleep  # 计时断言唯一来源：虚拟时钟见 tests/_measure.py
 #!/usr/bin/env python3
 """test_fetch_deadline.py — fetch_v3 全局 deadline 回归（2026-08-31 审查修复）。
 
@@ -40,7 +43,7 @@ def chain_env(monkeypatch):
 def _fail(method, secs=0.0):
     def fn(url, max_chars=8000, timeout=8.0, **kwargs):
         if secs:
-            time.sleep(secs)
+            sleep(secs)
         return {"url": url, "content": "", "html": "", "title": "", "length": 0,
                 "success": False, "error": method, "fetch_method": method}
     return fn
@@ -140,12 +143,16 @@ def test_tinyfish_good_content_still_short_circuits(chain_env, monkeypatch):
     assert out["fetch_method"] == "tinyfish"
 
 
-def _recorder(asked, method, sleep=0.0):
-    """记录本级实际拿到的 timeout（位置或关键字都收），并返回失败结果。"""
+def _recorder(asked, method, delay=0.0):
+    """记录本级实际拿到的 timeout（位置或关键字都收），并返回失败结果。
+
+    延迟参数原来叫 ``sleep``，既遮蔽了导入的 ``sleep()``（改名办法一改就变成
+    "float 不可调用"），也让调用点读起来像在调 sleep 本身。改成 ``delay``。
+    """
     def fn(url, max_chars=8000, timeout=None, **kwargs):
         asked.append((method, timeout))
-        if sleep:
-            time.sleep(sleep)
+        if delay:
+            sleep(delay)
         return {"url": url, "content": "", "html": "", "title": "", "length": 0,
                 "success": False, "error": method, "fetch_method": method}
     return fn
@@ -170,7 +177,7 @@ def test_every_downgrade_level_is_clamped_by_budget(chain_env, monkeypatch):
     asked = []
     # 第一级吃掉几乎全部预算（1.9s / 2.0s），其余级只记录不睡
     monkeypatch.setattr(fetch_v3, "_http_fetch",
-                        _recorder(asked, "http", sleep=1.9))
+                        _recorder(asked, "http", delay=1.9))
     for name, attr in (("mobile", "_mobile_http_fetch"),
                        ("tls", "_tls_spoof_fetch"),
                        ("wayback", "_wayback_fetch"),

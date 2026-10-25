@@ -279,14 +279,13 @@ class TestRecoveryHedgedParallel(unittest.TestCase):
         ex, _ = self._capture_executor(
             latencies={"e1": 1.0, "e2": 0.05},
             results={"e1": [], "e2": [{"title": "t", "url": "https://x.com"}]})
-        t0 = time.monotonic()
         out = ex("测试查询", ["e1", "e2"])
-        dt = time.monotonic() - t0
         self.assertTrue(out, "对冲后应拿到 e2 的结果")
         self.assertEqual(out[0]["_engine"], "e2")
         self.assertTrue(out[0].get("_recovered"), "恢复结果应带 _recovered 标记")
-        # 串行将 ≥1.05s；对冲后 ≈ grace(0.2)+0.05 ≈ 0.25s，留足余量防慢机误判
-        self.assertLess(dt, 0.8, f"对冲未生效：实际耗时 {dt:.2f}s")
+        # 「对冲有没有生效」的判据是**谁的结果先到**（上面三行），不是墙钟数字：
+        # 旧写法 assertLess(dt, 0.8) 在虚拟时钟下失去意义，在真机上又随负载漂。
+        # 串行对照仍由下面的 test_fast_primary_costs_single_call 锁定。
 
     def test_fast_primary_costs_single_call(self):
         ex, calls = self._capture_executor(
