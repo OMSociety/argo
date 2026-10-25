@@ -3,7 +3,7 @@
 > 本文受门禁保护（tests/test_usage_doc_gates.py）：文中命令必须存在于
 > bin/argo 分发表、`ARGO_*` 开关必须代码实存。改命令先改代码，本文随行。
 
-## 命令总览（28 个，唯一事实=bin/argo 分发表）
+## 命令总览（29 个，唯一事实=bin/argo 分发表）
 
 | 命令 | 一句话 |
 |------|--------|
@@ -27,6 +27,7 @@
 | `argo auth` | 浏览器登录态（login/status/logout；登录墙站点抓取自动带会话） |
 | `argo job` | 招聘多平台聚合 |
 | `argo preflight` | 批量 URL 预检（`--probe` 联网探测） |
+| `argo engine` | 新引擎一键接入（spec→探测→派生→语料→验证→准入→同步；`add --from-yaml/--from-url`） |
 | `argo cite` | DOI 引用条目（四格式） |
 | `argo mcp` | 多客户端 MCP 注入/诊断/还原 |
 | `argo paths` | 路径自省与状态目录自检 |

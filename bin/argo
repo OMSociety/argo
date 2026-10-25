@@ -658,6 +658,10 @@ def main():
         "job":       ("job.py",        []),
         "preflight": ("batch_probe.py", []),
         "mcp":       ("mcp_setup.py",  []),
+        # engine：新引擎一键接入（spec → 探测 → 派生 → 语料 → 验证 → 准入 → 同步）。
+        # `argo engine add --from-yaml ...` / `--from-url ...` / `--engine ...`；
+        # 详见 scripts/engine_add.py 与 docs/ADDING_NEW_ENGINE.md。
+        "engine":    ("engine_add.py", []),
         # stats：本地使用日志只读出口（日志与反馈的规范化入口，见 references/usage.md）
         "stats":     ("stats_cli.py",  ["--json"]),
         # budget：按引擎的月度预算（原生币种）；quota 启动时读取并强制执行
