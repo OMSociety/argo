@@ -272,7 +272,7 @@ engines:
   desc: CiNii Research 日本学术总库（论文/博士论文/科研项目，免 key）
 - name: clawhub
   tier: T1
-  type: http
+  type: clawhub
   coverage:
   - skill
   - developer
@@ -282,7 +282,7 @@ engines:
   status: ok
   recommended: true
   explicit_only: false
-  desc: ClawHub 技能生态聚合搜索（OpenClaw 原生 + skills.sh 条目，免认证，下载量口径）
+  desc: ClawHub 技能生态聚合（OpenClaw + skills.sh 条目，免认证，带生态下载量与官方标记）
 - name: cleveland
   tier: T1
   type: cleveland
@@ -912,6 +912,19 @@ engines:
   recommended: true
   explicit_only: false
   desc: Exa 语义搜索（embedding 匹配 + 内容摘要，新户 $20 赠金 + 每月 $10 赠金）
+- name: explainx
+  tier: T1
+  type: explainx
+  coverage:
+  - skill
+  - developer
+  - tech
+  latency_ms: 2000
+  cost: free
+  status: ok
+  recommended: true
+  explicit_only: false
+  desc: explainx 技能目录（12075 条，免认证，带安装量/分类/官方标记）
 - name: factcheck_org
   tier: T1
   type: rss_feed
@@ -2562,9 +2575,9 @@ engines:
   recommended: true
   explicit_only: false
   desc: 新浪实时行情快照（现价/涨跌/成交量，免认证）
-- name: skillsmp
+- name: skills_sh
   tier: T1
-  type: http
+  type: skills_sh
   coverage:
   - skill
   - developer
@@ -2574,7 +2587,20 @@ engines:
   status: ok
   recommended: true
   explicit_only: false
-  desc: SkillsMP Agent 技能聚合目录（200万+ 开源技能独立索引，免费 keyless REST API，stars 排序）
+  desc: skills.sh 技能目录（57k+，免认证，Vercel 官方安装遥测）
+- name: skillsmp
+  tier: T1
+  type: skillsmp
+  coverage:
+  - skill
+  - developer
+  - tech
+  latency_ms: 2000
+  cost: free
+  status: ok
+  recommended: true
+  explicit_only: false
+  desc: SkillsMP Agent 技能聚合目录（200万+ 开源技能独立索引，免认证，带仓库星数与可安装的 GitHub 目录）
 - name: so
   tier: T1
   type: so

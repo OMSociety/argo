@@ -57,6 +57,13 @@ RANK_LISTS = {
     "today": "todayList",
     "author": "authorList",
 }
+
+# 「非可安装」这个关键信息为什么进摘要前缀，而不是 metadata：
+# argo 的 CLI builder 用 image_ops._cli_result_row 做字段白名单，只保留
+# title/url/snippet/source/published_at + 图片字段——metadata 与 upstream
+# **都不透传**（实测 redskill 输出带 metadata，Argo 结果里是 null）。
+# snippet 是 CLI 引擎唯一能自由填充的字段，故把使用方式写在最前面。
+_USAGE_PREFIX = "【小红书技能·APP 内使用】"
 RANK_LABELS = {
     "use": "使用人数榜",
     "new": "7天新增榜",
@@ -216,10 +223,21 @@ def _search_all(data: dict[str, Any], query: str, n: int) -> list[dict[str, Any]
         results.append({
             "title": name,
             "url": url,
-            "snippet": str(s.get("skill_description", ""))[:500],
+            "snippet": f"{_USAGE_PREFIX}{str(s.get('skill_description', ''))}"[:500],
             "score": round(score, 3),
             "source": "redskill",
             "skill_id": sid,
+            # 小红书技能是**提示词/方法论**，不是可安装的代码包。上游数据
+            # （allSkills 52314 条）只有 skill_id / skill_name /
+            # skill_description 三个字段，**零安装地址**——实测 githubUrl /
+            # url / installUrl / repoUrl / note_id 全部为 0 命中；只有 300 条
+            # 榜单技能带 note_id。明确标注，避免用户以为「搜到就能装」。
+            "metadata": {
+                "platform": "xiaohongshu",
+                "installable": False,
+                "note_id": note,
+                "usage": "小红书站内技能：在小红书 APP 内使用，或复制描述作提示词",
+            },
         })
     return results
 
@@ -242,7 +260,7 @@ def _rank_list(data: dict[str, Any], rank_type: str, n: int) -> list[dict[str, A
             note = item.get("note_id")
             url = EXPLORE_URL.format(note) if note else PAGE_URL
 
-            snippet = str(item.get("skill_description", ""))[:500]
+            snippet = f"{_USAGE_PREFIX}{str(item.get('skill_description', ''))}"[:500]
             results.append({
                 "title": item.get("skill_name", ""),
                 "url": url,
@@ -253,6 +271,15 @@ def _rank_list(data: dict[str, Any], rank_type: str, n: int) -> list[dict[str, A
                 "skill_id": item.get("skill_id"),
                 "use_cnt": item.get("use_cnt") if rank_type in ("use", "today") else item.get("new7_cnt"),
                 "use_users": item.get("use_users") if rank_type in ("use", "today") else None,
+                # 榜单技能有 note_id（可跳笔记），但笔记里也没有「安装包」——
+                # 小红书技能的使用入口是 APP 本身，不是下载。同 _search_all。
+                "metadata": {
+                    "platform": "xiaohongshu",
+                    "installable": False,
+                    "note_id": note,
+                    "rank": i + 1,
+                    "usage": "小红书站内技能：在小红书 APP 内使用，或复制描述作提示词",
+                },
             })
     return results
 

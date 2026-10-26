@@ -28,11 +28,13 @@ domains:
   patterns:
   - '(?i)(REDSkill|红[书薯]技能|小红书.*(skill|技能)|技能(排行|榜单|排行榜)|skill.*(rank|排行|榜))'
   primary: redskill
-- desc: 跨生态 Agent 技能搜索（SkillsMP/ClawHub/REDSkill）
+- desc: 跨生态 Agent 技能搜索（SkillsMP/ClawHub/REDSkill/explainx/skills.sh）
   engines_combo:
   - skillsmp
   - clawhub
   - redskill
+  - explainx
+  - skills_sh
   - anysearch
   fallback: anysearch
   name: skill_search
@@ -40,6 +42,14 @@ domains:
   patterns:
   - '(?i)(agent\s*skills?|技能(搜索|检索|市场|目录|库)|找(个|一?个)?技能|装(个|一?个)?技能|claude\s*skill|codex\s*skill|dsh\s*skill|skills?\.sh|skillsmp|clawhub)'
   primary: skillsmp
+  # 域级源保底分。为什么需要：skills.sh 的 installs 与 explainx 的安装量是
+  # 「这个技能有多少人在用」的硬指标，而摘要里带着它；但五维精排的相关性
+  # 维度比对文本，通用源的文章标题更容易命中查询词，会把带安装量的技能
+  # 条目挤下去（与 dsh_plugin_search 同一现象）。保底让「有安装量数据」的
+  # 两个源不被纯文本匹配埋没。authority/freshness 仅在 evidence 可用时生效。
+  score_floors:
+    explainx: {relevance: 0.85, authority: 0.85, freshness: 0.8}
+    skills_sh: {relevance: 0.85, authority: 0.85, freshness: 0.8}
 - desc: DSH 插件搜索（DeepSeek Harness 插件目录）
   engines_combo:
   - dshopen

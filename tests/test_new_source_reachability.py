@@ -194,6 +194,11 @@ class TestProbeActuallyRoutesToNewSource:
         # 单一国别）。探针须落在本域，所以用「土壤/农业」词——用「食品」
         # 命不中本域 patterns（域只声明了土壤/农业两组）。
         "soil_agri": ("土壤属性", "农业 作物"),
+        # 2026-10-26：skill_search 接入 explainx + skills.sh（都带安装量口径）。
+        # 探针用英文技能词——「技能 市场 目录」这类纯中文词会被 TF-IDF 拉去
+        # chinese_general（实测），而 dsh_plugin_search 只认 dsh/deepseek
+        # harness + 插件，故英文词能稳定落在本域并选出新源。
+        "skill_search": ("agent skills", "claude skills 市场"),
     }
 
     @pytest.mark.parametrize("domain", sorted(NEW_SOURCES))

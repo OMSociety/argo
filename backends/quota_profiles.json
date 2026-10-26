@@ -720,6 +720,16 @@
     "cost_tier": "api",
     "priority": 14
   },
+  "explainx": {
+    "label": "explainx 技能目录",
+    "qps": 2,
+    "limit": null,
+    "period": "minute",
+    "cost_per_call": 0.0,
+    "cost_unit": "free",
+    "cost_tier": "free",
+    "priority": 52
+  },
   "factcheck_org": {
     "label": "FactCheck.org",
     "qps": 1,
@@ -2039,6 +2049,16 @@
     "cost_unit": "free",
     "cost_tier": "free",
     "priority": 3
+  },
+  "skills_sh": {
+    "label": "skills.sh 技能目录",
+    "qps": 2,
+    "limit": null,
+    "period": "minute",
+    "cost_per_call": 0.0,
+    "cost_unit": "free",
+    "cost_tier": "free",
+    "priority": 51
   },
   "skillsmp": {
     "label": "SkillsMP 技能目录",

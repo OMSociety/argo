@@ -34,6 +34,7 @@ _TZ_CN = timezone(timedelta(hours=8))
 # tests/test_skill_registry_contract.py 把守。
 SKILL_REGISTRY_ENGINES = frozenset({
     "redskill", "skillsmp", "clawhub",
+    "explainx", "skills_sh",
     "dshopen", "deepseek1024", "dsh_hub",
 })
 

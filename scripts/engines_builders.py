@@ -179,6 +179,12 @@ from engines_builders_feeds import (
 from engines_builders_dsh import (
     _build_dshopen_engine,
 )
+from engines_builders_skill import (
+    _build_explainx_engine,
+    _build_skills_sh_engine,
+    _build_skillsmp_engine,
+    _build_clawhub_engine,
+)
 
 __all__ = [
     "_build_em_miaoxiang_engine",
@@ -310,5 +316,9 @@ __all__ = [
     "_build_nhtsa_vpic_engine",
     "_build_rss_feed_engine",
     "_build_dshopen_engine",
+    "_build_explainx_engine",
+    "_build_skills_sh_engine",
+    "_build_skillsmp_engine",
+    "_build_clawhub_engine",
 ]
 

@@ -44,6 +44,12 @@ _VERTICAL_NEW_SOURCE: dict[str, tuple[str, ...]] = {
     # cinii 声明 langs=ja，靠 engines_demote_for_lang 的语言专用源降级，
     # 只在日语查询里占位；zbmath 语言中立，数学查询与 deep 档可达。
     "soil_agri": ("openfoodfacts",),   # 食品成分库：补 usda（单一国别）之外的多国食品数据
+    # 2026-10-26：技能域两个新专源。explainx 给「安装量 + 分类 + 官方标记」，
+    # skills.sh 给 Vercel 官方安装遥测——两者都是「这个技能多少人在用」的硬
+    # 指标，而此前三个技能源（skillsmp 只有仓库星数、clawhub 只有生态下载量、
+    # redskill 只有小红书站内口径）都给不出。声明在既有源之后，由本表加槽，
+    # 不挤掉 skillsmp/clawhub/redskill 的位次。
+    "skill_search": ("explainx", "skills_sh"),
 }
 
 

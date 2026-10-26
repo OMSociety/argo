@@ -209,6 +209,10 @@ from engines_builders import (
     _build_github_engine,
     _build_rss_feed_engine,
     _build_dshopen_engine,
+    _build_explainx_engine,
+    _build_skills_sh_engine,
+    _build_skillsmp_engine,
+    _build_clawhub_engine,
 )
 # 批次十（engines_builders_batch10）：engines_builders.py 聚合层暂未转出该模块，
 # 先直连其源模块——engines_builders.py 补转出后可并入上方聚合 import。
@@ -428,6 +432,10 @@ _BUILDERS = {
     "met_museum": _build_met_museum_engine,
     "github": _build_github_engine,
     "dshopen": _build_dshopen_engine,
+    "explainx": _build_explainx_engine,
+    "skills_sh": _build_skills_sh_engine,
+    "skillsmp": _build_skillsmp_engine,
+    "clawhub": _build_clawhub_engine,
     "google_scholar": _build_google_scholar_engine,
     "v2ex": _build_v2ex_engine,
     "tineye": _build_tineye_engine,
