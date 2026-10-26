@@ -92,8 +92,11 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "_LazyLogger 代理类，省 ~10ms/次冷启动；"
               "2026-10-14 7ca2f22 移除 OSV/CISA KEV 代码段（−261）"),
     "scripts/fetch_v3.py": (
-        1804, "抓取降级链（HTTP→md 变体→TLS 指纹→jina→Parallel→浏览器），"
+        1831, "抓取降级链（HTTP→md 变体→TLS 指纹→jina→Parallel→浏览器），"
               "每级都要保留顺序与超时语义，尚未找到能一次搬走且可验证的切面；"
+              "2026-10-27 +27：飞书文档认证直取前置层挂载（feishu_md 进 "
+              "_MARKDOWN_METHODS + 第零级 pre-robots 分支，管线顺序依据留在"
+              "挂载点注释里；随 feat/feishu-auth-fetch 并入 main）；"
               "2026-09-27 +10：identity memory 内存缓存（dirty flag + 30s 写盘节流）；"
               "2026-09-28 +2：_identity_mem 内存表 512 有界淘汰；"
               "2026-09-29 +10：llms-full.txt token 炸弹守卫（候选出口过滤）；"
@@ -145,7 +148,7 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "_redact_secrets fallback 加基本脱敏（Bearer token + key=value）；"
               "2026-09-28 +2：_detect_anti_bot head 区按需 lower（性能优化）"),
     "scripts/cache.py": (
-        1373, "结果缓存 + 路由软命中 + 指纹；「键/存储/命中策略」三段的第二段"
+        1380, "结果缓存 + 路由软命中 + 指纹；「键/存储/命中策略」三段的第二段"
               "已落地——2026-10-16 命中判据层（normalize_query / minhash "
               "query_similarity / split_qualifiers / is_freshness_sensitive_query"
               "共 ~115 行）整段拆至 cache_similarity.py，本文件只剩存储实现与门面"
@@ -172,7 +175,11 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "交出，4 行）；②SearchCache.set 加 recovered 形参——恢复链成功"
               "的批次整批退化时降级短 TTL 写入而非硬拒（治「重复查询重付 "
               "dispatch+恢复链」结构性循环，12 行；策略常量在 cache_guard."
-              "RECOVERED_DEGRADED_TTL）；随动上限 1357 → 1385"),
+              "RECOVERED_DEGRADED_TTL）；随动上限 1357 → 1385；"
+              "2026-10-27 +7：登录墙页面类型单一真源接线（from content_signals "
+              "import WALL_PAGE_TYPES 并入 _POOR_PAGE_TYPES 判据，生产方在 "
+              "content_signals、消费端在此；随 feat/feishu-auth-fetch 并入 "
+              "main，上限随动 1373 → 1380）"),
     "scripts/engine_dispatch.py": (
         990, "引擎编排调度器（wave-1 竞速 / wave-2 补全 / 串行对冲 / 收账）；"
               "2026-10-26 −1：重试前把归因寄存器只读快照交给 "
