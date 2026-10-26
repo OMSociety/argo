@@ -599,7 +599,7 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 | `ARGO_YUANBAO_API_KEY` | 对应引擎/服务的凭据（腾讯元宝搜索，官方名 `TENCENTCLOUD_WSA_APIKEY` 同样识别） | 缺密钥=该源跳过或降级 |
 | `ARGO_ZHIHU_ACCESS_SECRET` | 对应引擎/服务的凭据 | 缺密钥=该源跳过或降级 |
 
-### 行为调参（36）
+### 行为调参（37）
 
 | 变量 | 作用 | 默认/备注 |
 |------|------|----------|
@@ -607,7 +607,8 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 | `ARGO_GENERAL_FALLBACK_STATIC` | 通用兜底链完全回到静态元组顺序（不参与实测排序） | 默认关；=1 开启。用于逐位复现 2026-10-26 之前的行为，或 A/B 固定静态臂 |
 | `ARGO_GENERAL_FALLBACK_LEGACY` | 静态顺序并去掉 octen（anysearch → local_bing） | 默认关；=1 开启，且会钉住顺序（不再动态排序）。2026-10-17 交错 A/B：octen 第二顺位在 anysearch 抖动窗口把 p90 3273→1614ms、max 6266→1928ms、错误 9→0 |
 | `ARGO_GENERAL_FALLBACK_LEAD` | 通用兜底链领队覆盖（传引擎名，提到首位） | 默认空=按 `source_selection` 实测先验排序；=anysearch 复现旧顺位。会钉住顺序，用于交错 A/B |
-| `ARGO_PAID_SEARCH` | 付费搜索对冲开关 | 默认 `auto`：仅在 english_tech / intl_news_flash 的付费位插入 DeepSeek（预算用完回落 TinyFish）；`off` 关闭。见 `scripts/paid_policy.py` |
+| `ARGO_PAID_SEARCH` | 付费搜索对冲开关 | 默认 `auto`：在 english_tech / intl_news_flash / global_event 的付费位插入 DeepSeek（预算用完回落 TinyFish）；`off` 关闭。见 `scripts/paid_policy.py` |
+| `ARGO_PAID_HEDGE_DEFER` | english_tech 的付费对冲降到第三位（免费源先跑，不达标才付费） | 默认空=常驻第二位（2026-10-26 四臂实测：p50 打平，均值 967 vs 1246ms、权威覆盖 0.83 vs 0.50）；=1 省 75% DeepSeek 调用，适合预算紧张。新闻域始终第二位 |
 | `ARGO_BUDGET_DEEPSEEK_SEARCH` | DeepSeek 月度预算（元） | 默认 5（≈1000 次成功调用）；0=关闭自动使用。也可用 `argo budget set deepseek_search 5` 写共享文件 |
 | `ARGO_QUOTA_ANYSEARCH_LIMIT` | 行为阈值/预算调参 | AnySearch 每日次数上限（默认 1000）；0=不限制；空=沿用 config.yaml |
 | `ARGO_QUOTA_ZHIHU_LIMIT` | 行为阈值/预算调参 | 知乎每日次数上限（默认 5000）；0=不限制；空=沿用 config.yaml |

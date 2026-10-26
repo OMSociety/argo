@@ -25,9 +25,44 @@ __all__ = ["PAID_DOMAIN_HEDGES", "hedge_for", "insert_hedge"]
 PAID_DOMAIN_HEDGES: dict[str, str] = {
     "english_tech": "deepseek_search",
     "intl_news_flash": "deepseek_search",
+    # 2026-10-26：英文新闻里 `US election latest` / `Middle East ceasefire`
+    # 实际落在这个域（不是 intl_news_flash）；不加这一条，DeepSeek 拿不到
+    # 这类查询。新闻域的收益最明确，放在第二位。
+    "global_event": "deepseek_search",
 }
 
+# 插入位置默认第二位。english_tech 可选用 ARGO_PAID_HEDGE_DEFER=1 降到
+# 第三位（wave-1 只跑免费源，不够才付费）。2026-10-26 四臂实测：
+#   常驻第二位 p50 726ms / 均值 967ms / 权威覆盖 0.83；
+#   条件第三位 p50 749ms / 均值 1246ms / 权威覆盖 0.50，DeepSeek 调用少 75%。
+# p50 打平、均值与权威覆盖常驻更好，而 5 元/月额度足够覆盖这两个域，
+# 故默认常驻；预算紧张或要严格省钱时再开 DEFER。
+_DEFER_DOMAINS = frozenset({"english_tech"})
+
 _FREE_FALLBACK = "tinyfish"
+
+
+def _flag(name: str, default: bool = False) -> bool:
+    try:
+        from engine_env import env_flag
+        return bool(env_flag(name, default=default))
+    except Exception:
+        raw = os.environ.get(name)
+        if raw is None:
+            return default
+        return raw.strip().lower() not in ("", "0", "false", "no", "off")
+
+
+def _hedge_position(domain: str) -> int:
+    """付费对冲插入位置：默认第二位；ARGO_PAID_HEDGE_DEFER=1 时
+    english_tech 降到第三位（免费源先跑，不达标才付费）。
+
+    位置决定「免费源够用时是否还付费」，是速度与成本的直接旋钮；默认值
+    由 2026-10-26 四臂实测决定，见上方注释。
+    """
+    if _flag("ARGO_PAID_HEDGE_DEFER") and str(domain or "") in _DEFER_DOMAINS:
+        return 2
+    return 1
 
 
 def _enabled() -> bool:
@@ -129,8 +164,13 @@ def hedge_for(domain: str, mode: str = "auto",
 
 def insert_hedge(combo: list[str], domain: str, mode: str = "auto",
                  enabled: set[str] | None = None) -> list[str]:
-    """把付费/回落引擎插到 combo 第二位（原地改并返回，便于链式调用）。"""
+    """把付费/回落引擎插到该域声明的位置（原地改并返回）。
+
+    默认第二位；english_tech 第三位（免费源先跑，不够才付费）。位置不参与
+    排序，只是 combo 的插入下标，后续 wave 调度按位置分波。
+    """
+    position = _hedge_position(domain)
     for engine in reversed(hedge_for(domain, mode, enabled=enabled)):
         if engine not in combo:
-            combo.insert(min(1, len(combo)), engine)
+            combo.insert(min(max(0, position), len(combo)), engine)
     return combo

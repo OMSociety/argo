@@ -16,7 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from query_signals import query_coverage_ok  # noqa: E402
+from query_signals import query_coverage_ok, results_sufficient  # noqa: E402
 
 
 def _rs(*pairs: tuple[str, str]) -> list[dict[str, str]]:
@@ -98,6 +98,43 @@ class TestDiscriminativeCoverage(unittest.TestCase):
             ("numpy", "python package"),
         )
         self.assertFalse(query_coverage_ok(results, "requests 库 安装"))
+
+
+class TestAuthorityAwareStop(unittest.TestCase):
+    """权威信号参与早停：高权威可少一条，无权威要求明确过半。"""
+
+    def test_high_authority_allows_two_results(self):
+        results = [
+            {"title": "git-commit manual", "snippet": "commit docs",
+             "authority_level": 4},
+            {"title": "git commit guide", "snippet": "commit steps",
+             "authority_level": 3},
+        ]
+        self.assertTrue(results_sufficient(results, mode="auto",
+                                           query="git commit"))
+
+    def test_two_plain_results_still_not_enough(self):
+        results = [
+            {"title": "git-commit manual", "snippet": "commit docs"},
+            {"title": "git commit guide", "snippet": "commit steps"},
+        ]
+        self.assertFalse(results_sufficient(results, mode="auto",
+                                            query="git commit"))
+
+    def test_no_authority_requires_clear_majority(self):
+        base = [
+            ("git commit manual", "commit docs"),
+            ("git commit guide", "commit steps"),
+            ("documentation page", "reference manual"),
+            ("unrelated page", "nothing here"),
+        ]
+        marginal = _rs(*base)
+        self.assertFalse(results_sufficient(marginal, mode="auto",
+                                            query="git commit"),
+                         "4 条只中 2 条且无权威信号，早停应被拒")
+        clear = _rs(*base, ("git commit examples", "commit workflow"))
+        self.assertTrue(results_sufficient(clear, mode="auto",
+                                           query="git commit"))
 
 
 if __name__ == "__main__":

@@ -114,6 +114,9 @@ def _route_state_fingerprint() -> str:
     # 静态臂同样是「改通用兜底链顺序」的开关（2026-10-26 新增）。不进指纹
     # 会让「设了 STATIC=1 但缓存命中」读到动态排序，A/B 两臂变成同一臂。
     parts.append("static=" + (_get_env("ARGO_GENERAL_FALLBACK_STATIC") or ""))
+    # 付费对冲位置同样改变 combo：常驻第二位 vs 第三位（免费源先跑）。
+    # 不进指纹会让 A/B 两臂在缓存命中时读到同一组合。
+    parts.append("hedge_defer=" + (_get_env("ARGO_PAID_HEDGE_DEFER") or ""))
     # 付费对冲开关与月度预算同样改变 combo；不纳入指纹会让开关或预算变更在缓存命中时静默不生效。
     parts.append("paid=" + (_get_env("ARGO_PAID_SEARCH") or ""))
     try:

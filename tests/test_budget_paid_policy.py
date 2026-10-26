@@ -118,6 +118,12 @@ def test_route_cache_fingerprint_tracks_paid_switch(monkeypatch):
     monkeypatch.setenv("ARGO_BUDGET_DEEPSEEK_SEARCH", "20")
     c = route_cache._route_state_fingerprint()
     assert c != b
+    # 对冲位置（常驻第二位 vs 第三位）同样改变 combo，必须参与指纹
+    monkeypatch.delenv("ARGO_PAID_HEDGE_DEFER", raising=False)
+    d = route_cache._route_state_fingerprint()
+    monkeypatch.setenv("ARGO_PAID_HEDGE_DEFER", "1")
+    e = route_cache._route_state_fingerprint()
+    assert d != e
 
 
 def test_budget_hot_reload_and_breaker_respect(isolated, monkeypatch):
@@ -168,6 +174,33 @@ def test_paid_hedge_works_with_real_routable_enabled(monkeypatch):
         "english_tech", "auto", enabled=enabled) == ["deepseek_search"]
     assert paid_policy.hedge_for(
         "intl_news_flash", "auto", enabled=enabled) == ["deepseek_search"]
+
+
+def test_hedge_position_default_and_defer(monkeypatch):
+    """默认第二位；DEFER=1 时 english_tech 降到第三位，新闻域不变。"""
+    import route_combo
+
+    monkeypatch.setenv("ARGO_PAID_SEARCH", "auto")
+    monkeypatch.delenv("ARGO_PAID_HEDGE_DEFER", raising=False)
+    monkeypatch.setattr(paid_policy, "_key_ready", lambda e: True)
+    monkeypatch.setattr(paid_policy, "_budget_ok", lambda e: True)
+    monkeypatch.setattr(paid_policy, "_env_allowed", lambda e: True)
+    monkeypatch.setattr(paid_policy, "_admission_ok", lambda e: True)
+    monkeypatch.setattr(route_combo, "_breaker_blocked", lambda e: False)
+
+    assert paid_policy.insert_hedge(
+        ["anysearch", "exa"], "english_tech", "auto",
+        enabled={"tinyfish"}) == ["anysearch", "deepseek_search", "exa"]
+
+    monkeypatch.setenv("ARGO_PAID_HEDGE_DEFER", "1")
+    assert paid_policy.insert_hedge(
+        ["anysearch", "exa"], "english_tech", "auto",
+        enabled={"tinyfish"}) == ["anysearch", "exa", "deepseek_search"]
+    # 新闻域即便开了 DEFER 也保持第二位（收益最明确）
+    assert paid_policy.insert_hedge(
+        ["google_news", "em_global_news"], "global_event", "auto",
+        enabled={"tinyfish"}) == [
+            "google_news", "deepseek_search", "em_global_news"]
 
 
 def test_batch14_hkex_s2t_longest_match_first():

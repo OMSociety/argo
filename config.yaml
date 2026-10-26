@@ -575,7 +575,7 @@ domains:
   - '(?i)(电网|发电结构|发电量|电力结构|power grid|electricity mix|generation mix)'
   - '(?i)(碳强度|carbon intensity|碳排放强度|可再生|renewable)'
   - '(?i)(现货电价|spot price|电价)'
-- desc: 交通实时（共享单车 GBFS 标准；与 train 引擎互补）
+- desc: 交通实时（共享单车 GBFS 标准，当前覆盖 NYC Citi Bike；与 train 引擎互补）
   engines_combo:
   - gbfs_nyc
   - train
@@ -586,8 +586,14 @@ domains:
   primary: gbfs_nyc
   parallel: false
   patterns:
-  - '(?i)(共享单车|bike share|bikeshare|滑板车|scooter|GBFS)'
-  - '(?i)(公交|地铁|metro\s+(line|station|system|map|service|route|card)|班次|时刻表|timetable|departure)'
+  # 触发词必须**与主源的实际覆盖范围一致**。gbfs_nyc 是 NYC Citi Bike 的 GBFS
+  # 端点（查询词不参与过滤，命中即回纽约站点清单），而 train 只覆盖中国 12306。
+  # 此前这里还挂着一条全球通用的 `公交|地铁|metro…|班次|时刻表`，于是任一城市的
+  # 地铁/公交查询都被本域捕获、锁死整条组合，再串行跑一遍拿不到结果的纽约源
+  # ——2026-10-26 实测「上海 地铁 线路图」白等 gbfs_nyc 890ms，中位耗时是通用
+  # 检索域的 2.6 倍。通用交通信息查询交给通用检索域。
+  - '(?i)(纽约|NYC|new york|citi ?bike)[^，。;；]{0,16}(共享单车|单车|bike ?share|bikeshare|滑板车|scooter|GBFS|站点|station)'
+  - '(?i)(共享单车|单车|bike ?share|bikeshare|滑板车|scooter|GBFS|站点|station)[^，。;；]{0,16}(纽约|NYC|new york|citi ?bike)'
 - desc: 车辆厂商/车型本体（NHTSA vPIC 权威命名映射）
   engines_combo:
   - nhtsa_vpic
@@ -1556,8 +1562,12 @@ domains:
   name: global_event
   parallel: false
   patterns:
-  - (?i)(全球事件|国际事件|地缘政治|地缘|局势|冲突|抗议|政变|选举结果|公投|恐怖袭击|军事行动|制裁|外交|停火|谈判|全球舆情|全球动态|worldwide|global\s*event)
-  - (?i)\b(geopolitical|conflict|protest|coup|election\s*result|referendum|terror\s*attack|military\s*action|sanctions?|ceasefire|diplomatic|global\s*unrest)\b
+  - (?i)(全球事件|国际事件|地缘政治|地缘|局势|冲突|抗议|政变|选举|公投|恐怖袭击|军事行动|制裁|外交|停火|谈判|全球舆情|全球动态|worldwide|global\s*event)
+  # 2026-10-26：英文新闻查询此前只认 election result，`US election latest`
+  # 落进通用兜底（yuanbao），DeepSeek 没有机会。放宽到 election/elections +
+  # foreign policy；产品/购物语境由 unless 挡住。
+  - match: '(?i)\b(geopolitical|conflict|protest|coup|elections?|referendum|terror\s*attack|military\s*action|sanctions?|ceasefire|diplomatic|foreign\s*policy|global\s*unrest)\b'
+    unless: '(?i)(product|shopping|deal|coupon|review|best\s+buy|laptop|phone|headphone)'
   primary: google_news
 
 - desc: 国际新闻实时流（一手外媒种子：卫报 / France 24 / 德国之声）

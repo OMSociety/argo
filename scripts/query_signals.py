@@ -212,7 +212,8 @@ def is_query_echo(results: list[dict[str, Any]], query: str) -> bool:
     return len(covered_terms) == 1
 
 
-def query_coverage_ok(results: list[dict[str, Any]], query: str) -> bool:
+def query_coverage_ok(results: list[dict[str, Any]], query: str,
+                      *, strict: bool = False) -> bool:
     """查询-结果词面覆盖守卫（fast/auto 早停质量门槛）。
 
     2026-09-02 实测教训：fast 早停原只看计数+snippet，首引擎上游波动时
@@ -230,6 +231,10 @@ def query_coverage_ok(results: list[dict[str, Any]], query: str) -> bool:
     不算够用——「git commit」接受「Git - Install for Windows」是本守卫的
     真实漏网案例。该判据只在「一条结果也没同时命中两个主题词」时拒绝，
     不改变多数覆盖的口径，最坏代价仍是多跑一个引擎。
+
+    `strict=True`：没有任何权威信号时（authority_level/upstream_authority
+    全空或全 0），要求覆盖「明确过半」而不是「达到一半」。免费源的平庸结果
+    常在 4 条里只中 2 条就触发早停；收紧后多跑一个引擎，换更高的准确率。
     """
     if not query or not query.strip():
         return True
@@ -262,6 +267,10 @@ def query_coverage_ok(results: list[dict[str, Any]], query: str) -> bool:
         text = f"{r.get('title') or ''} {r.get('snippet') or ''}"
         if q_set & set(tokenize(text)):
             covered += 1
+    if strict:
+        # 明确过半：2 条要 2 条都命中，4 条要 3 条命中。没有权威信号时
+        # 不用「刚好一半」换早停。
+        return covered > len(results) / 2
     return covered >= max(1, (len(results) + 1) // 2)
 
 
@@ -351,6 +360,22 @@ def score_clarity_ok(results: list[dict[str, Any]]) -> bool:
     return (std / mean) > 0.02  # 变异系数 ≤2% 视为平坦（实测占位分全等=0）
 
 
+def _authority_level_of(r: dict[str, Any]) -> int | None:
+    """读单条结果的权威等级（0-4）：精排写 authority_level，引擎原生写
+    upstream_authority。解析不了/越界返回 None（「没信号」不是「0」）。"""
+    for key in ("authority_level", "upstream_authority"):
+        value = r.get(key)
+        if value in (None, ""):
+            continue
+        try:
+            level = int(float(str(value).strip()))
+        except (TypeError, ValueError):
+            continue
+        if 0 <= level <= 4:
+            return level
+    return None
+
+
 def _sufficient_internal(
     results: list[dict[str, Any]],
     mode: str,
@@ -367,6 +392,8 @@ def _sufficient_internal(
         无交集时不许早停
       - 两条路径都叠加平坦分守卫（score_clarity_ok）：计数恰好压线且
         分数无区分度时不许早停
+      - 权威信号（2026-10-26）：任一条 authority≥3 时允许少一条即停；
+        全批无权威信号时覆盖要求收紧到「明确过半」，避免平庸免费结果早停
 
     壳链不算「够数」（2026-10-11 热榜实测）：early-stop 的两条调用
     路径（wave-1 的 _wave1_stop → results_sufficient、wave-2 的
@@ -394,6 +421,11 @@ def _sufficient_internal(
         1 for r in goods
         if (r.get("snippet") or r.get("title") or "").strip()
     )
+    authority_max = None
+    for r in goods:
+        level = _authority_level_of(r)
+        if level is not None and (authority_max is None or level > authority_max):
+            authority_max = level
     if min_results is not None:
         try:
             need = max(1, int(min_results))
@@ -406,7 +438,16 @@ def _sufficient_internal(
         # 平坦分守卫适用：占位分快照同样可能是垃圾
         return ok and (len(goods) > need or score_clarity_ok(goods))
     threshold = 2 if mode == "fast" else 3
+    # 高权威结果可以少一条：auto 默认 3 条，2 条 authority≥3 且覆盖通过
+    # 就停。这是 DeepSeek/官方源的结构化字段第一次参与「停不停」的判定。
+    if authority_max is not None and authority_max >= 3:
+        need = max(2, threshold - 1)
+        return (len(goods) >= need and with_snippet >= 1
+                and query_coverage_ok(goods, query))
     ok = len(goods) >= threshold and with_snippet >= (1 if mode == "fast" else 2)
+    # 全批没有权威信号（None 或 0）时，覆盖要求明确过半；有 1-2 级弱信号
+    # 的批不额外收紧，避免把大量正常免费结果误伤。
+    strict = authority_max in (None, 0)
     return (ok
-            and query_coverage_ok(goods, query)
+            and query_coverage_ok(goods, query, strict=strict)
             and (len(goods) > threshold or score_clarity_ok(goods)))
