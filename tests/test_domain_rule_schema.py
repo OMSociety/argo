@@ -191,6 +191,8 @@ def test_every_rule_compiles_and_survives_compilation():
         ("code_search", "布洛芬 说明书 用法用量"),
         # academic：论文写作/评审 howto 不是找论文
         ("academic", "怎么写论文 查重 降重"),
+        # global_event：产品/购物语境里的 election/foreign policy 不是新闻
+        ("global_event", "foreign policy laptop review"),
     ],
 )
 def test_unless_has_a_negative_case(domain_name, query):
@@ -211,7 +213,8 @@ def test_unless_declared_domains_are_covered_by_negative_cases():
                "fx_query", "cls_telegraph_search", "em_news_search", "legal",
                "anime_encyclopedia", "art_museum", "chinese_tech_deep",
                "code_search", "image_search", "company_search",
-               "ai_model", "us_fundamentals", "stock_query", "medical"}
+               "ai_model", "us_fundamentals", "stock_query", "medical",
+               "global_event"}
     declared = {d.get("name") for d in DOMAINS
                 if any(_split_pattern_entry(p)[1] for p in _entries_of(d))}
     missing = sorted(declared - covered)

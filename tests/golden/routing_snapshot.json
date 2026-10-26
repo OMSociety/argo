@@ -60,8 +60,8 @@
    "domain": "general_search",
    "kind": "regex",
    "engines": [
-    "octen",
-    "anysearch"
+    "yuanbao",
+    "tavily_free"
    ],
    "expect": "general_search",
    "forbid": null,
@@ -193,7 +193,7 @@
    "kind": "tfidf",
    "engines": [
     "octen",
-    "anysearch"
+    "deepseek_search"
    ],
    "expect": null,
    "forbid": null,
@@ -276,8 +276,8 @@
    "domain": "general_search",
    "kind": "tfidf",
    "engines": [
-    "octen",
-    "anysearch"
+    "yuanbao",
+    "tavily_free"
    ],
    "expect": null,
    "forbid": null,
@@ -312,8 +312,8 @@
    "domain": "general_search",
    "kind": "tfidf",
    "engines": [
-    "octen",
-    "anysearch"
+    "yuanbao",
+    "tavily_free"
    ],
    "expect": null,
    "forbid": "chem_search",
@@ -360,8 +360,8 @@
    "domain": "general_search",
    "kind": "tfidf",
    "engines": [
-    "octen",
-    "anysearch"
+    "yuanbao",
+    "tavily_free"
    ],
    "expect": null,
    "forbid": null,
@@ -384,8 +384,8 @@
    "domain": "general_search",
    "kind": "tfidf",
    "engines": [
-    "octen",
-    "anysearch"
+    "yuanbao",
+    "tavily_free"
    ],
    "expect": null,
    "forbid": null,
@@ -397,7 +397,7 @@
    "kind": "tfidf",
    "engines": [
     "octen",
-    "anysearch"
+    "deepseek_search"
    ],
    "expect": null,
    "forbid": null,
@@ -444,8 +444,8 @@
    "domain": "general_search",
    "kind": "tfidf",
    "engines": [
-    "octen",
-    "anysearch"
+    "yuanbao",
+    "tavily_free"
    ],
    "expect": null,
    "forbid": "art_museum",
@@ -528,8 +528,8 @@
    "domain": "general_search",
    "kind": "regex",
    "engines": [
-    "octen",
-    "anysearch"
+    "yuanbao",
+    "tavily_free"
    ],
    "expect": null,
    "forbid": null,
@@ -540,8 +540,8 @@
    "domain": "general_search",
    "kind": "tfidf",
    "engines": [
-    "octen",
-    "anysearch"
+    "yuanbao",
+    "tavily_free"
    ],
    "expect": null,
    "forbid": "stock_query",
@@ -553,7 +553,7 @@
    "kind": "regex",
    "engines": [
     "octen",
-    "anysearch"
+    "deepseek_search"
    ],
    "expect": "english_tech",
    "forbid": null,
@@ -588,7 +588,7 @@
    "domain": "general_search",
    "kind": "tfidf",
    "engines": [
-    "anysearch",
+    "yuanbao",
     "doaj"
    ],
    "expect": null,
@@ -636,8 +636,8 @@
    "domain": "general_search",
    "kind": "tfidf",
    "engines": [
-    "octen",
-    "anysearch"
+    "yuanbao",
+    "tavily_free"
    ],
    "expect": null,
    "forbid": "hackernews_search",
@@ -695,8 +695,8 @@
    "domain": "general_search",
    "kind": "tfidf",
    "engines": [
-    "octen",
-    "anysearch"
+    "yuanbao",
+    "tavily_free"
    ],
    "expect": null,
    "forbid": null,
@@ -707,8 +707,8 @@
    "domain": "general_search",
    "kind": "tfidf",
    "engines": [
-    "octen",
-    "anysearch"
+    "yuanbao",
+    "tavily_free"
    ],
    "expect": null,
    "forbid": "org_entity",
@@ -719,8 +719,8 @@
    "domain": "general_search",
    "kind": "tfidf",
    "engines": [
-    "octen",
-    "anysearch"
+    "anysearch",
+    "local_bing"
    ],
    "expect": null,
    "forbid": null,
@@ -743,8 +743,8 @@
    "domain": "general_search",
    "kind": "tfidf",
    "engines": [
-    "octen",
-    "anysearch"
+    "anysearch",
+    "local_bing"
    ],
    "expect": null,
    "forbid": null,
@@ -980,13 +980,13 @@
   },
   {
    "query": "北京 地铁 时刻表",
-   "domain": "transport_rt",
+   "domain": "chinese_general",
    "kind": "tfidf",
    "engines": [
-    "gbfs_nyc",
+    "bocha",
     "local_openstreetmap"
    ],
-   "expect": "transport_rt",
+   "expect": "chinese_general",
    "forbid": null,
    "src": "LEGITIMATE_ROUTES"
   },
@@ -1092,7 +1092,7 @@
    "kind": "tfidf",
    "engines": [
     "google_news",
-    "em_global_news"
+    "deepseek_search"
    ],
    "expect": "global_event",
    "forbid": null,
@@ -1104,7 +1104,7 @@
    "kind": "regex",
    "engines": [
     "guardian_rss",
-    "france24"
+    "deepseek_search"
    ],
    "expect": "intl_news_flash",
    "forbid": null,
@@ -1766,6 +1766,18 @@
     "anysearch"
    ],
    "expect": "medical",
+   "forbid": null,
+   "src": "LEGITIMATE_ROUTES"
+  },
+  {
+   "query": "纽约 共享单车 站点",
+   "domain": "transport_rt",
+   "kind": "tfidf",
+   "engines": [
+    "gbfs_nyc",
+    "train"
+   ],
+   "expect": "transport_rt",
    "forbid": null,
    "src": "LEGITIMATE_ROUTES"
   },

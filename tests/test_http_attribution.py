@@ -586,9 +586,8 @@ class TestHardQuotaExhaustion:
 
     def test_note_status_maps_to_execution_status(self):
         """归因类别必须能翻译成执行层状态，否则配额状态机永远收不到信号。"""
-        from engine_dispatch import _NOTE_STATUS
-        from engine_failure import QUOTA_EXHAUSTED
-        assert _NOTE_STATUS[QUOTA_EXHAUSTED] == "quota-exhausted"
+        from engine_failure import NOTE_STATUS, QUOTA_EXHAUSTED
+        assert NOTE_STATUS[QUOTA_EXHAUSTED] == "quota-exhausted"
 
     def test_classify_outcome_keywords_cover_balance_wording(self):
         from engine_dispatch import classify_engine_outcome

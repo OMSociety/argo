@@ -106,7 +106,9 @@ class AdaptiveLearner:
     def __init__(self):
         self._lock = threading.Lock()
         self._local = threading.local()
-        self._score_cache: dict[str, tuple[float, float]] = {}  # engine -> (score, expires_at)
+        # (engine, domain, lang, purpose) -> (score, samples, expires_at)
+        self._score_cache: dict[
+            tuple[str, str, str, str], tuple[float, int, float]] = {}
         self._session_engines: set[str] = set()
         self._batch_depth = 0
         self._batch_dirty = False
@@ -239,8 +241,14 @@ class AdaptiveLearner:
             for _k in [k for k in self._score_cache if k[0] == engine]:
                 self._score_cache.pop(_k, None)
 
-    def _score_from_row(self, row) -> float:
-        """把一条聚合行转成 0~1 推荐分（口径见 get_score）。"""
+    def _score_from_row(self, row, purpose: str = "daily") -> float:
+        """把一条聚合行转成 0~1 推荐分（口径见 get_score）。
+
+        `purpose="research"` 把延迟悬崖从 2s 抬到 8s：2s 是**日常档的等待
+        政策**（慢源不该定义第一响应），不是质量判断。研究场景里同一台源
+        4s 交出的扎实证据值得等；沿用 2s 悬崖会让「慢而高质」的源在深研
+        排序里系统性输给「快而泛」的源——正是 2026-10-26 审查发现的偏差。
+        """
         total, judged, judged_ok, avg_latency, avg_cost, avg_q, sum_q, last_ts = row
         total = int(total or 0)
         judged = int(judged or 0)
@@ -252,7 +260,8 @@ class AdaptiveLearner:
         if judged == 0:
             return 0.5
         success_rate = (judged_ok or 0) / judged
-        latency_factor = min(1.0, 2000.0 / max(avg_latency or 2000, 1))
+        latency_cap = 8000.0 if purpose == "research" else 2000.0
+        latency_factor = min(1.0, latency_cap / max(avg_latency or latency_cap, 1))
         cost_factor = max(0.3, 1.0 - (avg_cost or 0.0) * 10)
         return round(success_rate * latency_factor * cost_factor
                      * quality_factor(avg_q, sum_q), 4)
@@ -283,7 +292,7 @@ class AdaptiveLearner:
         ).fetchone()
 
     def get_score(self, engine: str, domain: str | None = None,
-                  lang: str | None = None) -> float:
+                  lang: str | None = None, purpose: str = "daily") -> float:
         """获取引擎的综合推荐分数（0.0 ~ 1.0）。
 
         **只按「有明确结果」的调用算成功率**（`empty=0`）。
@@ -302,28 +311,46 @@ class AdaptiveLearner:
         lang) 聚合出「桶分」，与全局分加权融合（桶样本 <3 时权重 0.3，≥3 时 0.5）。
         这让「引擎在 A 域强、B 域弱」可表达，新引擎也能在建议域里被更快识别。
         桶为空时回退全局分——旧调用方（不传 domain/lang）行为逐位不变。
+
+        `purpose`：daily（默认）沿用 2s 延迟悬崖；research 抬到 8s，见
+        `_score_from_row`。默认值保证旧调用方逐位不变。
         """
-        key = (engine, domain or "", lang or "")
+        return self.get_score_with_samples(
+            engine, domain, lang, purpose)[0]
+
+    def get_score_with_samples(self, engine: str, domain: str | None = None,
+                               lang: str | None = None,
+                               purpose: str = "daily") -> tuple[float, int]:
+        """同 get_score，额外返回有效样本数。
+
+        选源层需要区分「0.5 分是因为没数据」与「0.5 分是因为确实平庸」：
+        对无样本的源，实测先验应当做主，而不是被自适应默认分稀释。样本数
+        取场景桶的 judged（桶为空时取全局 judged）。
+        """
+        key = (engine, domain or "", lang or "", purpose)
         now = time.time()
         cached = self._score_cache.get(key)
-        if cached and cached[1] > now:
-            return cached[0]
+        if cached and cached[2] > now:
+            return cached[0], cached[1]
 
         with self._lock:
             cached = self._score_cache.get(key)
-            if cached and cached[1] > now:
-                return cached[0]
-            score = self._score_from_row(self._global_row(engine))
+            if cached and cached[2] > now:
+                return cached[0], cached[1]
+            grow = self._global_row(engine)
+            score = self._score_from_row(grow, purpose)
+            samples = int((grow[1] if grow else 0) or 0)
             if domain or lang:
                 brow = self._bucket_row(engine, domain or "", lang or "")
                 b_judged = int(brow[1] or 0)
                 if b_judged > 0:
-                    b_score = self._score_from_row(brow)
+                    b_score = self._score_from_row(brow, purpose)
                     w = 0.5 if b_judged >= 3 else 0.3
                     score = round((1 - w) * score + w * b_score, 4)
+                    samples = b_judged
 
-        self._score_cache[key] = (score, now + self.SCORE_CACHE_TTL)
-        return score
+        self._score_cache[key] = (score, samples, now + self.SCORE_CACHE_TTL)
+        return score, samples
 
     def get_ranking(self) -> list[tuple[str, float]]:
         """获取所有引擎的推荐排名（降序）。空结果的排除口径同 `get_score`。"""

@@ -12,7 +12,109 @@
 
 from __future__ import annotations
 
+import math
+import re
 from typing import Any
+
+_CJK_RUN_RE = re.compile(r"[\u4e00-\u9fff]+")
+_LATIN_WORD_RE = re.compile(r"[a-z0-9]+")
+
+# 查询意图词：描述「怎么问」而不是「问什么」，不参与区分性判定。
+# 只收高频且跨查询无区分度的词；保留 review/practice 这类可能承载主题的词，
+# 避免把正常的结果集误判成「只命中了泛词」。
+_INTENT_STOPWORDS = frozenset({
+    "how", "what", "why", "when", "where", "which", "who",
+    "the", "and", "or", "for", "with", "without", "vs", "versus",
+    "to", "of", "in", "on", "at", "by", "from", "about", "is", "are",
+    "best", "top", "good", "guide", "tutorial", "recommend",
+    "怎么", "如何", "什么", "为什么", "哪些", "哪个", "推荐", "教程",
+})
+
+
+def _query_terms(query: str) -> list[str]:
+    """把查询切成「主题词」：CJK 按连续片段（≥2 字），拉丁按词（≥2 字符）。
+
+    与 `relevance_units` 的区别：那个返回 bigram，用于连续覆盖率；这里返回
+    完整片段，用于回答「这条结果到底命中了查询里的几个词」。中文「钙钛矿
+    太阳能 稳定性」是三个主题词，不是六个 bigram——按 bigram 数判定会把
+    「只命中太阳能」也算成命中两次。
+    """
+    q = (query or "").lower()
+    terms: list[str] = []
+    for seg in _CJK_RUN_RE.findall(q):
+        # 中文意图词同样要滤：「如何 部署」若把「如何」当主题词，整批结果
+        # 都不命中它，区分性判据会误拒一条本来就答对的部署结果。
+        if len(seg) >= 2 and seg not in _INTENT_STOPWORDS:
+            terms.append(seg)
+    for word in _LATIN_WORD_RE.findall(q):
+        if len(word) >= 2 and word not in _INTENT_STOPWORDS:
+            terms.append(word)
+    seen: set[str] = set()
+    out: list[str] = []
+    for term in terms:
+        if term not in seen:
+            seen.add(term)
+            out.append(term)
+    return out
+
+
+def _term_covered(term: str, text: str,
+                  tokens: set[str] | None = None) -> bool:
+    """主题词是否被文本命中：CJK 按 bigram 过半，拉丁按词干前缀。
+
+    `tokens` 由调用方按结果预算一次（同一条文本要判多个主题词），
+    不传时自行分词，保持单测可直接调用。
+    """
+    if _CJK_RUN_RE.fullmatch(term):
+        units = [term[i:i + 2] for i in range(len(term) - 1)]
+        if not units:
+            return term in text
+        hits = sum(1 for unit in units if unit in text)
+        # 词序/分隔（「记忆 插件」vs「记忆插件」）不应让整词判负：
+        # 过半 bigram 命中即算这个词出现。
+        return hits >= max(1, math.ceil(len(units) * 0.5))
+    if tokens is None:
+        try:
+            from tfidf_router import tokenize
+            tokens = set(tokenize(text))
+        except ImportError:
+            return term in text
+    if term in tokens:
+        return True
+    # 英文词形变化：commit / commits / committed 视为同一主题词。
+    return len(term) >= 4 and any(tok.startswith(term) for tok in tokens)
+
+
+def _discriminative_coverage_ok(results: list[dict[str, Any]],
+                                query: str) -> bool:
+    """至少一条结果同时命中**两个**查询主题词。
+
+    2026-10-26 实测：查询「git commit」时 local_bing 返回 8 条泛化 Git 页
+    （Wikipedia / Install for Windows / Documentation），标题只命中 git，
+    旧守卫按「过半结果命中任意一个词」判定为够用 → 早停，真正对题的
+    git-commit 手册页被取消。只命中泛词（工具名）不等于回答了查询。
+
+    判据取「同一条结果命中 ≥2 个主题词」而不是提高覆盖率阈值：长查询的
+    正常结果本就只覆盖一半词，阈值一高就误杀；而「只命中一个泛词」在任何
+    查询长度下都是同一种失败。单主题词查询（如「Crawl4AI」）不适用。
+    """
+    terms = _query_terms(query)
+    if len(terms) < 2:
+        return True
+    try:
+        from tfidf_router import tokenize
+    except ImportError:
+        return True  # 分词不可用不设卡（与 query_coverage_ok 同一 fail-open）
+    for r in results:
+        if not isinstance(r, dict):
+            continue
+        text = f"{r.get('title') or ''} {r.get('snippet') or ''}".lower()
+        tokens = set(tokenize(text))
+        covered = sum(1 for term in terms
+                      if _term_covered(term, text, tokens))
+        if covered >= 2:
+            return True
+    return False
 
 
 def apply_query_rewrite(query: str) -> tuple[str, dict | None]:
@@ -110,7 +212,8 @@ def is_query_echo(results: list[dict[str, Any]], query: str) -> bool:
     return len(covered_terms) == 1
 
 
-def query_coverage_ok(results: list[dict[str, Any]], query: str) -> bool:
+def query_coverage_ok(results: list[dict[str, Any]], query: str,
+                      *, strict: bool = False) -> bool:
     """查询-结果词面覆盖守卫（fast/auto 早停质量门槛）。
 
     2026-09-02 实测教训：fast 早停原只看计数+snippet，首引擎上游波动时
@@ -123,6 +226,15 @@ def query_coverage_ok(results: list[dict[str, Any]], query: str) -> bool:
     交集同样会被拒早停（弱信号但非空）；同义词改写场景（如「电脑」vs
     「计算机」）可能多跑一个引擎，属可接受代价：宁可多一次调用，不放走
     单引擎垃圾。
+
+    2026-10-26 补区分性判据（_discriminative_coverage_ok）：只命中泛词
+    不算够用——「git commit」接受「Git - Install for Windows」是本守卫的
+    真实漏网案例。该判据只在「一条结果也没同时命中两个主题词」时拒绝，
+    不改变多数覆盖的口径，最坏代价仍是多跑一个引擎。
+
+    `strict=True`：没有任何权威信号时（authority_level/upstream_authority
+    全空或全 0），要求覆盖「明确过半」而不是「达到一半」。免费源的平庸结果
+    常在 4 条里只中 2 条就触发早停；收紧后多跑一个引擎，换更高的准确率。
     """
     if not query or not query.strip():
         return True
@@ -141,15 +253,24 @@ def query_coverage_ok(results: list[dict[str, Any]], query: str) -> bool:
     single_token_titles = sum(
         1 for r in results if len(set(tokenize(r.get("title") or ""))) <= 1
     )
-    if len(q_set) >= 3 and single_token_titles * 2 > len(results):
+    # 至少 3 条才判：单条结果本来就可能是「Paris」这种一词答案，把它当
+    # 包索引噪声会误杀（2026-10-26 实测「what is the capital of France」）。
+    if (len(results) >= 3 and len(q_set) >= 3
+            and single_token_titles * 2 > len(results)):
         return False
     if is_query_echo(results, query):
+        return False
+    if not _discriminative_coverage_ok(results, query):
         return False
     covered = 0
     for r in results:
         text = f"{r.get('title') or ''} {r.get('snippet') or ''}"
         if q_set & set(tokenize(text)):
             covered += 1
+    if strict:
+        # 明确过半：2 条要 2 条都命中，4 条要 3 条命中。没有权威信号时
+        # 不用「刚好一半」换早停。
+        return covered > len(results) / 2
     return covered >= max(1, (len(results) + 1) // 2)
 
 
@@ -239,6 +360,22 @@ def score_clarity_ok(results: list[dict[str, Any]]) -> bool:
     return (std / mean) > 0.02  # 变异系数 ≤2% 视为平坦（实测占位分全等=0）
 
 
+def _authority_level_of(r: dict[str, Any]) -> int | None:
+    """读单条结果的权威等级（0-4）：精排写 authority_level，引擎原生写
+    upstream_authority。解析不了/越界返回 None（「没信号」不是「0」）。"""
+    for key in ("authority_level", "upstream_authority"):
+        value = r.get(key)
+        if value in (None, ""):
+            continue
+        try:
+            level = int(float(str(value).strip()))
+        except (TypeError, ValueError):
+            continue
+        if 0 <= level <= 4:
+            return level
+    return None
+
+
 def _sufficient_internal(
     results: list[dict[str, Any]],
     mode: str,
@@ -255,6 +392,8 @@ def _sufficient_internal(
         无交集时不许早停
       - 两条路径都叠加平坦分守卫（score_clarity_ok）：计数恰好压线且
         分数无区分度时不许早停
+      - 权威信号（2026-10-26）：任一条 authority≥3 时允许少一条即停；
+        全批无权威信号时覆盖要求收紧到「明确过半」，避免平庸免费结果早停
 
     壳链不算「够数」（2026-10-11 热榜实测）：early-stop 的两条调用
     路径（wave-1 的 _wave1_stop → results_sufficient、wave-2 的
@@ -282,6 +421,11 @@ def _sufficient_internal(
         1 for r in goods
         if (r.get("snippet") or r.get("title") or "").strip()
     )
+    authority_max = None
+    for r in goods:
+        level = _authority_level_of(r)
+        if level is not None and (authority_max is None or level > authority_max):
+            authority_max = level
     if min_results is not None:
         try:
             need = max(1, int(min_results))
@@ -294,7 +438,16 @@ def _sufficient_internal(
         # 平坦分守卫适用：占位分快照同样可能是垃圾
         return ok and (len(goods) > need or score_clarity_ok(goods))
     threshold = 2 if mode == "fast" else 3
+    # 高权威结果可以少一条：auto 默认 3 条，2 条 authority≥3 且覆盖通过
+    # 就停。这是 DeepSeek/官方源的结构化字段第一次参与「停不停」的判定。
+    if authority_max is not None and authority_max >= 3:
+        need = max(2, threshold - 1)
+        return (len(goods) >= need and with_snippet >= 1
+                and query_coverage_ok(goods, query))
     ok = len(goods) >= threshold and with_snippet >= (1 if mode == "fast" else 2)
+    # 全批没有权威信号（None 或 0）时，覆盖要求明确过半；有 1-2 级弱信号
+    # 的批不额外收紧，避免把大量正常免费结果误伤。
+    strict = authority_max in (None, 0)
     return (ok
-            and query_coverage_ok(goods, query)
+            and query_coverage_ok(goods, query, strict=strict)
             and (len(goods) > threshold or score_clarity_ok(goods)))

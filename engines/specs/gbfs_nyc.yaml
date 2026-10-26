@@ -26,7 +26,12 @@ output_map:
   items: data.stations
   item_title: name
   item_summary: capacity
-  url_template: "https://maps.google.com/?q={lat},{lon}"
+  # 站点位置链走 OSM，**不要**改回 Google Maps：maps.google.com 的宿主后缀命中
+  # serp_guard 的 serp_host_markers（google.com），而 path="/" 又落在 SERP 路径
+  # 元组里，于是每一条结果都被当 SERP 壳丢弃——引擎实测恒 0 条输出，却在
+  # --list-engines 里报 ready、outcome 报 ok/10 条（失败伪装成功，2026-10-26 实测）。
+  # OSM 同为开放地图、链接稳定，且不被壳守卫误杀。
+  url_template: "https://www.openstreetmap.org/?mlat={lat}&mlon={lon}#map=18/{lat}/{lon}"
 
 quality_queries:
   - query: "bike share"

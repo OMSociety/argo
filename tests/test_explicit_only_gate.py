@@ -58,7 +58,11 @@ def test_strong_tfidf_pick_cannot_be_explicit_only():
     assert _EXPLICIT_ONLY not in engines, (
         f"explicit_only 引擎进了自动分发 combo 主位：{engines}"
         f"（reason={out.get('reason')}）")
-    assert "anysearch" in engines, f"通用保底应在场：{engines}"
+    # 通用保底从配置池判断，不写死 anysearch：2026-10-26 起池子按实测
+    # 先验排序，top-2 可能是 tavily_free/parallel_free。
+    from route_combo import _configured_general_pool
+    assert set(engines) & set(_configured_general_pool() or []), \
+        f"通用保底应在场：{engines}"
 
 
 def test_weak_tfidf_pick_cannot_be_explicit_only():

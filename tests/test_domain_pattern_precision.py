@@ -136,7 +136,10 @@ LEGITIMATE_ROUTES = [
     ("杭州亚运会 场馆", "sports_search"),                      # 亚运会词条（2026-10-02 补）
     ("周杰伦 新歌 专辑", "media_search"),
     ("电影 主演 是谁", "film_search"),
-    ("北京 地铁 时刻表", "transport_rt"),
+    # 2026-10-26：transport_rt 收窄到 NYC Citi Bike 实际覆盖，通用地铁/公交
+    # 查询交回通用检索域（此前 gbfs_nyc 白等 890ms，中位耗时是通用的 2.6 倍）。
+    ("北京 地铁 时刻表", "chinese_general"),
+    ("纽约 共享单车 站点", "transport_rt"),
     # 曾经被「让位表」方案误伤的用例（2026-09-19 三条既有回归门同时红）——
     # 这两条是定向收窄相对让位表的核心优势，必须常驻。
     ("上海天气 未来一周", "weather_query"),

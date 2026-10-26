@@ -104,6 +104,18 @@ def pop_failure_note(engine: str) -> dict[str, Any] | None:
         return _FAIL_NOTES.pop(engine, None)
 
 
+def peek_failure_note(engine: str) -> dict[str, Any] | None:
+    """只读失败归因，不清除。
+
+    调度层要在**重试之前**判断这次失败是不是确定性的（配额/鉴权/反爬），
+    但归因本身还要留给 `_run_one` 落进 outcome 与熔断器。读后即清会让
+    「为什么坏」在重试路径上丢失，故单独开一个只读口。
+    """
+    with _FAIL_NOTES_LOCK:
+        note = _FAIL_NOTES.get(engine)
+        return dict(note) if note else None
+
+
 def _lang_param(param: str, query: str) -> str:
     """按查询主语言返回引擎语言参数；表在 lang_detect 单来源维护。
 

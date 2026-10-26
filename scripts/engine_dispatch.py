@@ -45,19 +45,10 @@ from retry_policy import (
     record_attempts,
 )
 
-# 失败原因分类（engine_failure.py 的类别全集）→ 引擎结果 status 的对照表。
+# 失败原因分类 → 引擎结果 status 的对照表（唯一来源在 engine_failure）。
 # 未列出的类别经 .get(cat, "error") 归为 error：以后新增失败类别时默认可见，
 # 不必再回来补白名单。文本里出现超时特征时再细分为 timeout（见 run_one）。
-_NOTE_STATUS = {
-    "auth": "auth-failed",          # 凭证失效/未登录
-    "rate_limited": "rate-limited",  # 源端限流
-    "quota_exhausted": "quota-exhausted",  # 余额/套餐耗尽（停用，非短冷却）
-    "blocked": "blocked",           # 反爬/拦截页
-    "dependency": "error",          # 缺后端命令（requires 未满足）
-    "upstream": "error",            # 上游改版/页面结构变化
-    "network": "error",             # 连接失败/超时（超时再细分）
-    "unknown": "error",             # 信息不足（含非 200 状态码）
-}
+from engine_failure import NOTE_STATUS as _NOTE_STATUS
 
 # 「这次调用对最终答案有贡献」的 outcome 状态（唯一来源）。
 # `no-results` / `skipped-*` / `timeout` / `error` 一律不算——它们消耗了时间但
@@ -362,8 +353,16 @@ def run_dispatch(*, query: str, retrieval_query: str, engines: list[str],
                 return last_result
             # 确定性失败不重试：配额/鉴权/反爬是源端状态，再发一次仍是同样
             # 的结果，只多烧一次调用并推迟切备选（见 is_retryable_failure）。
+            # 抓取类引擎失败时返回 []，错误只在归因寄存器里——把只读快照
+            # 一并交给判据，否则「空结果可重试」会盖住配额耗尽（实测 octen
+            # 余额不足跑满 3 次、1934ms）。归因留到 _run_one 再 pop，
+            # 这里只读不清。engines_base 是既有依赖（_run_one 无条件 import
+            # pop_failure_note），不做 try/except——真坏了要让错误炸出来，
+            # 静默降级成「可重试」正是这次要修的问题。
+            from engines_base import peek_failure_note
             # transient 与空结果沿用既有「重试一次」语义。
-            if not is_retryable_failure(last_result):
+            if not is_retryable_failure(
+                    last_result, failure_note=peek_failure_note(eng)):
                 return last_result
         # 慢源（retries=0，超时即弃）不再用 balanced 补跑，避免超时场景双倍耗时
         if retries > 0 and depth != "balanced":

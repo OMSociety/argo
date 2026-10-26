@@ -33,7 +33,10 @@ def test_weak_tfidf_pick_rides_behind_general_fallback():
     assert engines, "combo 不能为空"
     assert engines[0] != "usda", f"弱分 usda 仍在 primary 位：{engines}"
     assert "usda" in engines, f"弱分推荐应作辅源保留：{engines}"
-    assert "anysearch" in engines, f"通用保底应在场：{engines}"
+    # 通用保底从配置池判断（2026-10-26 起按实测先验排序，不写死 anysearch）。
+    from route_combo import _configured_general_pool
+    assert set(engines) & set(_configured_general_pool() or []), \
+        f"通用保底应在场：{engines}"
     assert "低分辅源" in out.get("reason", ""), \
         f"reason 应如实标注辅源身份：{out.get('reason')}"
 
@@ -55,5 +58,8 @@ def test_no_tfidf_pick_falls_back_cleanly():
         out = route_query(_QUERY)
     engines = out["engines"]
     assert engines, "combo 不能为空"
-    assert "anysearch" in engines, f"无推荐时应有通用保底：{engines}"
+    # 通用保底从配置池判断（2026-10-26 起按实测先验排序，不写死 anysearch）。
+    from route_combo import _configured_general_pool
+    assert set(engines) & set(_configured_general_pool() or []), \
+        f"无推荐时应有通用保底：{engines}"
     assert None not in engines, "None 不得混进 combo"

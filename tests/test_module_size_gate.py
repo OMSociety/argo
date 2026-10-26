@@ -124,7 +124,9 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
              "connection，initialize 后把代理 TLS 藏进首包前的空闲期；CLI 侧实测"
              "无窗口故不改 bin/argo），上限 1039 → 1074 随动登记"),
     "scripts/engines_base.py": (
-        1521, "引擎基类 + HTTP 出口 + 输出映射，与 100+ 源声明的字段契约绑在一起；"
+        1533, "引擎基类 + HTTP 出口 + 输出映射，与 100+ 源声明的字段契约绑在一起；"
+              "2026-10-26 +12：peek_failure_note——调度层重试前只读归因、"
+              "不清寄存器（pop 仍留给 _run_one 写 outcome/熔断），上限 1521 → 1533；"
               "2026-10-17 +13：通用 HTML 解析器接入 jump_resolver 的离线跳转"
               "还原（Bing ck/a 的 u=a1<base64url>），不发网络请求；"
               "2026-10-17 +7：http_open 错误体归因读加 KeyError 兜底——3.9 的 "
@@ -172,7 +174,11 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "dispatch+恢复链」结构性循环，12 行；策略常量在 cache_guard."
               "RECOVERED_DEGRADED_TTL）；随动上限 1357 → 1385"),
     "scripts/engine_dispatch.py": (
-        991, "引擎编排调度器（wave-1 竞速 / wave-2 补全 / 串行对冲 / 收账）；"
+        990, "引擎编排调度器（wave-1 竞速 / wave-2 补全 / 串行对冲 / 收账）；"
+              "2026-10-26 −1：重试前把归因寄存器只读快照交给 "
+              "is_retryable_failure（静默失败源不再跑满 3 次），同时把 "
+              "_NOTE_STATUS 映射表收口到 engine_failure（唯一真源）——两笔净减 1 行，"
+              "上限维持 991；"
               "2026-10-25 +9：早停弃置的 (engine, holder, now_fn) 收进 stranded"
               "随 DispatchResult 外露（cancelled 记账逐位不变，交付改由"
               "tail_completion 后台收割），上限 982 → 991 随动登记；"
@@ -314,7 +320,10 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "2026-10-26 +1：补 dsh_plugin_search 域用例（新域零用例会被 "
               "test_route_matrix_coverage 拦下）；上限 1297 → 1298"),
     "scripts/route.py": (
-        1008, "路由决策主干（route_query + 三个 _route_by_* 判定器）；"
+        1009, "路由决策主干（route_query + 三个 _route_by_* 判定器）；"
+              "2026-10-26 +1：三条分支共用 general_kwargs（参数样板在 "
+              "general_pool，route.py 只留一个 import；此前分散复制把文件顶到"
+              " 1015，收口后回到 1009），上限 1008 → 1009；"
               "2026-10-17 +10：lang_override 参数（查询操作符 lang: 的入口，"
               "覆盖逻辑本体在 route_lang.apply_lang_override，此处只留传参+"
               "调用+绕磁盘缓存三处——覆盖改变决策，不能与无覆盖查询共享键）；"

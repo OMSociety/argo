@@ -63,17 +63,25 @@ class TestSummarizeDispatch:
 class TestGeneralFallbackLead:
     ENABLED = {"octen", "anysearch", "local_bing", "local_search"}
 
-    def test_octen_leads_by_default(self, monkeypatch):
+    def test_static_escape_hatch_keeps_legacy_order(self, monkeypatch):
+        """ARGO_GENERAL_FALLBACK_STATIC=1 必须逐位回到 2026-10-26 之前的顺序。
+
+        默认路径已改为按实测先验排序；静态臂保留，A/B 与线上回滚都要能
+        复现旧行为。旧用例断言的正是这条逃生门，不是默认策略。
+        """
+        monkeypatch.setenv("ARGO_GENERAL_FALLBACK_STATIC", "1")
         monkeypatch.delenv("ARGO_GENERAL_FALLBACK_LEAD", raising=False)
         monkeypatch.delenv("ARGO_GENERAL_FALLBACK_LEGACY", raising=False)
         assert _general_fallback(self.ENABLED)[:2] == ["octen", "anysearch"]
 
     def test_lead_override_moves_named_engine_first(self, monkeypatch):
+        monkeypatch.setenv("ARGO_GENERAL_FALLBACK_STATIC", "1")
         monkeypatch.setenv("ARGO_GENERAL_FALLBACK_LEAD", "anysearch")
         monkeypatch.delenv("ARGO_GENERAL_FALLBACK_LEGACY", raising=False)
         assert _general_fallback(self.ENABLED)[:2] == ["anysearch", "octen"]
 
     def test_unknown_override_is_ignored(self, monkeypatch):
+        monkeypatch.setenv("ARGO_GENERAL_FALLBACK_STATIC", "1")
         monkeypatch.setenv("ARGO_GENERAL_FALLBACK_LEAD", "not_an_engine")
         monkeypatch.delenv("ARGO_GENERAL_FALLBACK_LEGACY", raising=False)
         assert _general_fallback(self.ENABLED)[:2] == ["octen", "anysearch"]

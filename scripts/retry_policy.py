@@ -18,6 +18,7 @@ from __future__ import annotations
 from typing import Any
 
 from cache_guard import _QUOTA_ERROR_KEYWORDS
+from engine_failure import NOTE_STATUS as _NOTE_STATUS
 
 # 拦截页特征词（唯一来源）：error 文本里出现即判 blocked。HTML 引擎的反爬
 # 命中没有 error 文本（静默空结果），走 engines_base 的归因寄存器；
@@ -33,6 +34,17 @@ _BLOCKED_ERROR_KEYWORDS = (
 # 与 dsh-free-search 的 failure-aware fallback 同构（quota/auth 冷却到会话
 # 结束、bot-wall 短退避，只有 transient 才重试一次）。
 NON_RETRYABLE_STATUS = frozenset({"quota-exhausted", "auth-failed", "blocked"})
+
+# 归因寄存器（engines_base.note_failure）的类别 → 是否确定性失败。
+# 与上面的状态表同义，只是入口不同：HTML 抓取类引擎失败时往往返回空列表，
+# 错误文本只写进归因寄存器，`classify_error_status` 看不到。2026-10-26 实测：
+# octen 余额不足返回 []，调度层把它当「空结果可重试」，跑满 3 次（1934ms）；
+# local_bing 被反爬时同样重试。归因类别是同一事实的另一个出口，判据必须一致。
+# 从 NOTE_STATUS（唯一映射表）派生，不另抄一份类别名单：rate_limited 映射到
+# 非 NON_RETRYABLE_STATUS 的 "rate-limited"，自动保持「限流可重试」。
+_DETERMINISTIC_NOTE_CATEGORIES = frozenset(
+    cat for cat, status in _NOTE_STATUS.items()
+    if status in NON_RETRYABLE_STATUS)
 
 
 def classify_error_status(message: Any) -> str:
@@ -55,12 +67,21 @@ def classify_error_status(message: Any) -> str:
     return "error"
 
 
-def is_retryable_failure(res: list[Any] | None) -> bool:
+def is_retryable_failure(res: list[Any] | None,
+                         failure_note: dict[str, Any] | None = None) -> bool:
     """这组结果值不值得再试一次（纯函数，门禁可直接打到）。
 
     判据取自 `classify_error_status`，与归因同源。空结果与无错误条目返回
     True——沿用既有「重试一次」语义，本次只收紧确定性失败这一类。
+
+    `failure_note` 是归因寄存器的只读快照（engines_base.peek_failure_note）：
+    抓取类引擎失败时返回空列表，错误只落在寄存器里，只查 `res` 会把配额耗尽
+    当空结果重试。两个入口共用同一张确定性类别表，避免「重试按一套判据、
+    熔断按另一套判据」。
     """
+    note_category = str((failure_note or {}).get("category") or "")
+    if note_category in _DETERMINISTIC_NOTE_CATEGORIES:
+        return False
     for r in res or []:
         if isinstance(r, dict) and "error" in r:
             return classify_error_status(r.get("error")) not in NON_RETRYABLE_STATUS

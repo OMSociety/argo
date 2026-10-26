@@ -585,6 +585,10 @@ def main() -> int:
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--all-free", action="store_true", help="对所有 free 且 env 就绪的引擎跑 health")
     parser.add_argument("--engines", help="逗号分隔多个引擎")
+    parser.add_argument(
+        "--strict", action="store_true",
+        help="skipped（缺 key/被禁用/源改名）也算失败——夜间交付门禁用。"
+             "默认宽松：批量体检时跳过未配置的源不是故障。")
     args = parser.parse_args()
 
     targets: list[str] = []
@@ -611,6 +615,10 @@ def main() -> int:
         )
         reports.append(rep)
         if rep.get("status") == "fail":
+            exit_ok = False
+        elif args.strict and rep.get("status") != "pass":
+            # skipped 也是「这个源没证明自己能交付」：夜间门禁要的是
+            # 11 个关键源全部 pass，缺 key/改名/禁用都不该静默全绿。
             exit_ok = False
         if not args.json:
             st = rep.get("status")
