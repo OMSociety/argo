@@ -489,6 +489,7 @@ ROUTE_MATRIX: list[dict[str, Any]] = [
     {"id": "R_semantic_discovery", "q": "discover landscape ecosystem emerging", "lang": "en", "domain": "semantic_discovery", "primary": "exa", "scenario": "tech"},
     {"id": "R_shopping", "q": "购物 评测 推荐 踩坑", "lang": "zh", "domain": "shopping", "primary": "zhihu", "scenario": "media"},
     {"id": "R_skill_search", "q": "agent skills 市场 目录", "lang": "en", "domain": "skill_search", "primary": "skillsmp", "scenario": "community"},
+    {"id": "R_dsh_plugin", "q": "dsh 插件 记忆", "lang": "zh", "domain": "dsh_plugin_search", "primary": "dshopen", "scenario": "community"},  # DSH 插件目录（与 skill_search 语义不同：插件是 npm 包，技能是 SKILL.md）
     {"id": "R_species_search", "q": "物种 学名 生物分类 拉丁名", "lang": "zh", "domain": "species_search", "primary": "gbif", "scenario": "academic"},
     {"id": "R_stackoverflow_search", "q": "stackoverflow 编程问题 代码问题", "lang": "zh", "domain": "stackoverflow_search", "primary": "stackoverflow", "scenario": "code"},
     {"id": "R_standards", "q": "国家标准 国标 标准号", "lang": "zh", "domain": "standards", "primary": "std_samr", "scenario": "academic"},

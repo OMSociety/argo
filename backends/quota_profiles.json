@@ -400,6 +400,16 @@
     "cost_tier": "free",
     "priority": 34
   },
+  "deepseek1024": {
+    "label": "DeepSeek1024 插件目录",
+    "qps": 2,
+    "limit": null,
+    "period": "minute",
+    "cost_per_call": 0.0,
+    "cost_unit": "free",
+    "cost_tier": "free",
+    "priority": 60
+  },
   "deepseek_search": {
     "label": "DeepSeek Search",
     "qps": 5,
@@ -529,6 +539,26 @@
     "cost_unit": "free",
     "cost_tier": "free",
     "priority": 29
+  },
+  "dsh_hub": {
+    "label": "DSH Hub 插件市场",
+    "qps": 2,
+    "limit": null,
+    "period": "minute",
+    "cost_per_call": 0.0,
+    "cost_unit": "free",
+    "cost_tier": "free",
+    "priority": 55
+  },
+  "dshopen": {
+    "label": "dshopen 插件目录",
+    "qps": 2,
+    "limit": null,
+    "period": "minute",
+    "cost_per_call": 0.0,
+    "cost_unit": "free",
+    "cost_tier": "free",
+    "priority": 58
   },
   "dw_news": {
     "label": "DW 德国之声 RSS",

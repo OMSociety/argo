@@ -81,11 +81,11 @@
   },
   {
    "query": "DeepSeek Harness DSH 插件开发",
-   "domain": "general_search",
+   "domain": "dsh_plugin_search",
    "kind": "tfidf",
    "engines": [
-    "github",
-    "octen"
+    "dshopen",
+    "deepseek1024"
    ],
    "expect": null,
    "forbid": null,
@@ -250,7 +250,7 @@
   {
    "query": "agent skills 市场 目录",
    "domain": "skill_search",
-   "kind": "regex",
+   "kind": "tfidf",
    "engines": [
     "skillsmp",
     "clawhub"
@@ -318,6 +318,18 @@
    "expect": null,
    "forbid": "chem_search",
    "src": "SUBSTRING_ACCIDENTS"
+  },
+  {
+   "query": "dsh 插件 记忆",
+   "domain": "dsh_plugin_search",
+   "kind": "regex",
+   "engines": [
+    "dshopen",
+    "deepseek1024"
+   ],
+   "expect": "dsh_plugin_search",
+   "forbid": null,
+   "src": "ROUTE_MATRIX"
   },
   {
    "query": "github 代码 实现 用法",

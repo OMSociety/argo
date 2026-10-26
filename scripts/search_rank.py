@@ -102,6 +102,7 @@ _ENGINE_FUSION_WEIGHTS: dict[str, float] = {
     "core": 1.3, "openreview": 1.3, "zenodo": 1.2, "datacite": 1.2,
     "sec_edgar": 1.3, "federal_register": 1.3, "eu_opendata": 1.3,
     "egov_law": 1.3, "openstd": 1.3, "who_gho": 1.3, "usgs": 1.3, "nasa_cmr": 1.3,
+    "dshopen": 1.2, "deepseek1024": 1.2, "dsh_hub": 1.15,  # DSH 插件目录三源（答案型；理由见 config.yaml dsh_plugin_search.score_floors）
     # 通用引擎（基线）
     "duckduckgo": 1.0, "local_bing": 1.0, "local_duckduckgo": 1.0,
     "local_google": 1.0, "anysearch": 1.05, "byted": 1.1, "bocha": 1.0,

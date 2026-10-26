@@ -40,6 +40,30 @@ domains:
   patterns:
   - '(?i)(agent\s*skills?|技能(搜索|检索|市场|目录|库)|找(个|一?个)?技能|装(个|一?个)?技能|claude\s*skill|codex\s*skill|dsh\s*skill|skills?\.sh|skillsmp|clawhub)'
   primary: skillsmp
+- desc: DSH 插件搜索（DeepSeek Harness 插件目录）
+  engines_combo:
+  - dshopen
+  - deepseek1024
+  - dsh_hub
+  - anysearch
+  fallback: anysearch
+  name: dsh_plugin_search
+  parallel: true
+  patterns:
+  - '(?i)(dsh\s*(插件|plugin)|deepseek\s*harness\s*(插件|plugin)|dshopen)'
+  - '(?i)(dsh\s*插件(市场|目录|大全|推荐|排行|有哪些))'
+  primary: dshopen
+  # 域级源保底分。为什么需要：插件目录是「答案型」结果——用户找的是**可装的
+  # 东西**，不是关于插件的文章。而五维精排的「相关性」维度比对文本，通用源的
+  # 文章标题恰好含「DSH 记忆插件」全词，插件条目的摘要只写功能（「为 DSH 接入
+  # 记忆服务」），实测同批条目会被文章挤到 top-6 之外（RRF 阶段插件全赢，
+  # 五维重排后全输）。relevance 保底让插件不被文本匹配埋没；authority/
+  # freshness 保底抵消「插件发布时间早于文章」带来的时效劣势（后两维仅在
+  # evidence 可用时生效，与既有各域同口径）。
+  score_floors:
+    dshopen: {relevance: 0.9, authority: 0.9, freshness: 0.85}
+    deepseek1024: {relevance: 0.9, authority: 0.9, freshness: 0.85}
+    dsh_hub: {relevance: 0.85, authority: 0.85, freshness: 0.8}
 - desc: 微信公众号文章搜索
   engines_combo:
   - wechat_sogou

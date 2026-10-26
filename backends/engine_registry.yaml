@@ -1,6 +1,6 @@
 _generated: 由 scripts/sync_backends.py 从运行时引擎声明派生，勿手工修改。
 version: 2
-last_updated: '2026-10-22'
+last_updated: '2026-10-26'
 engines:
 - name: aljazeera
   tier: T1
@@ -509,6 +509,19 @@ engines:
   recommended: true
   explicit_only: false
   desc: 通用图片搜索（免 Key，覆盖全网图片；无版权标注，发布前须自行核对）
+- name: deepseek1024
+  tier: T1
+  type: http
+  coverage:
+  - developer
+  - tech
+  - skill
+  latency_ms: 2000
+  cost: free
+  status: ok
+  recommended: true
+  explicit_only: false
+  desc: DSH 插件目录（13855 条，免认证，带安装命令与安装量/星数/增长口径）
 - name: deepseek_search
   tier: T1
   type: http
@@ -674,6 +687,32 @@ engines:
   recommended: true
   explicit_only: false
   desc: 抖音热榜（iesdouyin word_list JSON，免认证）
+- name: dsh_hub
+  tier: T1
+  type: http
+  coverage:
+  - developer
+  - tech
+  - skill
+  latency_ms: 2000
+  cost: free
+  status: ok
+  recommended: true
+  explicit_only: false
+  desc: DSH 插件市场（18933 条，免认证，带社区评分与可安装性判定）
+- name: dshopen
+  tier: T1
+  type: dshopen
+  coverage:
+  - developer
+  - tech
+  - skill
+  latency_ms: 2000
+  cost: free
+  status: ok
+  recommended: true
+  explicit_only: false
+  desc: DSH 插件精选目录（894 条，免认证，本地匹配，带分类与 DSH 版本约束）
 - name: dw_news
   tier: T1
   type: rss_feed

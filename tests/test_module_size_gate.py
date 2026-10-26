@@ -217,7 +217,7 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "url_safety（check_redirect_target / resolve_redirect_chain / "
               "max_redirects），_http_client 只留调用点；上限 1053 → 1039 随动下调"),
     "scripts/search_rank.py": (
-        997, "RRF 融合 + minhash 去重 + 五维重排；"
+        998, "RRF 融合 + minhash 去重 + 五维重排；"
               "2026-10-17 口径隔离逻辑拆出 caliber_isolation.py（−79 行）；"
               "2026-10-17 +4：_attach_selection_signals 接 authority_level 离散"
               "等级（DeepSeek 语义 0-4，映射与上游采信逻辑在 rank_signals）+"
@@ -238,7 +238,10 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "（跨站同文对差异几乎全在结尾后缀，零依赖；归一化逻辑在 rank_signals）；"
               "2026-10-25 +6：_ENGINE_FUSION_WEIGHTS 补 12 个学术聚合/官方一手源"
               "（core/openreview/sec_edgar/egov_law/openstd 等=1.3、zenodo/datacite=1.2；"
-              "实证缺口：学术域查询常由 core 独家交付却拿 1.0 基线，表内注释有当日实测）"),
+              "实证缺口：学术域查询常由 core 独家交付却拿 1.0 基线，表内注释有当日实测）；"
+              "2026-10-26 +1：同表登记 DSH 插件目录三源（dshopen/deepseek1024=1.2、"
+              "dsh_hub=1.15，单行带行尾注释，理由指向 config.yaml 的 "
+              "dsh_plugin_search.score_floors）；上限 997 → 998"),
     "scripts/search_pipeline.py": (
         944, "搜索编排主管线（路由→分派→融合→恢复→漏斗输出）；"
              "2026-10-25 +18：run.stranded 字段 + finalize 末尾交 tail_completion"
@@ -292,7 +295,7 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "2026-09-28 +4：MCPJOBS_DIR 收编 argo_paths 平台缓存根 + "
               "ARGO_MCPJOBS_DIR 显式覆盖（原硬编码 ~/.cache）"),
     "scripts/matrix_search_eval.py": (
-        1297, "离线路由矩阵（194 条检查项），用例表占多数；"
+        1298, "离线路由矩阵（194 条检查项），用例表占多数；"
               "2026-10-10 +2：入口状态隔离（真实搜索路径会写生产状态，实测夹具"
               "引擎已混入 circuit_breaker/usage_log），接 argo_paths.isolate_state_dir；"
               "2026-10-22 +15：补 company_search 场景 3 条用例（此前该域零用例，"
@@ -307,7 +310,9 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "（A 股财务/估值、民事实务、药品说明书、综述防抢、三条 howto 边界）；"
               "2026-10-25 +44：PyYAML 守卫升级为自愈重入（ARGO_PYTHON→PATH 候选"
               "逐个真跑 import yaml 验证后 execv，重入标记防套娃；找不到才 exit 2）"
-              "——分享场景直接 python3 跑评测不再被解释器版本卡住"),
+              "——分享场景直接 python3 跑评测不再被解释器版本卡住；"
+              "2026-10-26 +1：补 dsh_plugin_search 域用例（新域零用例会被 "
+              "test_route_matrix_coverage 拦下）；上限 1297 → 1298"),
     "scripts/route.py": (
         1008, "路由决策主干（route_query + 三个 _route_by_* 判定器）；"
               "2026-10-17 +10：lang_override 参数（查询操作符 lang: 的入口，"

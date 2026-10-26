@@ -28,7 +28,14 @@ _TZ_CN = timezone(timedelta(hours=8))
 # 自定义引擎的 redskill）。这里用常量而非运行时读 spec：本函数在输出路径上，
 # config.yaml 有 130KB+，为一句局限声明去解析它是拿延迟换措辞。
 # 与 spec 的一致性由 tests/test_skill_registry_contract.py 断言，不靠人记。
-SKILL_REGISTRY_ENGINES = frozenset({"redskill", "skillsmp", "clawhub"})
+# DSH 插件三源（dshopen / deepseek1024 / dsh_hub）同属此列：它们都是「可安装
+# 扩展的目录」，命中时带 SKILL_REGISTRY_LIMITATION 提示（市场列表不等于已验证
+# 包，装前看上游引用）。与 spec 的 coverage: skill 声明对账，由
+# tests/test_skill_registry_contract.py 把守。
+SKILL_REGISTRY_ENGINES = frozenset({
+    "redskill", "skillsmp", "clawhub",
+    "dshopen", "deepseek1024", "dsh_hub",
+})
 
 SKILL_REGISTRY_LIMITATION = (
     "Skill directory hits are marketplace listings, not verified packages; "
