@@ -85,6 +85,31 @@ _AGENT_RESULT_FIELDS = (
 )
 
 
+def _ensure_authority_levels(results: list[dict[str, Any]]) -> None:
+    """把上游原生 authority（DeepSeek 0-4）转成离散等级，补齐非精排路径。
+
+    `search_rank.local_five_dim_rerank` 只在五维精排里写 `authority_level`；
+    单引擎 `--engine`、付费对冲的第二位、以及部分 fast 路径不走精排，于是
+    `upstream_authority` 明明在结果里，agent 档的 `authority_level` 却是空。
+    DeepSeek 搜索最大的差异点就是这套结构化字段（v2.9.6 接入时的定位），
+    输出层丢掉它等于把价值重新埋回去。这里按 `authority_level` 的唯一实现
+    回填：上游 0-4 优先，缺失/不可解析再走自有分数映射。
+    """
+    try:
+        from rank_signals import authority_level
+    except Exception:
+        return
+    for r in results:
+        if not isinstance(r, dict):
+            continue
+        if r.get("authority_level") is not None:
+            continue
+        upstream = r.get("upstream_authority")
+        if upstream in (None, ""):
+            continue
+        r["authority_level"] = authority_level(r.get("authority"), upstream)
+
+
 def _slim_verify(v: Any) -> dict[str, Any] | None:
     """verify 块的 agent 精简版：保留「核验后改了什么」，丢掉逐条细节。
 
@@ -599,6 +624,10 @@ def shape_response(ctx: _ShapeContext, result: dict[str, Any]) -> dict[str, Any]
                 "evidence_loop 不可用，高后果域结论请自行核验")
         except Exception:
             pass
+
+    # 上游权威等级回填（DeepSeek 0-4）：单引擎/对冲路径不走五维精排，
+    # 不补这一步 agent 档只能看到空 authority_level。
+    _ensure_authority_levels(result.get("results") or [])
 
     # 域过滤（后置，引擎无关）：融合排序之后裁剪，sources 与 results 保持一致。
     # 裁剪导致不足 n 条是调用方过滤条件的诚实结果，不回填。
