@@ -26,13 +26,18 @@ domains:
   name: redskill_search
   parallel: false
   patterns:
-  - '(?i)(REDSkill|红[书薯]技能|小红书.*(skill|技能)|技能(排行|榜单|排行榜)|skill.*(rank|排行|榜))'
+  - '(?i)(REDSkill|红[书薯]技能|小红书.*(skill|技能))'
+  # 小红书技能的**实际用途**远不止「技能」二字：封面、文案、模板、笔记、
+  # 带货、种草都是它覆盖的任务（实测 allSkills 里最大宗就是这些）。收窄到
+  # 只认「小红书 + 这些词」，既让「找小红书技能」的查询更准，也不抢通用
+  # 技能域的预算——redskill 已同时从 skill_search 的 combo 里移除。
+  - '(?i)(小红书|xhs)\s*[的]?\s*(封面|文案|模板|笔记|带货|种草|口播|脚本)'
+  - '(?i)(技能(排行|榜单|排行榜)|skill.*(rank|排行|榜))'
   primary: redskill
-- desc: 跨生态 Agent 技能搜索（SkillsMP/ClawHub/REDSkill/explainx/skills.sh）
+- desc: 跨生态 Agent 技能搜索（SkillsMP/ClawHub/explainx/skills.sh）
   engines_combo:
   - skillsmp
   - clawhub
-  - redskill
   - explainx
   - skills_sh
   - anysearch

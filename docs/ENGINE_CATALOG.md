@@ -251,7 +251,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 | `hatena_bookmark` | 可直接用 | 免费 | 不限 | — | 域 social、语义画像命中 | 日本技术圈书签搜索（RDF RSS，带收藏日期） |
 | `juejin` | 可直接用 | 免费 | 不限 | — | 域 chinese_tech_deep、域 cn_tech_community | 掘金技术文章搜索（免认证） |
 | `qiita` | 可直接用 | 免费 | 不限 | — | 域 social、语义画像命中 | Qiita 日本最大技术社区（匿名 60 req/h） |
-| `redskill` | 可直接用 | 免费 | 不限 | — | 域 redskill_search、域 skill_search | 小红书 REDSkill 排行榜与全量技能检索（47650 技能，data.json 本地缓存，免认证） |
+| `redskill` | 可直接用 | 免费 | 不限 | — | 域 redskill_search | 小红书 REDSkill 排行榜与全量技能检索（47650 技能，data.json 本地缓存，免认证） |
 | `sspai` | 可直接用 | 免费 | 不限 | — | 域 cn_tech_community | 少数派搜索（中文效率/数码/软件文章，免认证） |
 | `v2ex` | 可直接用 | 免费 | 不限 | — | 域 cn_tech_community、域 social、域 v2ex_search | V2EX（中文技术社区，官方 API 候选池 + 本地相关性过滤） |
 | `weibo` | 可直接用 | 免费 | 不限 | — | 域 social、语义画像命中 | 微博 |
@@ -472,7 +472,7 @@ argo search --list-engines --detail                 # 逐源状态/密钥/依赖
 | 域 | 主源 | 组合 |
 |---|---|---|
 | `redskill_search` | `redskill` | `redskill`、`anysearch` |
-| `skill_search` | `skillsmp` | `skillsmp`、`clawhub`、`redskill`、`explainx`、`skills_sh`、`anysearch` |
+| `skill_search` | `skillsmp` | `skillsmp`、`clawhub`、`explainx`、`skills_sh`、`anysearch` |
 | `dsh_plugin_search` | `dshopen` | `dshopen`、`deepseek1024`、`dsh_hub`、`anysearch` |
 | `wechat_search` | `wechat_sogou` | `wechat_sogou`、`sogou_weixin_browser`、`anysearch` |
 | `hackernews_search` | `hackernews` | `hackernews`、`anysearch` |
