@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 """Reddit 搜索引擎
 
-使用 Reddit JSON API（无需认证即可搜索公开内容）。
-也可通过 rdt CLI 或 praw 扩展。
+通过 Reddit RSS（Atom）搜索公开内容，无需认证。也可通过 rdt CLI 扩展。
+
+端点史：无 key 的 search.json 自 2026-10 起对直连请求返回 Cloudflare HTML
+挑战页（bot 与浏览器 UA 无差别），RSS 是仅存的 keyless 通道；RSS 不带
+互动数（upvotes/comments），social_meta 相应字段恒 0。
 """
 
+import html as _html
 import json
+import re
 import subprocess
-import time
-import urllib.error
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
 
 # 出口调度唯一入口（issue #13 同类修复）：urlopen 原生只认标准 HTTP(S)_PROXY
 # 环境变量，**不认** config.yaml 的 network.proxy —— 裸用会在「必须经代理才能
@@ -21,40 +25,31 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from net_proxy import open_url  # noqa: E402
 
 
-def _http_get_with_retry(url: str, headers: dict, timeout: int = 10, max_retries: int = 2):
-    """带重试的 HTTP GET，尊重 429 + Retry-After。
+def _http_get(url: str, headers: dict, timeout: int = 10) -> bytes:
+    """单次 HTTP GET（stdlib）。429 不重试：无 key 端点按 IP「一次一发」，
+    2026-10 实测首次 200 后即连续 429、Retry-After 达分钟级，短间隔重试
+    必然再 429，还会叠乘 config reddit 段的引擎级 8s timeout。失败直接
+    上浮，由 search_reddit_api 转成 error 条目。"""
+    req = urllib.request.Request(url, headers=headers)
+    with open_url(req, timeout=timeout) as resp:
+        return resp.read()
 
-    仅使用 stdlib，不引入第三方依赖。
-    返回 (body_bytes, status_code)。失败时抛出最后一次异常。
-    """
-    for attempt in range(max_retries + 1):
-        try:
-            req = urllib.request.Request(url, headers=headers)
-            with open_url(req, timeout=timeout) as resp:
-                return resp.read(), resp.status
-        except urllib.error.HTTPError as e:
-            if e.code == 429 and attempt < max_retries:
-                retry_after = int(e.headers.get("Retry-After", "5"))
-                time.sleep(min(retry_after, 30))
-                continue
-            raise
-        except (urllib.error.URLError, OSError):
-            if attempt < max_retries:
-                time.sleep(2 ** attempt + 0.5)
-                continue
-            raise
-    return b"", 0
+
+_ATOM_NS = {"atom": "http://www.w3.org/2005/Atom"}
+
+
+def _strip_html(raw: str) -> str:
+    text = re.sub(r"<[^>]+>", " ", raw or "")
+    return _html.unescape(re.sub(r"\s+", " ", text)).strip()
 
 
 def search_reddit_api(query: str, n: int = 5) -> list[dict]:
-    """通过 Reddit JSON API 搜索"""
-    encoded = urllib.parse.quote(query)
-    url = f"https://www.reddit.com/search.json?q={encoded}&limit={n}&sort=relevance"
-    headers = {"User-Agent": "argo-search/1.0 (by taxueseek)"}
+    """通过 Reddit RSS（Atom）搜索"""
+    url = (f"https://www.reddit.com/search.rss?q={urllib.parse.quote(query)}"
+           f"&sort=relevance&limit={n}")
     try:
-        body, _ = _http_get_with_retry(url, headers, timeout=10, max_retries=2)
-        data = json.loads(body.decode("utf-8"))
-        return _parse_reddit_response(data, n)
+        body = _http_get(url, {"User-Agent": "argo-search/1.0 (by taxueseek)"}, timeout=10)
+        return _parse_reddit_rss(body, n)
     except Exception as e:
         # 吞异常返空会让 MCP 社交搜索把网络故障静默报成「平台成功、0 结果」
         # （mcp_handlers 的 err=None 设计依赖引擎抛异常或返 error 占位，
@@ -63,29 +58,35 @@ def search_reddit_api(query: str, n: int = 5) -> list[dict]:
         return [{"error": f"reddit {type(e).__name__}: {e}", "source": "reddit"}]
 
 
-def _parse_reddit_response(data: dict, n: int) -> list[dict]:
-    """解析 Reddit API 响应"""
+def _parse_reddit_rss(body: bytes, n: int) -> list[dict]:
+    """解析 search.rss 的 Atom 响应。link 命中 /comments/ 的是帖子，
+    其余（如 /r/<sub>/ 子版块页）按 listing 收录。"""
+    root = ET.fromstring(body.decode("utf-8", errors="replace"))
     results = []
-    for child in data.get("data", {}).get("children", [])[:n]:
-        post = child.get("data", {})
-        if not post:
-            continue
-        title = post.get("title", "")
-        selftext = post.get("selftext", "")
+    for entry in root.findall("atom:entry", _ATOM_NS)[:n]:
+        link_el = entry.find("atom:link", _ATOM_NS)
+        url = link_el.get("href", "") if link_el is not None else ""
+        m = re.match(r"https://(?:www\.)?reddit\.com/r/([^/]+)/", url or "")
+        title = (entry.findtext("atom:title", "", _ATOM_NS) or "").strip()
+        author = entry.findtext("atom:author/atom:name", "", _ATOM_NS) or ""
+        if author.startswith("/u/"):
+            author = author[3:]
+        snippet = _strip_html(entry.findtext("atom:content", "", _ATOM_NS))
         results.append({
             "title": title[:100] + ("..." if len(title) > 100 else ""),
-            "url": f"https://reddit.com{post.get('permalink', '')}",
-            "snippet": (selftext or title)[:300],
+            "url": url,
+            "snippet": snippet[:300] or title,
             "source": "reddit",
             "score": max(1.0 - len(results) * 0.1, 0.1),
             "social_meta": {
                 "platform": "reddit",
-                "content_type": "post",
-                "subreddit": post.get("subreddit", ""),
-                "author": post.get("author", ""),
-                "upvotes": post.get("ups", 0),
-                "comments": post.get("num_comments", 0),
-                "awards": post.get("total_awards_received", 0),
+                "content_type": "post" if "/comments/" in url else "listing",
+                "subreddit": m.group(1) if m else "",
+                "author": author,
+                # RSS 不带互动数，字段保留供 aggregate_social_sentiment 消费
+                "upvotes": 0,
+                "comments": 0,
+                "awards": 0,
             }
         })
     return results
@@ -105,7 +106,7 @@ def search(query: str, n: int = 5) -> list[dict]:
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
 
-    # fallback: Reddit JSON API
+    # fallback: Reddit RSS（search.json 已被 Cloudflare 挑战页取代）
     return search_reddit_api(query, n)
 
 

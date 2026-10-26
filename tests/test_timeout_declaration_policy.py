@@ -23,8 +23,12 @@
     except HTTPError as e:  if e.code == 429: continue      # 限流重试
     except (URLError, OSError):  if attempt < max_retries:  # 网络错误重试
         time.sleep(2 ** attempt + 0.5)
-即 weibo/reddit/bilibili/twitter 内部最多 3 次尝试带指数退避 —— 与 anysearch
+即 weibo/bilibili/twitter 内部最多 3 次尝试带指数退避 —— 与 anysearch
 同构，故都应声明 timeout。
+
+reddit 2026-10 起改走 RSS 且不再内部重试（无 key 端点按 IP「一次一发」，
+429 重试必然再 429），归入无内部重试组；config 同步撤下 timeout 声明，
+外层重试兜底（429 秒级失败，代价可接受）。
 
 而 local_search / xiaohongshu 情况不同（2026-10-06 重新裁定，二分改三分）：
   · local_search 是**自带调度的聚合引擎**（sub-skills/local-search search_v3：
@@ -60,11 +64,11 @@ from config import load_config  # noqa: E402
 import search  # noqa: E402
 
 # ── 分组：按「内部重试/调度形态」三分（实测确认）──────────────────────────
-HAS_INTERNAL_RETRY = ("weibo", "reddit", "bilibili", "twitter", "anysearch")
+HAS_INTERNAL_RETRY = ("weibo", "bilibili", "twitter", "anysearch")
 # 自带调度的聚合引擎：内部自管预算/重试/共识，声明 timeout 换取收紧帽，
 # 外层重试不再叠加（重跑整个聚合无意义）
 SELF_SCHEDULED = ("local_search",)
-NO_INTERNAL_RETRY = ("xiaohongshu",)
+NO_INTERNAL_RETRY = ("xiaohongshu", "reddit")
 
 # 内部重试的特征：共用 _http_get_with_retry（429 + URLError 双分支）
 _RETRY_SIGNS = (

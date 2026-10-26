@@ -1902,9 +1902,9 @@
   },
   "reddit": {
     "label": "Reddit",
-    "qps": 2,
+    "qps": 1,
     "limit": null,
-    "period": "second",
+    "period": "minute",
     "cost_per_call": 0.0,
     "cost_unit": "free",
     "cost_tier": "free",
