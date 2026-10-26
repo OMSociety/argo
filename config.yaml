@@ -3402,6 +3402,12 @@ engines:
       format: json
       list: search
       srlimit: '{n}'
+    output_map:
+      items: query.search
+      item_title: title
+      item_url: title
+      item_summary: snippet
+      url_template: https://en.wikipedia.org/wiki/{title}
     format: json
     headers:
       User-Agent: argo-search/1.0
@@ -3511,14 +3517,14 @@ engines:
       fix: 安装 ego-browser（Ego Lite）并登录 X；缺失时该源跳过，单条推文仍可走 `argo tweet`
     desc: X/Twitter 关键词搜索（ego-browser 通道，原生布尔语法 from:/-is:retweet/lang:）
   reddit:
-    qps: 2
+    # 2026-10 实测：无 key JSON/RSS 端点按 IP「一次一发」，首次 200 后立即
+    # 连续 429（bot 与浏览器 UA 无差别，Cloudflare 网关策略）。限流收紧到
+    # 分钟级防整池烧配额；引擎内部不再重试（429 重试必然再 429），故不声明
+    # timeout、保留外层重试兜底——与 xiaohongshu 同判，
+    # 见 tests/test_timeout_declaration_policy.py 三分策略。
+    qps: 1
+    period: minute
     type: cli
-    # timeout 声明（2026-09-10 核查）：该引擎内部已有**广谱重试**
-    # （429 + URLError/OSError，最多 3 次带指数退避，见 _http_get_with_retry）。
-    # 按 search._engine_retries 约定，声明 ≥8s 即不再叠加引擎级重试——
-    # 否则内外两层重试叠乘（anysearch 曾因此跑出 31s）。
-    # 安全性：实测延迟中位 1.20s/最大 3.16s，远低于 8s，不会截断正常请求。
-    timeout: 8
     label: Reddit
     enabled: true
     cost_tier: free

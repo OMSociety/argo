@@ -76,3 +76,109 @@ def test_link_cap():
 
 def test_empty_html_returns_empty():
     assert extract_article_meta("", "https://example.com/") == {}
+
+
+# ─── JSON-LD（2026-10-26，对标 pagesift 的结构化数据提取）────────────────────
+
+def test_jsonld_basic_fields():
+    html = """
+    <html><head>
+      <script type="application/ld+json">
+        {"@type":"NewsArticle","headline":"突发：示例新闻标题",
+         "datePublished":"2026-10-01T08:00:00+08:00",
+         "author":{"@type":"Person","name":"李四"},
+         "publisher":{"@type":"Organization","name":"示例通讯社"},
+         "description":"事件经过与后续处置"}
+      </script>
+    </head><body>
+      <article><a href="/a">相关报道</a></article>
+    </body></html>
+    """
+    meta = extract_article_meta(html, "https://example.com/news/1")
+    assert meta["headline"] == "突发：示例新闻标题"
+    assert meta["published_at"] == "2026-10-01T08:00:00+08:00"
+    assert meta["byline"] == "李四"
+    assert meta["site_name"] == "示例通讯社"
+    assert meta["excerpt"] == "事件经过与后续处置"
+    assert meta["links"] == [{"url": "https://example.com/a", "text": "相关报道"}]
+
+
+def test_jsonld_meta_wins_over_ld():
+    """meta 与 JSON-LD 双源并存时 meta 优先，ld 只补缺失字段（headline 仅 ld 有）。"""
+    html = """
+    <html><head>
+      <meta name="author" content="张三">
+      <meta property="article:published_time" content="2026-09-01T09:00:00Z">
+      <script type="application/ld+json">
+        {"@type":"Article","headline":"LD标题","datePublished":"2026-10-01T08:00:00Z",
+         "author":{"name":"李四"}}
+      </script>
+    </head><body></body></html>
+    """
+    meta = extract_article_meta(html, "https://example.com/post/2")
+    assert meta["byline"] == "张三"
+    assert meta["published_at"] == "2026-09-01T09:00:00Z"
+    assert meta["headline"] == "LD标题"
+
+
+def test_jsonld_graph_list_and_cjk_date():
+    html = """
+    <script type="application/ld+json">
+      {"@graph":[{"@type":"WebSite","name":"示例站"},
+                 {"@type":"BlogPosting","datePublished":"2026年10月1日",
+                  "author":[{"@type":"Person","name":"王五"},
+                            {"@type":"Person","name":"赵六"}]}]}
+    </script>
+    """
+    meta = extract_article_meta(html, "https://example.com/blog/3")
+    assert meta["published_at"] == "2026-10-01"
+    assert meta["byline"] == "王五, 赵六"
+
+
+def test_jsonld_date_formats_normalized():
+    cases = {
+        "2026/10/1": "2026-10-01",
+        "2026-10-01 08:00": "2026-10-01T08:00",
+        "2026-10-01T08:00:00Z": "2026-10-01T08:00:00Z",
+        "2026.10.01": "2026-10-01",
+    }
+    for raw, want in cases.items():
+        html = (f'<script type="application/ld+json">'
+                f'{{"@type":"Article","datePublished":"{raw}"}}</script>')
+        meta = extract_article_meta(html, "https://example.com/")
+        assert meta["published_at"] == want, raw
+
+
+def test_jsonld_malformed_and_unparseable_date_dropped():
+    """非法 JSON 跳过不影响其余段落；解析不出的日期交空串丢弃，不透传原文。"""
+    html = """
+    <script type="application/ld+json">not json at all</script>
+    <script type="application/ld+json">
+      {"@type":"Article","datePublished":"发布于上周","headline":"可解析字段仍在"}
+    </script>
+    """
+    meta = extract_article_meta(html, "https://example.com/")
+    assert "published_at" not in meta
+    assert meta["headline"] == "可解析字段仍在"
+
+
+def test_jsonld_falls_back_to_non_article_nodes():
+    """页面只有 Organization 等非文章节点时，缺失字段放宽到全节点提取。"""
+    html = """
+    <script type="application/ld+json">
+      {"@type":"Organization","name":"示例机构","description":"机构简介"}
+    </script>
+    """
+    meta = extract_article_meta(html, "https://example.com/about")
+    assert meta["site_name"] == "示例机构"
+    assert meta["excerpt"] == "机构简介"
+
+
+def test_jsonld_regular_script_not_captured():
+    """普通 JS 脚本不进 ld 提取，行为与从前一致。"""
+    html = """
+    <script>var config = {"datePublished": "1999-01-01"};</script>
+    <script type="text/javascript">console.log("hi");</script>
+    """
+    meta = extract_article_meta(html, "https://example.com/")
+    assert meta == {}

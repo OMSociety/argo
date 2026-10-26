@@ -92,11 +92,8 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "_LazyLogger 代理类，省 ~10ms/次冷启动；"
               "2026-10-14 7ca2f22 移除 OSV/CISA KEV 代码段（−261）"),
     "scripts/fetch_v3.py": (
-        1831, "抓取降级链（HTTP→md 变体→TLS 指纹→jina→Parallel→浏览器），"
+        1839, "抓取降级链（HTTP→md 变体→TLS 指纹→jina→Parallel→浏览器），"
               "每级都要保留顺序与超时语义，尚未找到能一次搬走且可验证的切面；"
-              "2026-10-27 +27：飞书文档认证直取前置层挂载（feishu_md 进 "
-              "_MARKDOWN_METHODS + 第零级 pre-robots 分支，管线顺序依据留在"
-              "挂载点注释里；随 feat/feishu-auth-fetch 并入 main）；"
               "2026-09-27 +10：identity memory 内存缓存（dirty flag + 30s 写盘节流）；"
               "2026-09-28 +2：_identity_mem 内存表 512 有界淘汰；"
               "2026-09-29 +10：llms-full.txt token 炸弹守卫（候选出口过滤）；"
@@ -107,7 +104,12 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "2026-10-06 +1：jsrun 车道退避预算接线（backoff_budget_s，"
               "挑战重试不再越过链级 deadline——本体与测试都在 fetch_jsrun 侧）；"
               "2026-10-06 A2 登录态车道 +11（auth_profile 判定与传参），"
-              "同日浏览器档整级拆出 fetch_browser.py −36"),
+              "同日浏览器档整级拆出 fetch_browser.py −36；"
+              "2026-10-26 +8：urllib 兜底车道接 charset_decode 统一解码入口"
+              "（GBK 老站不再满屏 U+FFFD，实测 zol/4399/pconline 三站归零）；"
+              "2026-10-27 +27：飞书文档认证直取前置层挂载（feishu_md 进 "
+              "_MARKDOWN_METHODS + 第零级 pre-robots 分支，管线顺序依据留在"
+              "挂载点注释里；随 feat/feishu-auth-fetch 并入 main）"),
     "scripts/mcp_handlers.py": (
         492, "MCP 工具 handler 分发（19 工具 → CLI 模块）；"
              "2026-10-23 支持跨语言长程溯源并精简参数映射（494 → 492）；"
@@ -216,7 +218,7 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "_QUOTA_ERROR_KEYWORDS 死导入、job.py 改从真源 cache_guard 取表，"
               "上限 983 → 982"),
     "scripts/http_client.py": (
-        1039, "HTTP 客户端（UA 轮换 + Cookie 积累 + 重试 + 主机节流）；"
+        1035, "HTTP 客户端（UA 轮换 + Cookie 积累 + 重试 + 主机节流）；"
               "2026-09-27 +8：host throttle buckets 加 LRU 淘汰（100 个上限）；"
               "2026-09-28 +10：淘汰只踢零活跃桶（_active 计数 + idle 过滤），"
               "消灭「踢掉在用桶 → 同主机限速击穿」；"
@@ -228,7 +230,10 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "（octen）；"
               "2026-10-23 −14：SSRF 纵深——逐跳重定向校验与重定向链解析抽到 "
               "url_safety（check_redirect_target / resolve_redirect_chain / "
-              "max_redirects），_http_client 只留调用点；上限 1053 → 1039 随动下调"),
+              "max_redirects），_http_client 只留调用点；上限 1053 → 1039 随动下调；"
+              "2026-10-26 −4：解码层拆到 charset_decode（响应头声明 > meta 嗅探 "
+              "> 严格猜测链，fetch_v3/article.py 兜底车道同享），curl 车道改收 "
+              "bytes 交同一解码入口并补 --compressed；上限 1039 → 1035 随动下调"),
     "scripts/search_rank.py": (
         998, "RRF 融合 + minhash 去重 + 五维重排；"
               "2026-10-17 口径隔离逻辑拆出 caliber_isolation.py（−79 行）；"

@@ -444,12 +444,65 @@ class TestSurveyFixes:
         `decode("x-unknown-8bit")` 抛 LookupError，而 LookupError 不是 OSError，
         会被 get() 的保底吞成「连接失败」并归因为 network。
         """
-        from http_client import _charset_of, _decode_body
+        from charset_decode import _charset_of, decode_response_body
         assert _charset_of("text/html; charset=x-unknown-8bit") == "utf-8"
         assert _charset_of("text/html; charset=gb2312;") == "gb2312"
         assert _charset_of("text/html") == "utf-8"
-        assert _decode_body("中文".encode("utf-8"),
-                            "text/html; charset=x-unknown-8bit") == "中文"
+        assert decode_response_body("中文".encode("utf-8"),
+                                    "text/html; charset=x-unknown-8bit") == "中文"
+
+    def test_decode_body_sniffs_meta_charset(self):
+        """响应头缺 charset 时按 HTML meta 声明解码（对标浏览器 prescan）。
+
+        头缺失在老站是常态，GBK 页面旧实现解出满屏 U+FFFD；2026-10-26 对标
+        pagesift 的字符集检测补上（HTML5 charset 属性与 HTML4 content-type
+        meta 两种声明形态都要认）。
+        """
+        from http_client import decode_response_body
+        text = "中关村在线测试页面"
+        html5 = b'<html><head><meta charset="gbk"><title>x</title></head></html>'
+        assert decode_response_body(html5 + text.encode("gbk"), "text/html") == \
+            html5.decode("ascii") + text
+        html4 = (b'<meta http-equiv="Content-Type" '
+                 b'content="text/html; charset=gb2312">')
+        assert decode_response_body(html4 + text.encode("gbk"), "text/html") == \
+            html4.decode("ascii") + text
+        legacy = b'<meta name="Content-Type" content="text/html; charset=gbk">'
+        assert decode_response_body(legacy + text.encode("gbk"), "text/html") == \
+            legacy.decode("ascii") + text
+
+    def test_decode_body_guess_chain_for_undeclared_gbk(self):
+        """无声明无 meta 的 GBK：utf-8 严格失败后按 gb18030 猜测链还原。"""
+        from http_client import decode_response_body
+        text = "东方财富同花顺财经新闻频道"
+        assert decode_response_body(text.encode("gbk"), "text/html") == text
+
+    def test_decode_body_trusts_explicit_header(self):
+        """头显式声明 charset 时信任头不做猜测（与浏览器一致）。
+
+        显式 utf-8 的响应即使解出替换符也不许被猜成 gb18030——猜测链只在
+        头缺失/不可识别时介入。
+        """
+        from http_client import decode_response_body
+        out = decode_response_body("中文内容".encode("gbk"), "text/html; charset=utf-8")
+        assert "\ufffd" in out and "中" not in out
+
+    def test_decode_body_utf8_and_latin_unchanged(self):
+        """utf-8 照旧直解；西文页零星高字节不满足占比门槛，不许猜成 CJK。"""
+        from http_client import decode_response_body
+        assert decode_response_body("中文".encode("utf-8"), "text/html") == "中文"
+        latin = b"caf\xe9 \x93smart quotes\x94 rest of ascii text here"
+        out = decode_response_body(latin, "text/html")
+        assert "\ufffd" in out and "中" not in out
+
+    def test_decode_body_content_type_meta_beats_prose_charset(self):
+        """description 正文里的「charset=」是数据不是声明，不得误 sniff。"""
+        from http_client import decode_response_body
+        decoy = (b'<meta name="description" '
+                 b'content="how to use charset=iso-8859-1 in html">')
+        body = "东方财富同花顺财经新闻频道发布市场分析报告" * 3
+        assert decode_response_body(decoy + body.encode("gbk"), "text/html") == \
+            decoy.decode("ascii") + body
 
     def test_note_redacts_credentials(self):
         """归因细节会持久化并展示，写入前必须脱敏（唯一写入点做）。"""

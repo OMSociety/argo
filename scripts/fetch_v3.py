@@ -53,6 +53,14 @@ if SCRIPT_DIR not in sys.path:
 
 # 渲染层（第二级A）：TinyFish 直连渲染，独立模块以保持本文件聚焦主链调度
 import fetch_render_tinyfish as _render_tinyfish
+
+# 解码统一入口（2026-10-26，charset 是只依赖 re 的叶子模块，顶层导入无负担）：
+# urllib 兜底车道与主链共享「头声明 > meta 嗅探 > 猜测链」，GBK 老站不再满屏 U+FFFD
+try:
+    from charset_decode import decode_response_body as _decode_charset
+except ImportError:
+    def _decode_charset(raw: bytes, _ct: str) -> str:
+        return raw.decode("utf-8", errors="replace")
 from clock_bridge import clock  # 统一时钟（测试=虚拟；生产=monotonic）
 # 质量信号层（第三级）：来源分类 / 页面类型 / 质量分 / 内容安全
 import fetch_quality as _quality
@@ -638,8 +646,8 @@ def _mobile_http_fetch(url: str, max_chars: int = 8000,
         req = urllib.request.Request(url, headers={"User-Agent": _MOBILE_UA})
         try:
             with open_url(req, timeout=timeout) as r:
-                text = r.read().decode("utf-8", errors="replace")
-                return _make_result(url, text, max_chars, "http_mobile")
+                return _make_result(url, _decode_charset(r.read(), r.headers.get("Content-Type", "")),
+                                    max_chars, "http_mobile")
         except Exception as e:
             return _make_result(url, "", 0, "http_mobile", ok=False,
                                 error=str(e)[:100])
@@ -706,8 +714,8 @@ def _http_fetch(url: str, max_chars: int = 8000, timeout: float = 8.0,
         })
         try:
             with open_url(req, timeout=timeout) as r:
-                text = r.read().decode("utf-8", errors="replace")
-                return _make_result(url, text, max_chars, "http")
+                return _make_result(url, _decode_charset(r.read(), r.headers.get("Content-Type", "")),
+                                    max_chars, "http")
         except Exception as e:
             return _make_result(url, "", 0, "http", ok=False, error=str(e)[:100])
 
