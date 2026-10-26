@@ -113,6 +113,24 @@ def _uds(sock: Path, req: dict, timeout: float = 30.0) -> dict:
     return json.loads(buf.decode("utf-8", "replace"))
 
 
+def _uds_run(sock: Path, req: dict, timeout: float = 15.0) -> dict:
+    """op:run 请求，遇 busy 重试到 deadline。
+
+    daemon 监听就绪后会起 _prewarm 线程抢同一把 _EXEC_LOCK 预热（daemon.py
+    的 _prewarm），所以 socket 出现 ≠ run 立刻可用；run 侧 0.2s busy 快失败
+    是给生产客户端的设计行为（回退冷路径），测试在这里等它热完即可。
+    2026-10-26 CI 实测：共享 runner 分片满载时预热可超 0.2s，「start→
+    _wait_sock→即发」的两条用例随机假红（一条报 ok=False，一条把
+    「白名单」用例的期望错误顶成了「daemon 正忙」）。
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        r = _uds(sock, req)
+        if not (r.get("busy") and time.monotonic() < deadline):
+            return r
+        time.sleep(0.2)
+
+
 def _uds_raw(sock: Path, raw: bytes, timeout: float = 10.0) -> bytes:
     """发原始字节（测畸形请求：空请求 / 非 dict JSON 体）。"""
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -223,14 +241,14 @@ def test_run_list_engines_and_warm_reuse(tmp_path):
     _wait_sock(tmp_path, True)
     sock = _sock(tmp_path)
     # 第一笔：冷（daemon 内首次 import search 全家）
-    r1 = _uds(sock, {"op": "run", "script": "search",
-                     "args": ["--list-engines", "--json"]})
-    assert r1["ok"] and r1["exit_code"] == 0, r1.get("stderr", "")[:500]
+    r1 = _uds_run(sock, {"op": "run", "script": "search",
+                         "args": ["--list-engines", "--json"]})
+    assert r1["ok"] and r1["exit_code"] == 0, str(r1)[:300]
     engines = json.loads(r1["stdout"])
     assert isinstance(engines, list) and len(engines) > 100
     # 第二笔：温态（runpy 重执行 + sys.modules 复用不串）
-    r2 = _uds(sock, {"op": "run", "script": "search",
-                     "args": ["--list-engines", "--json"]})
+    r2 = _uds_run(sock, {"op": "run", "script": "search",
+                         "args": ["--list-engines", "--json"]})
     assert r2["ok"] and r2["exit_code"] == 0
     assert json.loads(r2["stdout"]) == engines
 
@@ -238,7 +256,7 @@ def test_run_list_engines_and_warm_reuse(tmp_path):
 def test_run_whitelist_rejects_unknown_script(tmp_path):
     _start(tmp_path)
     _wait_sock(tmp_path, True)
-    r = _uds(_sock(tmp_path), {"op": "run", "script": "not_a_script", "args": []})
+    r = _uds_run(_sock(tmp_path), {"op": "run", "script": "not_a_script", "args": []})
     assert r["ok"] is False and "白名单" in r.get("error", "")
 
 
