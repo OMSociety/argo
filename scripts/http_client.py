@@ -111,26 +111,18 @@ def _random_headers(extra: dict | None = None) -> dict:
 def _charset_of(content_type: str) -> str:
     """从 Content-Type 解析 charset；缺失或无法识别时回落 utf-8。
 
-    未知编码必须先判定再解码：`bytes.decode("x-unknown-8bit")` 会抛 LookupError，
-    而 LookupError 不是 OSError 子类，会被 HttpClient.get 的 `except Exception`
-    吞掉并返回 status=0——一个正常的 200 响应被静默降级成「连接失败」，
-    还被归因为 network。运维现实里 `charset=x-unknown-8bit`、
-    `charset=gb2312;` 这类脏头并不罕见。
+    解码实现（meta 嗅探 + 严格猜测链）在 charset_decode（2026-10-26 拆出，
+    fetch_v3/article.py 的 urllib 兜底车道同享）；此处保留旧名作兼容入口。
     """
-    import codecs
-    if "charset=" in content_type:
-        charset = content_type.split("charset=")[-1].strip().split(";")[0].strip().strip('"\'')
-        try:
-            codecs.lookup(charset)
-            return charset
-        except (LookupError, ValueError):
-            pass
-    return "utf-8"
+    from charset_decode import _charset_of as _impl
+    return _impl(content_type)
 
 
-def _decode_body(raw_body: bytes, content_type: str) -> str:
-    """按 Content-Type 的 charset 解码响应体，任何失败都不丢 body。"""
-    return raw_body.decode(_charset_of(content_type), errors="replace")
+try:
+    from charset_decode import decode_response_body
+except ImportError:  # pragma: no cover
+    def decode_response_body(raw_body: bytes, content_type: str) -> str:
+        return raw_body.decode("utf-8", errors="replace")
 
 
 # ─── Retry-After 尊重（合规限速信号）────────────────────────────────────────
@@ -636,7 +628,7 @@ class HttpClient:
 
             # 解码
             content_type = resp.getheader("Content-Type", "")
-            text = _decode_body(raw_body, content_type)
+            text = decode_response_body(raw_body, content_type)
 
             elapsed = int((time.time() - start) * 1000)
 
@@ -686,9 +678,9 @@ class HttpClient:
                     "elapsed_ms": int((time.time() - start) * 1000),
                     "error": "重定向目标被 SSRF 防护拦截"}
 
-        cmd = ["curl", "-s", "--max-redirs", "0", "--max-time",
+        cmd = ["curl", "-s", "--compressed", "--max-redirs", "0", "--max-time",
                str(int(self.timeout)),
-               "-w", "\\n%{http_code}\\n%{url_effective}"]
+               "-w", "\\n%{http_code}\\n%{url_effective}\\n%{content_type}"]
         # 出口调度（issue #13）：curl 原生只认标准小写 env，argo 级配置
         # （ARGO_PROXY/rules）须显式 -x 下发
         try:
@@ -703,17 +695,19 @@ class HttpClient:
         cmd.append(final_url)
 
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True,
-                               encoding="utf-8", errors="replace",
-                               timeout=self.timeout + 5)
-            output = r.stdout.strip()
-            lines = output.rsplit("\n", 2)
-            if len(lines) >= 2:
-                text = lines[0] if len(lines) == 2 else "\n".join(lines[:-2])
-                status = int(lines[-2]) if lines[-2].isdigit() and lines[-2].isascii() else 0
-                final_url = lines[-1]
+            # bytes 模式收 stdout：text=True 会把 GBK body 在这里先解坏，再想嗅探
+            # 就晚了一步。body 编码统一交给 decode_response_body 处理。
+            r = subprocess.run(cmd, capture_output=True, timeout=self.timeout + 5)
+            output = (r.stdout or b"").strip()
+            lines = output.rsplit(b"\n", 3)
+            if len(lines) >= 3:
+                raw_text = lines[0] if len(lines) == 3 else b"\n".join(lines[:-3])
+                status_line, url_line, ct_line = lines[-3:]
+                status = int(status_line) if status_line.isdigit() and status_line.isascii() else 0
+                final_url = url_line.decode("utf-8", "replace") or url
+                text = decode_response_body(raw_text, ct_line.decode("latin-1", "replace"))
             else:
-                text = output
+                text = output.decode("utf-8", "replace")
                 status = 0
                 final_url = url
 
@@ -952,7 +946,7 @@ class HttpClient:
                 except ImportError:
                     return self._do_post_fallback(url, payload, extra_headers)
             content_type = resp.getheader("Content-Type", "")
-            text = _decode_body(raw_body, content_type)
+            text = decode_response_body(raw_body, content_type)
             return {"status": status, "headers": resp_headers, "text": text,
                     "url": current_url,
                     "elapsed_ms": int((time.time() - start) * 1000),
@@ -962,8 +956,9 @@ class HttpClient:
                           extra_headers: dict | None) -> dict:
         """POST 的 curl fallback（brotli 不可用时）。"""
         headers = _random_headers(extra_headers)
-        cmd = ["curl", "-s", "--max-time", str(int(self.timeout)), "-X", "POST",
-               "-w", "\\n%{http_code}\\n%{url_effective}"]
+        cmd = ["curl", "-s", "--compressed", "--max-time", str(int(self.timeout)),
+               "-X", "POST",
+               "-w", "\\n%{http_code}\\n%{url_effective}\\n%{content_type}"]
         # 出口调度（issue #13）：与 GET 路径同一判据——此前这条分支漏了
         # resolve_proxy，「须代理出网」环境里 POST 必然直连失败（2026-09-28 复核）
         try:
@@ -980,18 +975,19 @@ class HttpClient:
         cmd.append(url)
         try:
             import subprocess
-            # payload 恒为 bytes（post() 已 encode），故不用 text 模式：
-            # text=True 收 bytes input 会 TypeError；stdout 手动按 UTF-8 解
-            # （网页字节流本就 UTF-8，显式解也修掉 Windows GBK 乱码）
+            # payload 恒为 bytes（post() 已 encode），stdout 同样收 bytes：
+            # body 编码统一交给 decode_response_body（charset 头 + meta 嗅探 + 猜测链）
             r = subprocess.run(cmd, input=payload, capture_output=True,
                                timeout=self.timeout + 5)
-            output = (r.stdout or b"").decode("utf-8", errors="replace").strip()
-            lines = output.rsplit("\n", 2)
-            if len(lines) >= 2:
-                text = lines[0] if len(lines) == 2 else "\n".join(lines[:-2])
-                status = int(lines[-2]) if lines[-2].isdigit() and lines[-2].isascii() else 0
+            output = (r.stdout or b"").strip()
+            lines = output.rsplit(b"\n", 3)
+            if len(lines) >= 3:
+                raw_text = lines[0] if len(lines) == 3 else b"\n".join(lines[:-3])
+                status_line, _url_line, ct_line = lines[-3:]
+                status = int(status_line) if status_line.isdigit() and status_line.isascii() else 0
+                text = decode_response_body(raw_text, ct_line.decode("latin-1", "replace"))
             else:
-                text, status = output, 0
+                text, status = output.decode("utf-8", "replace"), 0
             return {"status": status, "headers": {}, "text": text, "url": url,
                     "elapsed_ms": 0, "from_cache": False}
         except Exception as e:

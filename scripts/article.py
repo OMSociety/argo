@@ -29,7 +29,12 @@ def fetch(url: str, timeout: int = 30) -> str:
     # （http/https scheme + 非本机/内网目标），被拒即抛错而非跟随
     opener = urllib.request.build_opener(_SafeRedirectHandler)
     with opener.open(req, timeout=timeout) as r:
-        return r.read().decode("utf-8", errors="ignore")
+        raw = r.read()
+        try:
+            from http_client import decode_response_body
+            return decode_response_body(raw, r.headers.get("Content-Type", ""))
+        except ImportError:
+            return raw.decode("utf-8", errors="ignore")
 
 
 class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
