@@ -20,6 +20,7 @@ from general_pool import (configured_general_pool as _configured_general_pool,
                           general_kwargs,
                           ranked_general as _ranked_general)
 from quota import get_quota_manager
+from source_selection import candidate_allowed
 from route_lang import (_enabled_local_engines, _filter_lang_bound_family,
                         _get_registry, _lang_must_keep, _specs_snapshot,
                         lang_allows)
@@ -274,7 +275,9 @@ def tfidf_lead_combo(tfidf_best: str | None, tfidf_best_score: float,
         lead.extend(e for e in generals[1:] if e not in lead)
     out: list[str] = []
     for e in lead:
-        if e in enabled and e not in out:
+        # 与 source_selection 同一判据：enabled 成员，或预算内的白名单付费源。
+        # 只查 `e in enabled` 会把池排序里已放行的 DeepSeek 在装配阶段再剔掉。
+        if candidate_allowed(e, enabled, mode) and e not in out:
             out.append(e)
     return out
 

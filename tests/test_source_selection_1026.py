@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import time
 import unittest
@@ -19,6 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import general_pool  # noqa: E402
+import source_selection  # noqa: E402
 from adaptive import AdaptiveLearner  # noqa: E402
 from source_selection import rank_general_candidates  # noqa: E402
 
@@ -125,9 +127,36 @@ class TestGeneralOrderPinning(unittest.TestCase):
 
     def test_excluded_engines_are_not_reintroduced(self):
         """配置池排除的 local_baidu/wikipedia 不得由兜底分支放回。"""
-        out = general_pool.ranked_general(
-            {"local_baidu", "wikipedia"}, score_fn=lambda *a: (0.5, 0))
+        with patch.dict(os.environ, {"ARGO_PAID_SEARCH": "off"}):
+            out = general_pool.ranked_general(
+                {"local_baidu", "wikipedia"}, score_fn=lambda *a: (0.5, 0))
         self.assertEqual(out, [])
+
+
+class TestPaidGeneralCandidate(unittest.TestCase):
+    """DeepSeek 作为预算内付费候选：开关/预算/模式三道门。"""
+
+    def test_included_when_allowed(self):
+        with patch.object(source_selection, "_paid_candidate_allowed",
+                          return_value=True):
+            out = rank_general_candidates(
+                ["yuanbao", "deepseek_search"], enabled={"yuanbao"},
+                score_fn=lambda *a: (0.5, 0))
+        self.assertIn("deepseek_search", out)
+
+    def test_excluded_when_paid_off(self):
+        with patch.dict(os.environ, {"ARGO_PAID_SEARCH": "off"}):
+            out = rank_general_candidates(
+                ["yuanbao", "deepseek_search"], enabled={"yuanbao"},
+                score_fn=lambda *a: (0.5, 0))
+        self.assertNotIn("deepseek_search", out)
+
+    def test_never_in_fast_mode(self):
+        with patch.dict(os.environ, {"ARGO_PAID_SEARCH": "auto"}):
+            out = rank_general_candidates(
+                ["yuanbao", "deepseek_search"], enabled={"yuanbao"},
+                mode="fast", score_fn=lambda *a: (0.5, 0))
+        self.assertNotIn("deepseek_search", out)
 
 
 if __name__ == "__main__":

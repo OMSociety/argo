@@ -68,6 +68,44 @@ def _healthy_and_enabled(engine: str, enabled: set[str] | None) -> bool:
     return True
 
 
+def _env_allowed(engine: str) -> bool:
+    """尊重 ENABLE/DISABLE 环境开关（付费例外只豁免 explicit_only）。"""
+    try:
+        from engine_env import is_engine_allowed_by_env
+        return bool(is_engine_allowed_by_env(engine))
+    except Exception:
+        return True
+
+
+def _admission_ok(engine: str) -> bool:
+    try:
+        from engine_admission import is_blocked
+        return not is_blocked(engine)
+    except Exception:
+        return True
+
+
+def _paid_hedge_ready(engine: str) -> bool:
+    """白名单里的付费引擎：豁免 explicit_only，其余门槛一个不少。
+
+    为什么不能只查 `engine in enabled`：`deepseek_search` 声明了
+    `explicit_only`，而 `config._routable_filter` 正是把它从 enabled 里剔掉
+    的那一处（防付费源被 TF-IDF/兜底带到任意查询）。付费对冲是**显式白名单**
+    （PAID_DOMAIN_HEDGES），成员资格不能再用 enabled 判一次，否则策略从
+    2026-10-21 起就是死代码。这里改为逐项检查：env 禁用、准入拉黑、熔断、
+    key、月度预算，仍全部生效。
+    """
+    if not _env_allowed(engine) or not _admission_ok(engine):
+        return False
+    try:
+        from route_combo import _breaker_blocked
+        if _breaker_blocked(engine):
+            return False
+    except Exception:
+        pass
+    return _key_ready(engine) and _budget_ok(engine)
+
+
 def hedge_for(domain: str, mode: str = "auto",
               enabled: set[str] | None = None) -> list[str]:
     """返回该域应插入的付费/回落引擎（0 或 1 个）。永不抛异常。"""
@@ -77,10 +115,10 @@ def hedge_for(domain: str, mode: str = "auto",
     if not engine:
         return []
     try:
-        if (_healthy_and_enabled(engine, enabled)
-                and _key_ready(engine) and _budget_ok(engine)):
+        if _paid_hedge_ready(engine):
             return [engine]
-        # 付费位不可用：TinyFish 是免费且带发布日期的回落位
+        # 付费位不可用：TinyFish 是免费且带发布日期的回落位。回落位不是
+        # 白名单付费源，仍须在 enabled 里（不在说明本机没注册/被禁用）。
         if (_healthy_and_enabled(_FREE_FALLBACK, enabled)
                 and _key_ready(_FREE_FALLBACK) and _budget_ok(_FREE_FALLBACK)):
             return [_FREE_FALLBACK]

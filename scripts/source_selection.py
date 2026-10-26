@@ -43,6 +43,9 @@ GENERAL_PRIORS: dict[str, float] = {
     "firecrawl": 0.90,
     # 2.7s / 0.78（6 条），中文新闻与长尾覆盖最强，慢
     "anysearch": 0.86,
+    # 0.4s，英文技术/国际新闻强，中文通用弱；官方 API 带 authority/date。
+    # 付费，预算内才进池，fast/budget 永不进（见 _paid_candidate_allowed）。
+    "deepseek_search": 0.84,
     # 2.3s / 0.89（4 条），慢但内容扎实，研究档应提权
     "uapi": 0.72,
     # 2.5s / 0.60（5 条），语义泛化，作最后备选
@@ -53,6 +56,12 @@ GENERAL_PRIORS: dict[str, float] = {
     "octen": 0.10,
 }
 DEFAULT_PRIOR = 0.50
+
+# 允许进入通用池的付费候选。与 paid_policy 的域级对冲是两条不同的路：
+# 域级对冲只在 english_tech / intl_news_flash 的第二位；这里是通用池的
+# 第 3+ 候选（日常预算截断到 2 时通常轮不到，研究档不截断才参与）。
+# fast/budget 永不进；ARGO_PAID_SEARCH=off 或预算耗尽也不进。
+PAID_GENERAL_CANDIDATES = frozenset({"deepseek_search"})
 
 # 非中英查询的语言覆盖加成。先验表是在中英查询上测的；西里尔/阿拉伯/
 # 日韩等脚本下，语言无关的覆盖源（anysearch/local_bing 带动态 setlang）
@@ -104,6 +113,55 @@ def _usable(candidates: list[str], *, mode: str) -> list[str]:
     return out
 
 
+def _paid_search_enabled() -> bool:
+    try:
+        from engine_env import get_env
+        raw = str(get_env("ARGO_PAID_SEARCH", "auto") or "auto")
+    except Exception:
+        import os
+        raw = os.environ.get("ARGO_PAID_SEARCH", "auto")
+    return raw.strip().lower() not in ("off", "0", "false", "no")
+
+
+def _paid_candidate_allowed(engine: str, mode: str) -> bool:
+    """付费候选的准入：白名单 + 非 fast/budget + 开关开 + 预算未耗尽。
+
+    与 paid_policy 的 `_paid_hedge_ready` 同一套门槛，只是位置不同：这里
+    进通用池，那里插域 combo 第二位。花钱的事一律 fail-closed。
+    """
+    if engine not in PAID_GENERAL_CANDIDATES or mode in ("fast", "budget"):
+        return False
+    if not _paid_search_enabled():
+        return False
+    try:
+        from engine_env import is_engine_allowed_by_env
+        if not is_engine_allowed_by_env(engine):
+            return False
+    except Exception:
+        pass
+    try:
+        from engine_admission import is_blocked
+        if is_blocked(engine):
+            return False
+    except Exception:
+        pass
+    try:
+        from quota import get_quota_manager
+        return not get_quota_manager().is_hard_down(engine)
+    except Exception:
+        return False
+
+
+def candidate_allowed(engine: str, enabled: set[str], mode: str) -> bool:
+    """通用候选是否允许参与：enabled 成员，或预算内的白名单付费源。
+
+    两条通用路径都要用这一处判据：`rank_general_candidates` 的池过滤，
+    以及 `tfidf_lead_combo` 的最终 `out` 过滤。后者的 `if e in enabled`
+    曾把 paid 候选单独丢掉——池排序里有它，组合装配时又被剔掉。
+    """
+    return engine in enabled or _paid_candidate_allowed(engine, mode)
+
+
 def rank_general_candidates(
     candidates: list[str],
     *,
@@ -120,7 +178,7 @@ def rank_general_candidates(
     测试用假学习器即可确定性断言，不依赖本机 adaptive.db 的时点数据。
     """
     pool = _usable(candidates, mode=mode)
-    pool = [e for e in pool if e in enabled]
+    pool = [e for e in pool if candidate_allowed(e, enabled, mode)]
     if not pool:
         return []
 

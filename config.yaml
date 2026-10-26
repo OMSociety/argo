@@ -17,6 +17,8 @@ cache:
 # 它们留在池里只会在研究档占一次调用。keenable_free 暂不进池（2026-10-26
 # 实测一条城市查询返回地名错配，待复测）。octen 保留在末尾——它是通用源，
 # 额度耗尽时由配额层自动跳过，不该因为某台机器余额为空就从公共配置里删掉。
+# deepseek_search 是付费候选：预算内才进池，fast/budget 永不进，日常预算
+# 截断到 2 时通常轮不到，研究档参与；预算耗尽自动跳过（5 元/月≈1000 次）。
 # recovery L3 仍用 engine_policy.GENERAL_FREE_FALLBACK，不受这里影响。
 general_fallback:
   engines:
@@ -28,6 +30,7 @@ general_fallback:
   - uapi
   - local_bing
   - octen
+  - deepseek_search
 domains:
 
 

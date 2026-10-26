@@ -132,9 +132,42 @@ def test_budget_hot_reload_and_breaker_respect(isolated, monkeypatch):
     monkeypatch.setenv("ARGO_PAID_SEARCH", "auto")
     monkeypatch.setattr(paid_policy, "_key_ready", lambda e: True)
     monkeypatch.setattr(paid_policy, "_budget_ok", lambda e: True)
-    # enabled 集合不含 deepseek_search 时应自动回落 tinyfish
-    assert paid_policy.hedge_for("english_tech", "auto", enabled={"tinyfish"}) == ["tinyfish"]
-    assert paid_policy.hedge_for("english_tech", "auto", enabled=set()) == []
+    monkeypatch.setattr(paid_policy, "_env_allowed", lambda e: True)
+    monkeypatch.setattr(paid_policy, "_admission_ok", lambda e: True)
+    # 2026-10-26 修复：deepseek_search 是 explicit_only，本来就不在 enabled；
+    # 付费对冲是显式白名单，不能再拿 enabled 判一次（否则策略永远不触发）。
+    assert paid_policy.hedge_for(
+        "english_tech", "auto", enabled={"tinyfish"}) == ["deepseek_search"]
+    # 真正的禁用门槛仍生效：env 禁用 / 准入拉黑 → 回落 tinyfish
+    monkeypatch.setattr(paid_policy, "_env_allowed", lambda e: False)
+    assert paid_policy.hedge_for(
+        "english_tech", "auto", enabled={"tinyfish"}) == ["tinyfish"]
+    monkeypatch.setattr(paid_policy, "_env_allowed", lambda e: True)
+    monkeypatch.setattr(paid_policy, "_admission_ok", lambda e: False)
+    assert paid_policy.hedge_for(
+        "english_tech", "auto", enabled={"tinyfish"}) == ["tinyfish"]
+
+
+def test_paid_hedge_works_with_real_routable_enabled(monkeypatch):
+    """生产接线回归：真实 routable enabled 不含 explicit_only 的 DeepSeek，
+    付费白名单仍应命中；这正是 2026-10-21 到 10-26 的失效点。"""
+    from config import get_engines, load_config
+    import route_combo
+
+    enabled = set(get_engines(load_config(), routable_only=True))
+    assert "deepseek_search" not in enabled
+
+    monkeypatch.setenv("ARGO_PAID_SEARCH", "auto")
+    monkeypatch.setattr(paid_policy, "_key_ready", lambda e: True)
+    monkeypatch.setattr(paid_policy, "_budget_ok", lambda e: True)
+    monkeypatch.setattr(paid_policy, "_env_allowed", lambda e: True)
+    monkeypatch.setattr(paid_policy, "_admission_ok", lambda e: True)
+    monkeypatch.setattr(route_combo, "_breaker_blocked", lambda e: False)
+
+    assert paid_policy.hedge_for(
+        "english_tech", "auto", enabled=enabled) == ["deepseek_search"]
+    assert paid_policy.hedge_for(
+        "intl_news_flash", "auto", enabled=enabled) == ["deepseek_search"]
 
 
 def test_batch14_hkex_s2t_longest_match_first():

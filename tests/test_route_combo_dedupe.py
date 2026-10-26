@@ -25,8 +25,21 @@ class TestTfidfLeadCombo(unittest.TestCase):
 
     对冲位 2026-10-26 起由 source_selection 按实测先验排序（原写死
     octen/anysearch）。这里注入固定 score_fn，让先验单独决定顺序，测试
-    不随本机 adaptive.db 的时点数据漂移。
+    不随本机 adaptive.db 的时点数据漂移。付费候选是另一条正交策略，
+    本类统一关掉，避免本机预算状态让断言随环境漂移。
     """
+
+    def setUp(self):
+        import os
+        self._old_paid = os.environ.get("ARGO_PAID_SEARCH")
+        os.environ["ARGO_PAID_SEARCH"] = "off"
+
+    def tearDown(self):
+        import os
+        if self._old_paid is None:
+            os.environ.pop("ARGO_PAID_SEARCH", None)
+        else:
+            os.environ["ARGO_PAID_SEARCH"] = self._old_paid
 
     @staticmethod
     def _flat(_engine, _domain, _lang, _purpose):
@@ -74,6 +87,18 @@ class TestGeneralFallbackOrder(unittest.TestCase):
     p90 1643→716ms，结果数中位同为 8。生产日志同向：general_search
     的 346 条里 324 条最后一棒是 anysearch（p50 1932ms）。local_bing 仍第三。
     """
+
+    def setUp(self):
+        import os
+        self._old_paid = os.environ.get("ARGO_PAID_SEARCH")
+        os.environ["ARGO_PAID_SEARCH"] = "off"
+
+    def tearDown(self):
+        import os
+        if self._old_paid is None:
+            os.environ.pop("ARGO_PAID_SEARCH", None)
+        else:
+            os.environ["ARGO_PAID_SEARCH"] = self._old_paid
 
     def test_octen_is_first(self):
         self.assertEqual(GENERAL_FREE_FALLBACK[:3],
