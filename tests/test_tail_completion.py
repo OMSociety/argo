@@ -172,20 +172,37 @@ def test_empty_goods_recorded_as_empty(monkeypatch, tmp_path):
 
 
 def test_worker_is_daemon_and_single_registration(monkeypatch, tmp_path):
-    """收割线程是 daemon（不阻塞进程退出）；worker 与 atexit 都只注册一次。"""
-    monkeypatch.setenv("ARGO_TAIL_COMPLETE_S", "1")
+    """收割线程是 daemon（不阻塞进程退出）；worker 与 atexit 都只注册一次。
+
+    **判据必须是「worker 仍存活时复用」**：`_worker` 队列一空就自行 return
+    （不长期占线程，这是设计），所以拿两个**已完成**的 holder 连发两次时，
+    第一次可能在前一秒就处理完、worker 已退出，第二次入队自然新建线程。
+    旧断言把这种时序当成「复用失败」——实测在整套运行时约 2/3 概率误报
+    （2026-10-26，单跑该文件必过）。改成用未完成的 holder 把 worker 按在
+    轮询里，复用才是确定性的。
+    """
+    monkeypatch.setenv("ARGO_TAIL_COMPLETE_S", "2")
     monkeypatch.setenv("ARGO_STATE_DIR", str(tmp_path))
     monkeypatch.setattr("adaptive.get_learner", lambda: _FakeLearner())
 
-    tail_completion.hand_off([("e1", _holder_with([]), time.time)],
+    # 未完成的 holder：worker 会留在轮询循环里，此刻的复用判断不受调度影响
+    first_holder = {"t0": time.time(), "r": None}
+    tail_completion.hand_off([("e1", first_holder, time.time)],
                              **_job_kwargs(None))
     first_thread = tail_completion._WORKER
     assert first_thread.daemon is True
     assert tail_completion._ATEXIT_REGISTERED is True
-    tail_completion.hand_off([("e2", _holder_with([]), time.time)],
+    assert first_thread.is_alive(), "未完成的 holder 应把 worker 按在轮询里"
+
+    second_holder = {"t0": time.time(), "r": None}
+    tail_completion.hand_off([("e2", second_holder, time.time)],
                              **_job_kwargs(None))
-    assert tail_completion._WORKER is first_thread  # 单 worker 复用
-    tail_completion.wait_for_completion(timeout_s=3)
+    assert tail_completion._WORKER is first_thread  # 存活时复用，不得再造一个
+
+    # 放行两个 holder，让收割尽快收尾（宽限内完成 → 走 salvaged 分支）
+    first_holder["r"] = ("eng", [], {}, 0)
+    second_holder["r"] = ("eng", [], {}, 0)
+    tail_completion.wait_for_completion(timeout_s=5)
 
 
 class _AllowAllBreaker:
