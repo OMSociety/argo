@@ -37,8 +37,12 @@ def _assess_quality(result: dict) -> dict:
     # quality_score
     quality_score = _compute_quality(content, html)
 
-    # content_ok
-    content_ok = quality_score > 0.25 and len(content) > 80
+    # content_ok：墙类页面不算有效内容——判据是「正文存不存在」，不是「正文多不多」。
+    # 登录墙常以 HTTP 200 + 合法 HTML 返回，走不到错误回调；而长度与质量分两道
+    # 阈值它都能险过（实测飞书文档 URL 落登录页：len 231 > 80、quality_score
+    # 0.31 > 0.25），只有 page_type 认得出来。判出来就必须参与，否则等于白算。
+    content_ok = (quality_score > 0.25 and len(content) > 80
+                  and page_type not in _wall_page_types())
 
     # is_stale (简化：无日期信息时保守判定)
     is_stale = False
@@ -117,11 +121,12 @@ def _detect_page_type(html: str, content: str, url: str = "") -> str:
     维护风险。现统一委托给 content_signals（标记更全、支持 URL 感知的
     list 判定、带 confidence），本模块只做字符串适配。
 
-    注意 page_type 目前只是报告字段，不参与 TTL / 质量分计算：
-      - TTL 由 evidence_loop.ttl_for_fetch_result 取 source_type，而
-        _classify_domain 对任意 URL 都返回非空值（保底 "unknown"），
-        `source_type or page_type` 恒短路，page_type 永不参与 TTL 判定；
-      - _compute_quality(content, html) 不读 page_type。
+    注意 page_type 的参与面（2026-09-20 起）：
+      - **参与** content_ok：墙类页面（auth_wall/paywall/js_shell）不算有效内容；
+      - 不参与 TTL：TTL 由 evidence_loop.ttl_for_fetch_result 取 source_type，
+        而 _classify_domain 对任意 URL 都返回非空值（保底 "unknown"），
+        `source_type or page_type` 恒短路；
+      - 不参与质量分：_compute_quality(content, html) 不读 page_type。
     """
     try:
         from content_signals import detect_page_type
@@ -129,6 +134,19 @@ def _detect_page_type(html: str, content: str, url: str = "") -> str:
     except Exception:
         # content_signals 不可用时不做静默误判：宁可 unknown 也不猜类型
         return "unknown"
+
+
+def _wall_page_types() -> tuple[str, ...]:
+    """内容类失败的页面类型（单一真源在 content_signals.WALL_PAGE_TYPES）。
+
+    取不到时返回空元组——判不出类型就不拦截，宁放过不误杀。
+    不在此处复制一份列表：同一判据两处各写一份，就是两处会漂移的答案。
+    """
+    try:
+        from content_signals import WALL_PAGE_TYPES
+        return WALL_PAGE_TYPES
+    except Exception:
+        return ()
 
 
 # 评分口径版本：公式一改就要动它。
