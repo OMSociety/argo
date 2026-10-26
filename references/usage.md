@@ -524,10 +524,10 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 
 ## 功能开关总表（`ARGO_*`，唯一事实=源码扫描）
 
-> 120 个开关按六类 MECE。原则：调试/运行配置不进模型上下文（MCP schema 不暴露）；
+> 119 个开关按六类 MECE。原则：调试/运行配置不进模型上下文（MCP schema 不暴露）；
 > 本表由门禁与源码双向锁定——文档里的开关必须代码实存，代码新增开关必须入表。
 
-### 能力开关（41）
+### 能力开关（40）
 
 | 变量 | 作用 | 默认/备注 |
 |------|------|----------|
@@ -545,7 +545,6 @@ python3 sub-skills/ego-search/scripts/ego_search.py merge --public /tmp/p.json -
 | `ARGO_ENABLE_ENGINES` | enable engines | 见 references/operations.md 与模块 docstring |
 | `ARGO_ENGINE_HTTP_CLIENT` | ('HttpClient 渐进增强层（UA轮换/节流/重试）', '默认开；=0 回退 urllib 保底') | 见 references/operations.md 与模块 docstring |
 | `ARGO_ENV_FILE` | env file | 见 references/operations.md 与模块 docstring |
-| `ARGO_FETCH_FEISHU` | ('飞书云文档认证直取前置层（lark-cli 取原生 Markdown，公开路径对登录墙注定失败）', '默认开；=0 关闭') | 见 fetch_feishu.py docstring |
 | `ARGO_FULLTEXT` | ('抓取全文存档（--full）', '随 --full 启用') | 见 references/operations.md 与模块 docstring |
 | `ARGO_HTTP_POOL` | ('HTTP keep-alive 连接池', '默认开；=0 退回一次请求一条连接') | 同主机请求复用 TCP+TLS 连接；对拍/应急用 0 |
 | `ARGO_IDENTITY_MEMORY` | identity memory | 见 references/operations.md 与模块 docstring |

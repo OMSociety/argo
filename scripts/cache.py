@@ -52,13 +52,6 @@ from cache_key_vdom import cache_key_vdom  # 引擎级垂直域维度（--domain
 from cli_io import dumps
 from except_sets import IO_BENIGN, SHAPE_BENIGN
 
-# 内容类失败的页面类型：单一真源在 content_signals（该模块是 page_type 的生产方）。
-# 本模块只做消费——同一判据两处各写一份，就是两处会漂移的答案。
-try:
-    from content_signals import WALL_PAGE_TYPES as _WALL_PAGE_TYPES
-except Exception:  # pragma: no cover - content_signals 不可用时不做拦截
-    _WALL_PAGE_TYPES = ()
-
 
 # ── 常量 ──────────────────────────────────────────────────────────────────────
 
@@ -1158,7 +1151,7 @@ class SearchCache:
     #   poor   （内容类：登录墙 / 付费墙 / JS 壳 / 极短）→ 换源或降置信
     # 两者都不该与「还没试过」混为一谈——实测 14% 的抓取建议指向 robots
     # 明令禁止的地址，搜索阶段就能判定，却仍然被当作「值得一抓」。
-    _POOR_PAGE_TYPES = _WALL_PAGE_TYPES
+    _POOR_PAGE_TYPES = ("auth_wall", "paywall", "js_shell")
     _POOR_MIN_CHARS = 200
 
     def local_status(self, urls: list[str]) -> dict[str, dict]:
