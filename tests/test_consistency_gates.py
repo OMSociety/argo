@@ -596,3 +596,66 @@ class TestMcpSurfaceConsistency(unittest.TestCase):
         n = len(TOOLS)
         self.assertIn(f"{n} 个 MCP 工具", desc,
                       f"package.json description 未写 {n} 个 MCP 工具（计数唯一事实=TOOLS）")
+
+
+class TestZcodePluginConsistency(unittest.TestCase):
+    """ZCode 插件包是独立发布产物，此前不在任何一致性检查范围内。
+
+    2026-10-26 实测漂移：server/panel 还写 2.9.8，marketplace 写 272 源，
+    plugin.json 与插件版 SKILL 写 272/235，而主仓已是 2.9.9/277/240。
+    这不是笔误——插件包建好后手抄了一遍数字，主仓发版时没人守它。本类把
+    「插件包的数字」纳入与 README/SKILL 相同的唯一来源（ENGINE_CATALOG）。
+    """
+
+    def test_manifests_and_panel_versions(self):
+        version = json.loads(
+            (SKILL_DIR / "package.json").read_text(encoding="utf-8"))["version"]
+        plugin = json.loads(
+            (SKILL_DIR / "packages/argo-zcode/.zcode-plugin/plugin.json")
+            .read_text(encoding="utf-8"))
+        self.assertEqual(plugin["version"], version)
+        market = json.loads(
+            (SKILL_DIR / "packages/marketplace.json").read_text(encoding="utf-8"))
+        self.assertEqual(market["plugins"][0]["version"], version)
+        for rel in ("packages/argo-zcode/server/panel_server.mjs",
+                    "packages/argo-zcode/ui/panel.html"):
+            text = (SKILL_DIR / rel).read_text(encoding="utf-8")
+            found = re.search(r'version:\s*"([^"]+)"', text)
+            self.assertIsNotNone(found, f"{rel} 未找到 version")
+            self.assertEqual(found.group(1), version,
+                             f"{rel} 版本未跟 package.json")
+
+    def test_source_counts_in_plugin_artifacts(self):
+        total, usable = _catalog_counts()
+        plugin_text = (
+            SKILL_DIR / "packages/argo-zcode/.zcode-plugin/plugin.json"
+        ).read_text(encoding="utf-8")
+        self.assertIn(f"{total} sources", plugin_text)
+        self.assertIn(f"{usable} keyless", plugin_text)
+        self.assertIn(f"{total} 个源", plugin_text)
+        self.assertIn(f"{usable} 个免密钥", plugin_text)
+
+        skill_text = (
+            SKILL_DIR / "packages/argo-zcode/skills/argo/SKILL.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn(f"{total} 源", skill_text)
+        self.assertIn(f"{usable} 免密钥", skill_text)
+        self.assertIn(f"{total} 个源", skill_text)
+
+        market_text = (
+            SKILL_DIR / "packages/marketplace.json"
+        ).read_text(encoding="utf-8")
+        self.assertIn(f"{total} sources", market_text)
+        self.assertIn(f"{total} 源", market_text)
+
+    def test_plugin_references_are_synced(self):
+        """插件 references 是拷贝（npm 打包需要），必须与主仓逐字节一致。"""
+        for name in ("engines.md", "research-protocol.md",
+                     "research-templates.md"):
+            main = (SKILL_DIR / "references" / name).read_bytes()
+            copy = (
+                SKILL_DIR / "packages/argo-zcode/references" / name
+            ).read_bytes()
+            self.assertEqual(
+                main, copy,
+                f"插件 references/{name} 与主仓不一致：同步一次再提交")

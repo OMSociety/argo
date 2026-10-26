@@ -132,6 +132,7 @@ from paid_policy import insert_hedge
 from route_combo import (  # noqa: E402
     _expand_local_search,
     _general_fallback,
+    general_kwargs,
     _filter_breaker_blocked,
     _maybe_add_geo_engine,
     _apply_intent_parallelism,
@@ -425,9 +426,8 @@ def _route_by_domain(ctx: _RouteCtx, domain: dict[str, Any], secondary: list[dic
                 engines_combo = declared
         if not engines_combo:
             # 域内引擎全被过滤，回退（本地优先 + 通用免费源唯一来源）
-            engines_combo = _general_fallback(enabled)
-            if not engines_combo:
-                engines_combo = sorted(enabled)[:2] if enabled else ["anysearch"]
+            engines_combo = _general_fallback(
+                enabled, **general_kwargs(features, mode, depth, context))
             # 扩展 local_search → 子引擎
             engines_combo = _expand_local_search(engines_combo, features)
 
@@ -650,7 +650,9 @@ def _route_by_tfidf(ctx: _RouteCtx) -> dict[str, Any]:
     _done = ctx.done
     domain = None  # 能走到这里说明没有域命中（含兜底域）
     # 弱证据推荐只作辅源跟跑、通用保底领队；强证据维持推荐领队（route_combo）
-    engines_combo = tfidf_lead_combo(tfidf_best, tfidf_best_score, enabled)
+    engines_combo = tfidf_lead_combo(
+        tfidf_best, tfidf_best_score, enabled,
+        **general_kwargs(features, mode, depth, context))
     # 🔑 展开 local_search → 子引擎
     engines_combo = _expand_local_search(engines_combo, features)
     # 🔑 为中文/学术查询追加本地引擎
@@ -724,9 +726,8 @@ def _route_by_fallback(ctx: _RouteCtx) -> dict[str, Any]:
     tfidf_scores = ctx.tfidf_scores
     _done = ctx.done
     # 保底：免费通用引擎（零分 TF-IDF 也走这里）——本地优先 + 通用免费源唯一来源
-    fallback_combo = _general_fallback(enabled)
-    if not fallback_combo:
-        fallback_combo = sorted(enabled)[:2] if enabled else ["anysearch"]
+    fallback_combo = _general_fallback(
+        enabled, **general_kwargs(features, mode, depth, context))
     # 日/韩主查询：优先 anysearch（多语言源对日/韩结果语言匹配更好），
     # 再并语言专用本地引擎；避免旧逻辑只锁 local_bing（zh 参数）返回中文站。
     # 注：byted 经实测对 ja/ko 也可，但其被 test_multilingual 定义为中文引擎，

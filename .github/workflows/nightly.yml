@@ -81,6 +81,30 @@ jobs:
             drift_diff.json
           if-no-files-found: warn
 
+  source-canary:
+    name: 源交付验收（零结果即失败）
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: python -m pip install -r requirements-dev.txt
+      # 为什么单开一栏：路由测试只能证明「选中了这个源」，证明不了「它交得出
+      # 解析结果」。这里守的是 API 形态/解析层零交付（空结果、字段缺失、源改名）。
+      # 英文 canary 证明不了中文覆盖——语言覆盖由 spec 的 langs 与路由契约测试
+      # 负责，不要指望这一栏替它背书。
+      # --strict：skipped（缺 key/被禁用/源改名）也算失败；否则门禁会在关键源
+      # 消失时静默全绿。
+      - name: 关键源必须交出解析结果（不只 HTTP 200）
+        run: |
+          python3 scripts/engine_validate.py \
+            --engines anysearch,tavily_free,parallel_free,firecrawl,dshopen,deepseek1024,dsh_hub,explainx,skills_sh,skillsmp,clawhub \
+            --stage health --json --strict
+
   ledger:
     name: 账本（时延 / 结果率）
     runs-on: ubuntu-latest

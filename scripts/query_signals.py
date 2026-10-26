@@ -12,7 +12,109 @@
 
 from __future__ import annotations
 
+import math
+import re
 from typing import Any
+
+_CJK_RUN_RE = re.compile(r"[\u4e00-\u9fff]+")
+_LATIN_WORD_RE = re.compile(r"[a-z0-9]+")
+
+# 查询意图词：描述「怎么问」而不是「问什么」，不参与区分性判定。
+# 只收高频且跨查询无区分度的词；保留 review/practice 这类可能承载主题的词，
+# 避免把正常的结果集误判成「只命中了泛词」。
+_INTENT_STOPWORDS = frozenset({
+    "how", "what", "why", "when", "where", "which", "who",
+    "the", "and", "or", "for", "with", "without", "vs", "versus",
+    "to", "of", "in", "on", "at", "by", "from", "about", "is", "are",
+    "best", "top", "good", "guide", "tutorial", "recommend",
+    "怎么", "如何", "什么", "为什么", "哪些", "哪个", "推荐", "教程",
+})
+
+
+def _query_terms(query: str) -> list[str]:
+    """把查询切成「主题词」：CJK 按连续片段（≥2 字），拉丁按词（≥2 字符）。
+
+    与 `relevance_units` 的区别：那个返回 bigram，用于连续覆盖率；这里返回
+    完整片段，用于回答「这条结果到底命中了查询里的几个词」。中文「钙钛矿
+    太阳能 稳定性」是三个主题词，不是六个 bigram——按 bigram 数判定会把
+    「只命中太阳能」也算成命中两次。
+    """
+    q = (query or "").lower()
+    terms: list[str] = []
+    for seg in _CJK_RUN_RE.findall(q):
+        # 中文意图词同样要滤：「如何 部署」若把「如何」当主题词，整批结果
+        # 都不命中它，区分性判据会误拒一条本来就答对的部署结果。
+        if len(seg) >= 2 and seg not in _INTENT_STOPWORDS:
+            terms.append(seg)
+    for word in _LATIN_WORD_RE.findall(q):
+        if len(word) >= 2 and word not in _INTENT_STOPWORDS:
+            terms.append(word)
+    seen: set[str] = set()
+    out: list[str] = []
+    for term in terms:
+        if term not in seen:
+            seen.add(term)
+            out.append(term)
+    return out
+
+
+def _term_covered(term: str, text: str,
+                  tokens: set[str] | None = None) -> bool:
+    """主题词是否被文本命中：CJK 按 bigram 过半，拉丁按词干前缀。
+
+    `tokens` 由调用方按结果预算一次（同一条文本要判多个主题词），
+    不传时自行分词，保持单测可直接调用。
+    """
+    if _CJK_RUN_RE.fullmatch(term):
+        units = [term[i:i + 2] for i in range(len(term) - 1)]
+        if not units:
+            return term in text
+        hits = sum(1 for unit in units if unit in text)
+        # 词序/分隔（「记忆 插件」vs「记忆插件」）不应让整词判负：
+        # 过半 bigram 命中即算这个词出现。
+        return hits >= max(1, math.ceil(len(units) * 0.5))
+    if tokens is None:
+        try:
+            from tfidf_router import tokenize
+            tokens = set(tokenize(text))
+        except ImportError:
+            return term in text
+    if term in tokens:
+        return True
+    # 英文词形变化：commit / commits / committed 视为同一主题词。
+    return len(term) >= 4 and any(tok.startswith(term) for tok in tokens)
+
+
+def _discriminative_coverage_ok(results: list[dict[str, Any]],
+                                query: str) -> bool:
+    """至少一条结果同时命中**两个**查询主题词。
+
+    2026-10-26 实测：查询「git commit」时 local_bing 返回 8 条泛化 Git 页
+    （Wikipedia / Install for Windows / Documentation），标题只命中 git，
+    旧守卫按「过半结果命中任意一个词」判定为够用 → 早停，真正对题的
+    git-commit 手册页被取消。只命中泛词（工具名）不等于回答了查询。
+
+    判据取「同一条结果命中 ≥2 个主题词」而不是提高覆盖率阈值：长查询的
+    正常结果本就只覆盖一半词，阈值一高就误杀；而「只命中一个泛词」在任何
+    查询长度下都是同一种失败。单主题词查询（如「Crawl4AI」）不适用。
+    """
+    terms = _query_terms(query)
+    if len(terms) < 2:
+        return True
+    try:
+        from tfidf_router import tokenize
+    except ImportError:
+        return True  # 分词不可用不设卡（与 query_coverage_ok 同一 fail-open）
+    for r in results:
+        if not isinstance(r, dict):
+            continue
+        text = f"{r.get('title') or ''} {r.get('snippet') or ''}".lower()
+        tokens = set(tokenize(text))
+        covered = sum(1 for term in terms
+                      if _term_covered(term, text, tokens))
+        if covered >= 2:
+            return True
+    return False
 
 
 def apply_query_rewrite(query: str) -> tuple[str, dict | None]:
@@ -123,6 +225,11 @@ def query_coverage_ok(results: list[dict[str, Any]], query: str) -> bool:
     交集同样会被拒早停（弱信号但非空）；同义词改写场景（如「电脑」vs
     「计算机」）可能多跑一个引擎，属可接受代价：宁可多一次调用，不放走
     单引擎垃圾。
+
+    2026-10-26 补区分性判据（_discriminative_coverage_ok）：只命中泛词
+    不算够用——「git commit」接受「Git - Install for Windows」是本守卫的
+    真实漏网案例。该判据只在「一条结果也没同时命中两个主题词」时拒绝，
+    不改变多数覆盖的口径，最坏代价仍是多跑一个引擎。
     """
     if not query or not query.strip():
         return True
@@ -141,9 +248,14 @@ def query_coverage_ok(results: list[dict[str, Any]], query: str) -> bool:
     single_token_titles = sum(
         1 for r in results if len(set(tokenize(r.get("title") or ""))) <= 1
     )
-    if len(q_set) >= 3 and single_token_titles * 2 > len(results):
+    # 至少 3 条才判：单条结果本来就可能是「Paris」这种一词答案，把它当
+    # 包索引噪声会误杀（2026-10-26 实测「what is the capital of France」）。
+    if (len(results) >= 3 and len(q_set) >= 3
+            and single_token_titles * 2 > len(results)):
         return False
     if is_query_echo(results, query):
+        return False
+    if not _discriminative_coverage_ok(results, query):
         return False
     covered = 0
     for r in results:

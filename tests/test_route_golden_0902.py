@@ -253,9 +253,15 @@ class TestEarlyStopRescueIntegration(unittest.TestCase):
         return out, calls
 
     def test_garbage_primary_rescued_by_second_engine(self):
-        """事故场景回放：anysearch 垃圾 → 守卫拒绝早停 → duckduckgo 补跑。"""
+        """事故场景回放：anysearch 垃圾 → 守卫拒绝早停 → duckduckgo 补跑。
+
+        组合在此钉死：本用例测的是救援语义，不是「路由器今天选谁」。
+        通用兜底已改为按实测先验排序（2026-10-26），断言具体引擎名会让
+        这条用例随源健康度漂移。
+        """
         decision = route_query(QUERY, mode="fast", depth="fast", context="search")
-        self.assertEqual(decision["engines_combo"], ["anysearch", "local_bing"])
+        decision = {**decision, "engines": ["anysearch", "local_bing"],
+                    "engines_combo": ["anysearch", "local_bing"]}
 
         def fake(_q: str, eng: str, **_k: Any) -> list:
             if eng == "anysearch":
@@ -273,6 +279,8 @@ class TestEarlyStopRescueIntegration(unittest.TestCase):
     def test_good_primary_keeps_early_stop(self):
         """控制组：首引擎好结果 → 早停保持，次引擎零调用（成本不回退）。"""
         decision = route_query(QUERY, mode="fast", depth="fast", context="search")
+        decision = {**decision, "engines": ["anysearch", "local_bing"],
+                    "engines_combo": ["anysearch", "local_bing"]}
 
         def fake(_q: str, eng: str, **_k: Any) -> list:
             return GOOD_RESULTS if eng == "anysearch" else []
@@ -284,7 +292,9 @@ class TestEarlyStopRescueIntegration(unittest.TestCase):
     def test_wave_path_parallel_rescue(self):
         """并行 wave 路径同语义：垃圾主引擎 → wave-2 补跑次引擎。"""
         decision = route_query(QUERY, mode="fast", depth="fast", context="search")
-        decision = {**decision, "parallel": True}
+        decision = {**decision, "parallel": True,
+                    "engines": ["anysearch", "local_bing"],
+                    "engines_combo": ["anysearch", "local_bing"]}
 
         def fake(_q: str, eng: str, **_k: Any) -> list:
             if eng == "anysearch":
@@ -304,8 +314,9 @@ class TestEarlyStopRescueIntegration(unittest.TestCase):
         local_bing 先到即收工，anysearch 被 cancelled，8 条回声成最终答案。
         """
         decision = route_query(ECHO_QUERY, mode="fast", depth="fast", context="search")
-        self.assertIn("anysearch", decision["engines_combo"])
-        self.assertIn("local_bing", decision["engines_combo"])
+        # 组合钉死：本用例测回声守卫是否触发补跑，不测路由选源。
+        decision = {**decision, "engines": ["local_bing", "anysearch"],
+                    "engines_combo": ["local_bing", "anysearch"]}
 
         def fake(_q: str, eng: str, **_k: Any) -> list:
             if eng == "local_bing":
@@ -364,7 +375,10 @@ class TestRouteGoldenPins(unittest.TestCase):
         d = route_query(QUERY, mode="fast", depth="fast", context="search")
         self.assertEqual(d.get("domain"), "general_search")
         combo = d.get("engines_combo") or []
-        free_general = {"anysearch", "local_bing", "uapi"}
+        # 免 key 通用源（2026-10-26 实测池：tavily/parallel/firecrawl 也是
+        # 免 key；anysearch/uapi/local_bing 保留，避免随池子增删误红）。
+        free_general = {"anysearch", "local_bing", "uapi",
+                        "tavily_free", "parallel_free", "firecrawl"}
         self.assertGreaterEqual(
             len(free_general & set(combo)), 2,
             f"fast 兜底 combo 应含 ≥2 免费通用源，实际 {combo}")

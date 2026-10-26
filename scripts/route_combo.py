@@ -12,10 +12,13 @@
 
 from __future__ import annotations
 
-import os
-from typing import Any
+from typing import Any, Callable
 
 from config import get_engines
+from general_pool import (configured_general_pool as _configured_general_pool,
+                          general_fallback as _general_fallback,
+                          general_kwargs,
+                          ranked_general as _ranked_general)
 from quota import get_quota_manager
 from route_lang import (_enabled_local_engines, _filter_lang_bound_family,
                         _get_registry, _lang_must_keep, _specs_snapshot,
@@ -81,46 +84,8 @@ def _expand_local_search(engine_list: list[str], features: dict | None = None) -
     return result
 
 
-def _general_fallback(enabled: set[str]) -> list[str]:
-    """通用免费源领队 + 本地检索保底（清单唯一来源 engine_policy.GENERAL_FREE_FALLBACK）。
-
-    域内引擎全被过滤 / 无匹配域时的回退组合。通用免费源在前、local_search 殿后，
-    清单与 recovery L3 共用同一常量，避免两处清单漂移。
-
-    local_search 殿后而非领队（2026-10-15 实测定案）：日常档 combo_budget=2
-    （见 engine_policy.combo_budget，fast/auto+fast 都只取前 2 位），
-    `_expand_local_search` 又把展开出的本地子引擎**追加尾部**——它一旦占住前排，
-    尾部子引擎必被预算截断，只剩 local_search 聚合器**独跑**。1059 条真实查询里
-    它独跑 109 次、中位 2.9s、45% 超 3s，占全部查询墙钟 369s，而其中纯英文
-    技术查询（"zig comptime explained" 类）占 82%——本地文件检索对这类 query
-    语义上无效，纯亏延迟。改为通用源领队后：常规查询直接落 anysearch/local_bing
-    （实测 ~1.1-1.7s），local_search 只在通用源全部不可用（熔断/配额耗尽）时
-    才顶上前预算位，本地检索能力不减，只是不再无条件霸占首轮。
-    """
-    try:
-        from engine_policy import GENERAL_FREE_FALLBACK
-    except ImportError:
-        GENERAL_FREE_FALLBACK = ("anysearch", "octen", "local_bing")
-    order = list(GENERAL_FREE_FALLBACK)
-    # 领队覆盖（2026-10-21）：A/B 与线上回退都走这里，避免为了复测改常量。
-    # 传引擎名即把它提到首位（例：ARGO_GENERAL_FALLBACK_LEAD=anysearch 复现
-    # 2026-10-21 之前的顺位）；传空/未知值不生效。与下面的 LEGACY 开关正交。
-    lead_override = (os.environ.get("ARGO_GENERAL_FALLBACK_LEAD") or "").strip()
-    if lead_override and lead_override in order:
-        order = [lead_override] + [e for e in order if e != lead_override]
-    # 逃生开关：A/B 与线上回退都走这条，避免为了复测改常量。
-    # 2026-10-17 对拍（交错、随机序）：octen 入第二顺位后，anysearch 抖动
-    # 窗口 p90 3273→1614ms、max 6266→1928ms、错误 9→0；健康窗口中位无差。
-    try:
-        from engine_env import env_flag
-        if env_flag("ARGO_GENERAL_FALLBACK_LEGACY", default=False):
-            order = [e for e in order if e != "octen"]
-    except ImportError:
-        pass
-    lead = [e for e in order if e in enabled]
-    # 保底项同样受 enabled 约束：不在 enabled 说明本机压根没注册/被禁用，
-    # 选它只会在执行层撞 "未知引擎" 空跑。
-    return lead + (["local_search"] if "local_search" in enabled else [])
+# 通用候选池的顺序策略在 general_pool.py（route_combo 曾因它逼近 1000 行）。
+# 顶部别名保留，既有调用方与测试的 import 路径不变。
 
 
 def _breaker_blocked(engine_id: str) -> bool:
@@ -269,34 +234,44 @@ TFIDF_STRONG_SCORE = 0.15
 
 
 def tfidf_lead_combo(tfidf_best: str | None, tfidf_best_score: float,
-                     enabled: set[str]) -> list[str]:
-    """TF-IDF 分支的初始 combo：强证据推荐领队 + anysearch 对冲。
+                     enabled: set[str], *, mode: str = "auto",
+                     depth: str = "fast", context: str = "search",
+                     lang: str = "",
+                     score_fn: Callable[[str, str, str, str],
+                                        tuple[float, int]] | None = None
+                     ) -> list[str]:
+    """TF-IDF 分支的初始 combo：强证据推荐领队 + 通用源对冲。
 
     弱证据（≤TFIDF_STRONG_SCORE）时反过来：通用保底领队，推荐引擎殿后
     作辅源——仍在 combo 里并行竞速，能力不减，只是不再占 primary 位
     （含 primary 宽限/充分性判定对它的偏袒）。
+
+    2026-10-26：对冲位不再写死 octen/anysearch，改由 `_ranked_general`
+    给出当前最优的通用源。静态清单与实测排序的分叉此前导致「走 TF-IDF
+    分支的查询永远用不到 tavily/yuanbao」，同一个无匹配域查询换条路径
+    就换了源。两条路径现在共用同一排序。
     """
     strong = bool(tfidf_best and tfidf_best_score > TFIDF_STRONG_SCORE)
+    generals = _ranked_general(
+        enabled, mode=mode, depth=depth, context=context, lang=lang,
+        score_fn=score_fn)
     lead: list[str] = []
     if strong:
         lead = [tfidf_best]
-        # 垂直领队用 octen 对冲、anysearch 第三；anysearch 领队则反过来。
-        hedges = ("octen", "anysearch") if tfidf_best != "anysearch" \
-            else ("anysearch", "octen")
-        for e in hedges:
-            if e in enabled and e not in lead:
+        for e in generals:
+            if len(lead) >= 3:
+                break
+            if e not in lead:
                 lead.append(e)
     else:
-        # 弱证据/无推荐：通用保底领队，弱推荐作为辅源跟在后面（既有契约，
-        # tests/test_route_tfidf_weak_score.py 锁死），octen 排第三。日常
-        # budget=2 会截掉第三位，所以弱证据不额外占 octen 的位；低分回退
-        # 分支（score < TFIDF_MIN_SCORE）走通用兜底链，那里 octen 已在第二。
-        if "anysearch" in enabled:
-            lead.append("anysearch")
-        if tfidf_best and tfidf_best not in lead:
+        # 弱证据/无推荐：通用保底领队，弱推荐作为辅源紧跟其后（既有契约，
+        # tests/test_route_tfidf_weak_score.py 锁死）。弱推荐占第二槽而不是
+        # 第三槽：日常 budget=2 时它仍能参与竞速，与改动前逐位一致；第二个
+        # 通用源顺延到第三位。
+        lead = list(generals[:1])
+        if tfidf_best and tfidf_best not in lead and tfidf_best in enabled:
             lead.append(tfidf_best)
-        if "octen" in enabled and "octen" not in lead:
-            lead.append("octen")
+        lead.extend(e for e in generals[1:] if e not in lead)
     out: list[str] = []
     for e in lead:
         if e in enabled and e not in out:

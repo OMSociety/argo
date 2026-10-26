@@ -17,7 +17,24 @@ if str(_SCRIPTS) not in sys.path:
 
 
 class TestGeneralFreeSingleSource(unittest.TestCase):
-    """P1-3：通用免费源清单唯一来源"""
+    """P1-3：通用免费源清单唯一来源。
+
+    2026-10-26 起默认路径按实测先验排序；本类守的是**静态逃生门**
+    （ARGO_GENERAL_FALLBACK_STATIC=1）仍能逐位回到旧顺序。默认策略
+    另由 TestGeneralFallbackConfigPool 与 test_source_selection_1026 覆盖。
+    """
+
+    def setUp(self):
+        import os
+        self._old_static = os.environ.get("ARGO_GENERAL_FALLBACK_STATIC")
+        os.environ["ARGO_GENERAL_FALLBACK_STATIC"] = "1"
+
+    def tearDown(self):
+        import os
+        if self._old_static is None:
+            os.environ.pop("ARGO_GENERAL_FALLBACK_STATIC", None)
+        else:
+            os.environ["ARGO_GENERAL_FALLBACK_STATIC"] = self._old_static
 
     def test_recovery_uses_shared_constant(self):
         from engine_policy import GENERAL_FREE_FALLBACK
@@ -58,6 +75,28 @@ class TestGeneralFreeSingleSource(unittest.TestCase):
         """最坏面：通用源全部不可用时，本地检索仍是最后一道保底。"""
         from route import _general_fallback
         self.assertEqual(_general_fallback({"local_search"}), ["local_search"])
+
+
+class TestGeneralFallbackConfigPool(unittest.TestCase):
+    """默认路径：配置池 + 实测排序（不是静态元组）。"""
+
+    def test_config_pool_is_used_and_local_search_is_last(self):
+        import os
+        from unittest.mock import patch
+        from route import _general_fallback
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("ARGO_GENERAL_FALLBACK_STATIC", None)
+            os.environ.pop("ARGO_GENERAL_FALLBACK_LEAD", None)
+            os.environ.pop("ARGO_GENERAL_FALLBACK_LEGACY", None)
+            enabled = {"yuanbao", "tavily_free", "parallel_free", "firecrawl",
+                       "anysearch", "uapi", "local_bing", "local_search"}
+            fb = _general_fallback(enabled)
+        self.assertEqual(fb[-1], "local_search")
+        self.assertNotIn("local_search", fb[:2])
+        # 池子里不再有已证实零交付/非通用搜索的源（octen 保留在池尾：
+        # 额度耗尽由配额层跳过，不因单机余额为空从公共配置删除）
+        for dead in ("local_baidu", "wikipedia"):
+            self.assertNotIn(dead, fb)
 
 
 class TestRuntimeHealthView(unittest.TestCase):

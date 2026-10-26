@@ -11,6 +11,23 @@ cache:
   enabled: true
   max_size_mb: 200
   ttl: 3600
+# 通用兜底候选池（无匹配域时使用）。只声明「谁有资格进池」，顺序不是优先级：
+# 优先级由 scripts/source_selection.py 按 2026-10-26 实测先验 × 自适应分排序。
+# 池子不含 local_baidu（实测 4/4 零结果）与 wikipedia（查词条不是通用搜索）：
+# 它们留在池里只会在研究档占一次调用。keenable_free 暂不进池（2026-10-26
+# 实测一条城市查询返回地名错配，待复测）。octen 保留在末尾——它是通用源，
+# 额度耗尽时由配额层自动跳过，不该因为某台机器余额为空就从公共配置里删掉。
+# recovery L3 仍用 engine_policy.GENERAL_FREE_FALLBACK，不受这里影响。
+general_fallback:
+  engines:
+  - yuanbao
+  - tavily_free
+  - parallel_free
+  - firecrawl
+  - anysearch
+  - uapi
+  - local_bing
+  - octen
 domains:
 
 

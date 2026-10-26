@@ -21,32 +21,50 @@ from route_combo import _general_fallback, tfidf_lead_combo  # noqa: E402
 
 
 class TestTfidfLeadCombo(unittest.TestCase):
+    """组合语义（领队/辅源/对冲/去重）。
+
+    对冲位 2026-10-26 起由 source_selection 按实测先验排序（原写死
+    octen/anysearch）。这里注入固定 score_fn，让先验单独决定顺序，测试
+    不随本机 adaptive.db 的时点数据漂移。
+    """
+
+    @staticmethod
+    def _flat(_engine, _domain, _lang, _purpose):
+        return 0.5, 0
+
+    def _combo(self, best, score, enabled):
+        return tfidf_lead_combo(best, score, enabled, score_fn=self._flat)
+
     def test_best_anysearch_is_not_duplicated(self):
-        combo = tfidf_lead_combo("anysearch", 0.30, {"anysearch", "octen"})
-        self.assertEqual(combo, ["anysearch", "octen"])
+        combo = self._combo("anysearch", 0.30, {"anysearch", "yuanbao"})
+        self.assertEqual(combo, ["anysearch", "yuanbao"])
 
-    def test_weak_evidence_keeps_anysearch_lead(self):
-        combo = tfidf_lead_combo("anysearch", 0.10, {"anysearch", "octen"})
-        self.assertEqual(combo, ["anysearch", "octen"])
+    def test_weak_evidence_keeps_general_lead(self):
+        combo = self._combo("anysearch", 0.10, {"anysearch", "yuanbao"})
+        self.assertEqual(combo, ["yuanbao", "anysearch"])
 
-    def test_strong_octen_still_gets_anysearch_hedge(self):
-        combo = tfidf_lead_combo("octen", 0.30, {"anysearch", "octen"})
-        self.assertEqual(combo, ["octen", "anysearch"])
+    def test_strong_low_ranked_engine_gets_general_hedge(self):
+        combo = self._combo("octen", 0.30,
+                            {"anysearch", "yuanbao", "octen"})
+        self.assertEqual(combo, ["octen", "yuanbao", "anysearch"])
 
     def test_weak_vertical_pick_rides_behind_general_lead(self):
-        combo = tfidf_lead_combo("usda", 0.145, {"anysearch", "octen", "usda"})
-        self.assertEqual(combo, ["anysearch", "usda", "octen"],
-                         "弱证据推荐保持辅源位次，octen 排第三（budget 会截）")
+        combo = self._combo("usda", 0.145,
+                            {"anysearch", "yuanbao", "usda"})
+        self.assertEqual(combo, ["yuanbao", "usda", "anysearch"],
+                         "弱证据推荐保持辅源位次，第二个通用源顺延到第三位")
 
-    def test_vertical_lead_gets_octen_hedge(self):
-        combo = tfidf_lead_combo("zhihu", 0.30, {"anysearch", "octen", "zhihu"})
-        self.assertEqual(combo, ["zhihu", "octen", "anysearch"])
+    def test_vertical_lead_gets_general_hedge(self):
+        combo = self._combo("zhihu", 0.30,
+                            {"anysearch", "yuanbao", "zhihu"})
+        self.assertEqual(combo, ["zhihu", "yuanbao", "anysearch"])
 
     def test_disabled_engine_dropped(self):
-        self.assertEqual(tfidf_lead_combo("octen", 0.30, {"anysearch"}), ["anysearch"])
+        self.assertEqual(self._combo("octen", 0.30, {"anysearch"}),
+                         ["anysearch"])
 
     def test_all_disabled(self):
-        self.assertEqual(tfidf_lead_combo("octen", 0.30, set()), [])
+        self.assertEqual(self._combo("octen", 0.30, set()), [])
 
 
 class TestGeneralFallbackOrder(unittest.TestCase):
@@ -62,8 +80,12 @@ class TestGeneralFallbackOrder(unittest.TestCase):
                          ("octen", "anysearch", "local_bing"))
 
     def test_general_fallback_preserves_order(self):
+        """静态臂：ORDER 与 GENERAL_FREE_FALLBACK 一致（默认已改为实测排序）。"""
+        import os
+        from unittest.mock import patch
         enabled = {"anysearch", "octen", "local_bing", "local_search", "wikipedia"}
-        combo = _general_fallback(enabled)
+        with patch.dict(os.environ, {"ARGO_GENERAL_FALLBACK_STATIC": "1"}):
+            combo = _general_fallback(enabled)
         self.assertEqual(combo[:3], ["octen", "anysearch", "local_bing"])
         self.assertEqual(combo[-1], "local_search")
 

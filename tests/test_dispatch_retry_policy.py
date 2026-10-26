@@ -136,6 +136,22 @@ class TestIsRetryableFailure:
         assert is_retryable_failure([]) is True
         assert is_retryable_failure(None) is True
 
+    def test_failure_note_blocks_retry_even_when_result_is_empty(self):
+        """抓取类引擎返回 [] 时，确定性失败要靠归因寄存器拦下重试。
+
+        2026-10-26 实测：octen 余额不足返回 []，错误只写进归因寄存器；
+        只查 `res` 会把「空结果可重试」套上去，跑满 3 次（1934ms）。
+        """
+        for category in ("quota_exhausted", "auth", "blocked"):
+            note = {"category": category, "reason": "http-403"}
+            assert is_retryable_failure([], failure_note=note) is False, category
+        # 限流/网络类仍可重试（与 classify_error_status 的 transient 口径一致）；
+        # 无归因时维持旧语义
+        for transient in ("rate_limited", "network"):
+            assert is_retryable_failure(
+                [], failure_note={"category": transient}) is True, transient
+        assert is_retryable_failure([], failure_note=None) is True
+
     def test_mirrors_classify_engine_outcome(self):
         """重试判据与归因判据必须同源：同一文本给出的类别一致。
 
