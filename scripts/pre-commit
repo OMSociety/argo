@@ -31,13 +31,27 @@ if [ -z "$root" ] || [ ! -d "$root/tests" ]; then
 fi
 cd "$root" || exit 1
 
-PY=$(command -v python3 || command -v python || true)
+# 解释器选择：取第一个「存在且真 import 得动 pytest+yaml」的候选。此前是
+# 裸 `command -v python3`——2026-10-26 实测，默认 PATH 的 python3 是 3.15
+# （无 pytest），hook 每次提交都死在 pytest 收集之前，拦截层形同虚设。
+# 与 6971c73 给 eval 侧加的自愈重入是同一类根因（解释器选择散落多处、没有
+# 单一真源），这里把门禁这一处也收进候选链。真 import 而非 find_spec：半装
+# 的 pytest、被 sitecustomize 顶掉的包都属「说在其实不在」（见 bin/argo 严格
+# 档的同类教训）。候选全空时维持原口径 fail closed，绝不静默放行。
+PY=""
+for cand in "${ARGO_GATE_PYTHON:-}" python3.14 python3 python; do
+    if [ -n "$cand" ] && command -v "$cand" >/dev/null 2>&1 \
+            && "$cand" -c "import pytest, yaml" >/dev/null 2>&1; then
+        PY=$cand
+        break
+    fi
+done
 if [ -z "$PY" ]; then
-    echo "[pre-commit] 找不到 python3/python，跳过了门禁（应视为失败）" >&2
+    echo "[pre-commit] 找不到带 pytest+yaml 的解释器（候选：\$ARGO_GATE_PYTHON、python3.14、python3、python），门禁视为失败" >&2
     exit 1
 fi
 
-echo "[pre-commit] argo 快门禁（~12s；全量回归请手动跑 tests/）..."
+echo "[pre-commit] argo 快门禁（~12s，解释器 $PY；全量回归请手动跑 tests/）..."
 "$PY" -m pytest -q \
     tests/test_static_lint_gate.py \
     tests/test_module_size_gate.py \
