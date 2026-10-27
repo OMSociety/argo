@@ -3,6 +3,8 @@ __pycache__/
 .pytest_cache/
 *.pyc
 .DS_Store
+# install.sh / install.ps1 建的依赖虚拟环境（bin/argo 的候选链会自动发现）
+.venv/
 *.sqlite
 *.db
 cache/

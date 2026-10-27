@@ -156,5 +156,81 @@ class TestKnownPrefixFallback(unittest.TestCase):
         self.assertEqual(self.entry["_which_python"]("python9.9"), "")
 
 
+class TestVenvInterpreter(unittest.TestCase):
+    """`_venv_python`：安装器建的 .venv 解释器发现（PEP 668 场景的唯一落点）。
+
+    背景：PEP 668 环境（Homebrew、Debian 12+）下 pip 的 --user 与全局安装
+    都会被拒，旧安装脚本三段回落全败 → 机器上没有任何带 PyYAML 的解释器。
+    install.sh 自 2026-10-27 起在 $INSTALL_DIR/.venv 装依赖，入口候选链
+    靠本函数发现它。这里钉住两条契约：不存在时返回空串（不白付探测子进程）、
+    存在时返回绝对路径。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.entry = _load_entry_module()
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="argo-venv-")
+        # 造一个假的检出目录：<tmp>/root/bin/argo（内容无关，只借 __file__
+        # 推导 ARGO_HOME），exec 一份源文件拿到该检出下的命名空间。
+        self.root = os.path.join(self.tmp, "root")
+        os.makedirs(os.path.join(self.root, "bin"))
+        fake_bin = os.path.join(self.root, "bin", "argo")
+        with open(fake_bin, "w", encoding="utf-8") as fh:
+            fh.write("# placeholder\n")
+        source = ARGO_BIN.read_text(encoding="utf-8")
+        self.ns = {"__file__": fake_bin, "__name__": "argo_entry_venv_under_test"}
+        exec(compile(source, fake_bin, "exec"), self.ns)  # noqa: S102 — 本地可信源
+        self.home = self.ns["ARGO_HOME"]
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_empty_when_venv_absent(self):
+        """没有 .venv 时返回空串：候选链原样跳过，不额外起探测进程。"""
+        self.assertEqual(self.ns["_venv_python"](), "")
+
+    def test_returns_venv_absolute_path_when_present(self):
+        """venv 在时返回其解释器绝对路径（_pick_python 只认单个绝对路径）。"""
+        sub = ("Scripts", "python.exe") if os.name == "nt" else ("bin", "python")
+        venv_dir = os.path.join(self.home, ".venv", *sub[:-1])
+        os.makedirs(venv_dir)
+        venv_py = os.path.join(venv_dir, sub[-1])
+        with open(venv_py, "w", encoding="utf-8") as fh:
+            fh.write("#!/bin/sh\nexit 0\n")
+        os.chmod(venv_py, 0o755)
+        self.assertEqual(self.ns["_venv_python"](), venv_py)
+        self.assertTrue(os.path.isabs(self.ns["_venv_python"]()))
+
+    def test_pick_python_falls_back_to_venv_when_others_fail(self):
+        """所有系统解释器都没有 PyYAML 时，venv 必须能接管。
+
+        这就是 PEP 668 机器的真实处境：安装器的三段 pip 回落全败，机器上
+        只有 .venv 里那份依赖是齐的。把 _probe_python 换成「只认 venv」，
+        _pick_python 的选择结果必须落到 venv 解释器上。
+        """
+        sub = ("Scripts", "python.exe") if os.name == "nt" else ("bin", "python")
+        venv_dir = os.path.join(self.home, ".venv", *sub[:-1])
+        os.makedirs(venv_dir)
+        venv_py = os.path.join(venv_dir, sub[-1])
+        with open(venv_py, "w", encoding="utf-8") as fh:
+            fh.write("#!/bin/sh\nexit 0\n")
+        os.chmod(venv_py, 0o755)
+
+        ns = self.ns
+        ns["_cached_python"] = lambda: ""
+        ns["_remember_python"] = lambda p: None
+        ns["_probe_python"] = lambda py, strict: (
+            os.path.realpath(py) == os.path.realpath(venv_py))
+        old_env = os.environ.pop("ARGO_PYTHON", None)
+        try:
+            picked = ns["_pick_python"]()
+        finally:
+            if old_env is not None:
+                os.environ["ARGO_PYTHON"] = old_env
+        self.assertEqual(os.path.realpath(picked), os.path.realpath(venv_py))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -101,23 +101,45 @@ if ($Pin) {
 }
 
 if (-not $SkipPip) {
-    Write-Host "==> 安装依赖 (PyYAML)…"
-    & $script:py -m pip install pyyaml
-    if ($LASTEXITCODE -ne 0) {
-        & $script:py -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple pyyaml
+    # 与 install.sh 同一策略：依赖优先装进 $InstallDir\.venv（bin/argo 的
+    # 解释器候选链会自动发现它，见 _venv_python）。Windows 的 python.org
+    # 安装包通常不受 PEP 668 限制，但 venv 仍优于全局安装：不污染全局
+    # site-packages，卸载/升级干净，与 macOS/Linux 行为一致。
+    $VenvDir = Join-Path $InstallDir ".venv"
+    $VenvPy = Join-Path $VenvDir "Scripts\python.exe"
+    & $script:py -m venv $VenvDir 2>$null
+    if ($LASTEXITCODE -eq 0 -and (Test-Path $VenvPy)) {
+        Write-Host "==> 创建虚拟环境: $VenvDir（依赖装在这里，不碰系统 Python）"
+        & $VenvPy -m pip install pyyaml
+        if ($LASTEXITCODE -ne 0) {
+            & $VenvPy -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple pyyaml
+        }
+        if ($LASTEXITCODE -ne 0) { Write-Host "[warn] venv 内 PyYAML 安装失败，可手动: & `"$VenvPy`" -m pip install pyyaml" }
+        Write-Host "==> 安装可选增强 (curl_cffi: TLS 指纹伪造；rapidfuzz: 去重模糊近重复复核；缺失不影响核心功能)…"
+        & $VenvPy -m pip install curl_cffi
+        if ($LASTEXITCODE -ne 0) { Write-Host "[warn] pip 安装 curl_cffi 失败（可选依赖）" }
+        & $VenvPy -m pip install rapidfuzz
+        if ($LASTEXITCODE -ne 0) { Write-Host "[warn] pip 安装 rapidfuzz 失败（可选依赖，缺失时去重回退纯 minhash）" }
+    } else {
+        Write-Host "[warn] venv 创建失败，回退系统 pip 安装…"
+        Write-Host "==> 安装依赖 (PyYAML)…"
+        & $script:py -m pip install pyyaml
+        if ($LASTEXITCODE -ne 0) {
+            & $script:py -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple pyyaml
+        }
+        if ($LASTEXITCODE -ne 0) { Write-Host "[warn] pip 安装 PyYAML 失败，可手动: pip install pyyaml" }
+        Write-Host "==> 安装可选增强 (curl_cffi: TLS 指纹伪造；rapidfuzz: 去重模糊近重复复核；缺失不影响核心功能)…"
+        & $script:py -m pip install curl_cffi
+        if ($LASTEXITCODE -ne 0) {
+            & $script:py -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple curl_cffi
+        }
+        if ($LASTEXITCODE -ne 0) { Write-Host "[warn] pip 安装 curl_cffi 失败（可选依赖）" }
+        & $script:py -m pip install rapidfuzz
+        if ($LASTEXITCODE -ne 0) {
+            & $script:py -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple rapidfuzz
+        }
+        if ($LASTEXITCODE -ne 0) { Write-Host "[warn] pip 安装 rapidfuzz 失败（可选依赖，缺失时去重回退纯 minhash）" }
     }
-    if ($LASTEXITCODE -ne 0) { Write-Host "[warn] pip 安装 PyYAML 失败，可手动: pip install pyyaml" }
-    Write-Host "==> 安装可选增强 (curl_cffi: TLS 指纹伪造；rapidfuzz: 去重模糊近重复复核；缺失不影响核心功能)…"
-    & $script:py -m pip install curl_cffi
-    if ($LASTEXITCODE -ne 0) {
-        & $script:py -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple curl_cffi
-    }
-    if ($LASTEXITCODE -ne 0) { Write-Host "[warn] pip 安装 curl_cffi 失败（可选依赖）" }
-    & $script:py -m pip install rapidfuzz
-    if ($LASTEXITCODE -ne 0) {
-        & $script:py -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple rapidfuzz
-    }
-    if ($LASTEXITCODE -ne 0) { Write-Host "[warn] pip 安装 rapidfuzz 失败（可选依赖，缺失时去重回退纯 minhash）" }
 }
 
 if ($LinkTargets.Count -gt 0 -or (Test-Path (Join-Path $InstallDir "installs.local.yaml"))) {
@@ -135,9 +157,13 @@ Write-Host ""
 Write-Host "==> 安装完成"
 Write-Host ""
 $pyLabel = $script:py -join " "
+# 文档里的解释器：venv 在就用它（与 bin/argo 的选择一致，避免「装好了但
+# 示例跑不起来」——回退安装时系统 python 可能没有 PyYAML）。
+$VenvDocPy = Join-Path $InstallDir ".venv\Scripts\python.exe"
+if (Test-Path $VenvDocPy) { $pyLabel = "& `"$VenvDocPy`"" }
 Write-Host "快速验证:"
-Write-Host "  & $pyLabel $InstallDir\scripts\search.py ""Python asyncio"" --json"
-Write-Host "  & $pyLabel $InstallDir\scripts\search.py --list-engines"
+Write-Host "  $pyLabel $InstallDir\scripts\search.py ""Python asyncio"" --json"
+Write-Host "  $pyLabel $InstallDir\scripts\search.py --list-engines"
 Write-Host ""
 Write-Host "启动 MCP（给 Claude / Kimi / Cursor 等用）:"
 Write-Host "  & $pyLabel $InstallDir\scripts\mcp_server.py"
@@ -146,7 +172,9 @@ Write-Host "或用 npx（需 Node.js 18+，推荐，不依赖 npm 发版）:"
 Write-Host "  npx -y github:taxueseek/argo"
 Write-Host ""
 Write-Host "客户端 MCP 配置示例（command 用解释器绝对路径：GUI 宿主的子进程 PATH 常缺 python）:"
-$pythonExe = (Get-Command $script:py[0] -ErrorAction SilentlyContinue).Source
+$pythonExe = $null
+if (Test-Path $VenvDocPy) { $pythonExe = $VenvDocPy }
+if (-not $pythonExe) { $pythonExe = (Get-Command $script:py[0] -ErrorAction SilentlyContinue).Source }
 if (-not $pythonExe) { $pythonExe = $script:py[0] }
 Write-Host @"
 {

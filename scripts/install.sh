@@ -131,20 +131,38 @@ if [[ -n "$PIN" ]]; then
 fi
 
 if [[ "$SKIP_PIP" != "1" ]]; then
-  echo "==> 安装依赖 (PyYAML)…"
-  python3 -m pip install --user -q pyyaml 2>/dev/null \
-    || python3 -m pip install -q pyyaml 2>/dev/null \
-    || python3 -m pip install --user -q -i https://pypi.tuna.tsinghua.edu.cn/simple pyyaml 2>/dev/null \
-    || echo "[warn] pip 安装 PyYAML 失败，可手动: pip install pyyaml"
-  echo "==> 安装可选增强 (curl_cffi: TLS 指纹伪造；rapidfuzz: 去重模糊近重复复核；缺失不影响核心功能)…"
-  python3 -m pip install --user -q curl_cffi 2>/dev/null \
-    || python3 -m pip install -q curl_cffi 2>/dev/null \
-    || python3 -m pip install --user -q -i https://pypi.tuna.tsinghua.edu.cn/simple curl_cffi 2>/dev/null \
-    || echo "[warn] pip 安装 curl_cffi 失败（可选依赖）。需要反爬 TLS 指纹伪造时手动: pip install curl_cffi"
-  python3 -m pip install --user -q rapidfuzz 2>/dev/null \
-    || python3 -m pip install -q rapidfuzz 2>/dev/null \
-    || python3 -m pip install --user -q -i https://pypi.tuna.tsinghua.edu.cn/simple rapidfuzz 2>/dev/null \
-    || echo "[warn] pip 安装 rapidfuzz 失败（可选依赖）。缺失时去重回退纯 minhash，需要模糊近重复复核时手动: pip install rapidfuzz"
+  # 依赖优先装进 $INSTALL_DIR/.venv（bin/argo 的解释器候选链会自动发现它，
+  # 见 _venv_python）。为什么要 venv：PEP 668（Homebrew、Debian 12+、
+  # Ubuntu 23.04+）把系统 Python 标记为 externally-managed，`pip install
+  # --user` 与全局安装都会被拒——旧的三段回落（--user → 全局 → 清华镜像）
+  # 在这类机器上三连败，装完没有 PyYAML，第一次 `argo search` 就倒在
+  # ModuleNotFoundError（2026-10-23 审计实测）。venv 是解释器自己管的目录，
+  # 不受该限制，也不污染用户 site-packages（user-site 遮蔽 Homebrew 主树
+  # 的历史风险一并消失）。
+  VENV_DIR="$INSTALL_DIR/.venv"
+  if python3 -m venv "$VENV_DIR" 2>/dev/null; then
+    echo "==> 创建虚拟环境: ${VENV_DIR}（依赖装在这里，不碰系统 Python）"
+    "$VENV_DIR/bin/pip" install -q pyyaml \
+      || echo "[warn] venv 内 PyYAML 安装失败，可手动: $VENV_DIR/bin/pip install pyyaml"
+    echo "==> 安装可选增强 (curl_cffi: TLS 指纹伪造；rapidfuzz: 去重模糊近重复复核；缺失不影响核心功能)…"
+    "$VENV_DIR/bin/pip" install -q curl_cffi rapidfuzz 2>/dev/null \
+      || echo "[warn] 可选增强安装失败（不影响核心功能）；需要时: $VENV_DIR/bin/pip install curl_cffi rapidfuzz"
+  else
+    echo "[warn] venv 创建失败（Debian/Ubuntu 需先 sudo apt install python3-venv），回退系统 pip 安装…"
+    python3 -m pip install --user -q pyyaml 2>/dev/null \
+      || python3 -m pip install -q pyyaml 2>/dev/null \
+      || python3 -m pip install --user -q -i https://pypi.tuna.tsinghua.edu.cn/simple pyyaml 2>/dev/null \
+      || echo "[warn] pip 安装 PyYAML 失败，可手动: pip install pyyaml"
+    echo "==> 安装可选增强 (curl_cffi: TLS 指纹伪造；rapidfuzz: 去重模糊近重复复核；缺失不影响核心功能)…"
+    python3 -m pip install --user -q curl_cffi 2>/dev/null \
+      || python3 -m pip install -q curl_cffi 2>/dev/null \
+      || python3 -m pip install --user -q -i https://pypi.tuna.tsinghua.edu.cn/simple curl_cffi 2>/dev/null \
+      || echo "[warn] pip 安装 curl_cffi 失败（可选依赖）。需要反爬 TLS 指纹伪造时手动: pip install curl_cffi"
+    python3 -m pip install --user -q rapidfuzz 2>/dev/null \
+      || python3 -m pip install -q rapidfuzz 2>/dev/null \
+      || python3 -m pip install --user -q -i https://pypi.tuna.tsinghua.edu.cn/simple rapidfuzz 2>/dev/null \
+      || echo "[warn] pip 安装 rapidfuzz 失败（可选依赖）。缺失时去重回退纯 minhash，需要模糊近重复复核时手动: pip install rapidfuzz"
+  fi
 fi
 
 # ── pre-commit 快门禁 hook（2026-10-16 流程洞实证后新增） ──────────────────
@@ -189,15 +207,22 @@ if [[ ${#LINK_ARGS[@]} -gt 0 ]] || [[ -n "${ARGO_LINK_TARGETS:-}" ]] || [[ -f "$
   }
 fi
 
+# 文档里的解释器：venv 在就用它（与 bin/argo 的选择一致，避免「装好了但
+# 示例跑不起来」——系统 python3 可能没有 PyYAML）。
+RUN_PY="python3"
+if [[ -x "$INSTALL_DIR/.venv/bin/python" ]]; then
+  RUN_PY="$INSTALL_DIR/.venv/bin/python"
+fi
+
 echo ""
 echo "==> 安装完成"
 echo ""
 echo "快速验证:"
-echo "  python3 $INSTALL_DIR/scripts/search.py \"Python asyncio\" --json"
-echo "  python3 $INSTALL_DIR/scripts/search.py --list-engines"
+echo "  $RUN_PY $INSTALL_DIR/scripts/search.py \"Python asyncio\" --json"
+echo "  $RUN_PY $INSTALL_DIR/scripts/search.py --list-engines"
 echo ""
 echo "启动 MCP（给 Claude / Kimi / Cursor 等用）:"
-echo "  python3 $INSTALL_DIR/scripts/mcp_server.py"
+echo "  $RUN_PY $INSTALL_DIR/scripts/mcp_server.py"
 echo ""
 echo "或用 npx（需 Node.js 18+）:"
 echo "  npx -y github:taxueseek/argo"
@@ -207,7 +232,7 @@ cat <<EOF
 {
   "mcpServers": {
     "argo": {
-      "command": "python3",
+      "command": "$RUN_PY",
       "args": ["$INSTALL_DIR/scripts/mcp_server.py"]
     }
   }
@@ -215,7 +240,7 @@ cat <<EOF
 EOF
 echo ""
 echo "可选：把 Skill 挂到本机 Agent 目录（不复制代码）:"
-echo "  python3 $INSTALL_DIR/scripts/link_source.py --to ~/.claude/skills/argo"
-echo "  python3 $INSTALL_DIR/scripts/link_source.py --to ~/.agents/skills/argo"
+echo "  $RUN_PY $INSTALL_DIR/scripts/link_source.py --to ~/.claude/skills/argo"
+echo "  $RUN_PY $INSTALL_DIR/scripts/link_source.py --to ~/.agents/skills/argo"
 echo ""
 echo "文档: https://github.com/taxueseek/argo"

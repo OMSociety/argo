@@ -204,6 +204,24 @@ def _which_python(name: str) -> str:
     return ""
 
 
+def _venv_python() -> str:
+    """安装器创建的专用 venv 解释器（$ARGO_HOME/.venv）；不存在返回空串。
+
+    install.sh 自 2026-10-27 起默认在 $INSTALL_DIR/.venv 建虚拟环境装依赖：
+    PEP 668 环境（Homebrew、Debian 12+/Ubuntu 23.04+）把系统 Python 标记为
+    externally-managed，`pip install --user` 与全局安装都会被拒，旧的三段
+    回落（--user → 全局 → 清华镜像）在这类机器上三连败，装完没有 PyYAML，
+    第一次 `argo search` 就倒在 ModuleNotFoundError。
+
+    只作为候选链的一员（排在系统解释器之后）：机器上已有带 PyYAML 的高版本
+    python 时选择结果零变化，venv 只在其它候选全败时接管。返回空串而不是
+    直接进候选——不存在时连探测子进程都不用起。
+    """
+    sub = ("Scripts", "python.exe") if os.name == "nt" else ("bin", "python")
+    cand = os.path.join(ARGO_HOME, ".venv", *sub)
+    return cand if os.path.isfile(cand) else ""
+
+
 def _pick_python() -> str:
     """选择可用解释器：ARGO_PYTHON 优先，其次高版本 python3.x，兜底当前解释器。
 
@@ -232,6 +250,9 @@ def _pick_python() -> str:
 
     cands = ["python3.14", "python3.13", "python3.12",
              "python3.11", "python3.10", sys.executable,
+             # 安装器 bless 过的 venv 解释器（见 _venv_python）：系统解释器
+             # 全都没有 PyYAML 的机器上，这是唯一装得进依赖的落点。
+             _venv_python(),
              # Windows：本机没有 `python3` 这个名字（上游 v2.8.5 的社区贡献已经
              # 在 node 启动器里按平台分流，这里是 `bin/argo` 自身的对应分支）。
              # `py` 是官方启动器，`py -3` 取最新 3.x；解析成真实路径后才入库。
