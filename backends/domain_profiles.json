@@ -2654,5 +2654,17 @@
     "documents": [],
     "boost_keywords": {},
     "boost_combos": {}
+  },
+  "ncpssd": {
+    "label": "ncpssd",
+    "documents": [],
+    "boost_keywords": {},
+    "boost_combos": {}
+  },
+  "sciverse": {
+    "label": "sciverse",
+    "documents": [],
+    "boost_keywords": {},
+    "boost_combos": {}
   }
 }
