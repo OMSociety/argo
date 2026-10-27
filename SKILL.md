@@ -26,7 +26,7 @@ triggers:
 
 # Argo — 统一搜索与证据核验
 
-> 不止搜到，还要核到：高后果问题标 `fetch_required`、结果标 `fetch_suggested`，`--verify` 核验正文并回填证据分。收录 277 个源、240 个免密钥可用；digup 默认关；deepseek_search 默认开、需 DEEPSEEK_API_KEY（按次计费，无 key 自动跳过）。
+> 不止搜到，还要核到：高后果问题标 `fetch_required`、结果标 `fetch_suggested`，`--verify` 核验正文并回填证据分。收录 277 个源、240 免密钥；digup 默认关；deepseek_search 默认开、需 DEEPSEEK_API_KEY（按次计费，无 key 跳过）。
 
 ## 快速上手
 
@@ -39,7 +39,7 @@ python3 scripts/research.py "复杂问题" --json  # 取证包（扩词或多工
 
 默认不附 candidates/sources；`--fields agent` 只留答案（~4.3 KB），要追溯或归档才加 `--envelope`（`--archive` 自动带）。
 
-深度研究只此一条，产出**取证包（dossier）**（来源/覆盖/缺口/达标，不是判断稿）：先读 `references/research-protocol.md` 写工作包再取证，判断按事实/推断/建议写。不要另装「专业深度研究」skill。
+深度研究产出**取证包（dossier）**（来源/覆盖/缺口/达标，不是判断稿）：先读 `references/research-protocol.md` 写工作包再取证，判断分事实/推断/建议。不要另装「专业深度研究」skill。
 
 ## 核心命令
 
@@ -53,12 +53,12 @@ python3 scripts/research.py "复杂问题" --json  # 取证包（扩词或多工
 | `--mode fast|auto|deep|budget` | fast 免费优先 / auto 成本感知（默认）/ deep 质量优先 / budget 配额控制 |
 | `--explain` | 解释路由决策（含 TF-IDF 分数） |
 | `--no-cache` / `--depth fast|balanced|deep` | 跳过缓存 / 搜索深度 |
-| `--academic-deep` | 学术多源模式：自动设置 depth=deep + domain=academic，禁用 early-stop 让所有学术源参与（arxiv/openalex/local_pubmed/core 等） |
+| `--academic-deep` | 学术多源模式：自动 depth=deep + domain=academic，禁用 early-stop 让所有学术源参与（arxiv/openalex/local_pubmed/core 等） |
 | `--since 7d|2026-08-01` `--until` `--sort relevance|newest|oldest` | 时间窗过滤 + 时间排序 |
 | `--verify [N]` | 对 top-N 未核验结果 fetch 正文，回填证据分（URL→证据分缓存，同 URL 二次搜索自动复用） |
 | `--domain` `--sub_domain` | 垂直域 / 子域限定 |
 
-**按场景选引擎**：时事/时间窗 → deepseek_search，学术 → `--academic-deep`/exa，社交 → anysearch。口径与取舍见 `references/usage.md`。
+**按场景选引擎**：时事 → deepseek_search，学术 → `--academic-deep`/exa，社交 → anysearch，技能/插件目录 → skill_search/dsh_plugin_search。口径见 `references/usage.md`。
 
 ### 图片检索
 
