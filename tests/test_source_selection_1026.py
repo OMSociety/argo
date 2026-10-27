@@ -76,15 +76,20 @@ class TestGeneralRanking(unittest.TestCase):
             f"非拉丁脚本 top-2 缺语言覆盖源：{out}")
 
     def test_dead_high_prior_loses_to_healthy_lower_prior(self):
-        """高先验但已证实失败的源，必须让位给健康源（加法混合，不是乘法）。"""
+        """高先验但已证实失败的源，必须让位给健康源（加法混合，不是乘法）。
+
+        2026-10-27 起覆盖地板把 local_bing（实测交付 2 条）挡在领队外，
+        这里改用同一层内的任何合格源（parallel_free）验证「自适应能翻转
+        先验」，local_bing 的落败由 test_thin_coverage_engine_never_leads 锁。
+        """
         def score_fn(engine, _d, _l, _p):
-            return {"yuanbao": (0.0, 5), "local_bing": (1.0, 5)}.get(
+            return {"yuanbao": (0.0, 5), "parallel_free": (1.0, 5)}.get(
                 engine, (0.5, 0))
 
         out = rank_general_candidates(
             _POOL, enabled=set(_POOL), mode="auto", depth="fast",
             context="search", score_fn=score_fn)
-        self.assertLess(out.index("local_bing"), out.index("yuanbao"))
+        self.assertLess(out.index("parallel_free"), out.index("yuanbao"))
 
     def test_empty_pool_returns_empty(self):
         self.assertEqual(rank_general_candidates(
@@ -161,3 +166,48 @@ class TestPaidGeneralCandidate(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCoverageFloorAndLanguageGate(unittest.TestCase):
+    """2026-10-27（issue #23）：交付覆盖地板 + 语言门。
+
+    两个真实失败：无 key 环境里 tavily_free（常态 2 条）当上领队，nightly
+    条数 5→2；有 key 环境里 yuanbao（只声明 chinese）给英文查询领跑，
+    5 条全是中文长摘要，体积翻倍。排序必须自己避开这两种源。
+    """
+
+    def _rank(self, pool, lang, mode="auto", depth="fast"):
+        return rank_general_candidates(
+            pool, enabled=set(pool), mode=mode, depth=depth,
+            context="search", lang=lang, score_fn=lambda *a: (0.5, 0))
+
+    def test_english_query_demotes_chinese_only_engine(self):
+        """en 查询不让「只声明 chinese」的源领跑（yuanbao → 层 1）。"""
+        out = self._rank(_POOL, "en")
+        self.assertNotEqual(out[0], "yuanbao",
+                            f"英文查询仍由中文语料源领跑：{out}")
+        self.assertEqual(out[0], "parallel_free", out)
+
+    def test_chinese_query_keeps_yuanbao_lead(self):
+        """zh 查询 yuanbao 仍领跑：10-26 的 489ms 收益不因语言门回退。"""
+        out = self._rank(_POOL, "zh")
+        self.assertEqual(out[0], "yuanbao", out)
+
+    def test_thin_coverage_engine_never_leads(self):
+        """tavily_free 常态 2 条（低于地板 3），任何语言都不当领队。"""
+        for lang in ("en", "zh", ""):
+            out = self._rank(_POOL, lang)
+            self.assertNotEqual(out[0], "tavily_free", f"lang={lang}: {out}")
+
+    def test_keyless_pool_keeps_coverage(self):
+        """无 key 环境（模拟 CI）：yuanbao 不在 enabled，领队必须交够数。"""
+        pool = [e for e in _POOL if e != "yuanbao"]
+        out = rank_general_candidates(
+            pool, enabled=set(pool), mode="auto", depth="fast",
+            context="search", lang="en", score_fn=lambda *a: (0.5, 0))
+        self.assertIn(out[0], {"parallel_free", "anysearch"}, out)
+
+    def test_non_latin_script_skips_tiers(self):
+        """非中英脚本不参与分层：语言覆盖源仍按既有 boost 排在 top-2。"""
+        out = self._rank(_POOL, "cyrillic")
+        self.assertTrue({"anysearch", "local_bing"} & set(out[:2]), out)

@@ -66,6 +66,10 @@ def _run(argo: str, query: str, static: bool, state_dir: str,
     return {
         "ms": elapsed,
         "n": len(results),
+        # agent 档真实字节：与 drift 门禁同一口径（stdout 的实际大小）。
+        # 排序不读它（见 source_selection 的说明），但 A/B 必须能量出来，
+        # 否则「体积换速度」的取舍永远只能凭感觉。
+        "bytes": len(proc.stdout.encode("utf-8")),
         "rel": result_relevance(query, results) if results else None,
         "engines": payload.get("engines_used") or [],
     }
@@ -76,10 +80,12 @@ def _summary(rows: list[dict]) -> dict:
     rels = [r["rel"] for r in rows if r.get("rel") is not None]
     if not latencies:
         return {"n": 0}
+    sizes = [r.get("bytes", 0) for r in rows if r.get("bytes")]
     return {
         "n": len(rows),
         "p50_ms": latencies[len(latencies) // 2],
         "mean_ms": round(sum(latencies) / len(latencies)),
+        "mean_bytes": round(sum(sizes) / len(sizes)) if sizes else None,
         "rel_mean": round(sum(rels) / len(rels), 3) if rels else None,
     }
 
@@ -114,6 +120,7 @@ def main() -> int:
                 if not args.json:
                     print(f"r{rnd} {query[:30]:30s} {arm:7s} "
                           f"{reading['ms']:5d}ms n={reading['n']} "
+                          f"bytes={reading.get('bytes', 0)} "
                           f"rel={reading['rel']} {reading['engines']}", flush=True)
 
     report = {

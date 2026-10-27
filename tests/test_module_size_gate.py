@@ -310,7 +310,9 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "2026-09-28 +4：MCPJOBS_DIR 收编 argo_paths 平台缓存根 + "
               "ARGO_MCPJOBS_DIR 显式覆盖（原硬编码 ~/.cache）"),
     "scripts/matrix_search_eval.py": (
-        1303, "离线路由矩阵（194 条检查项），用例表占多数；"
+        1307, "离线路由矩阵（194 条检查项），用例表占多数；"
+              "2026-10-27 +4：覆盖地板/语言门落地后，R_en_tech_nodomain 的 "
+              "primary_any 补 parallel_free（英文通用领队）并注明契约；"
               "2026-10-27 +4：R_en_tech_nodomain 的 primary_any 随 9f50a12 通用池"
               "实测排序更新（引擎身份不钉死，契约仍是前三位 ≥2 个通用源）；"
               "2026-10-10 +2：入口状态隔离（真实搜索路径会写生产状态，实测夹具"
@@ -331,7 +333,9 @@ GRANDFATHERED: dict[str, tuple[int, str]] = {
               "2026-10-26 +1：补 dsh_plugin_search 域用例（新域零用例会被 "
               "test_route_matrix_coverage 拦下）；上限 1297 → 1298"),
     "scripts/route.py": (
-        1009, "路由决策主干（route_query + 三个 _route_by_* 判定器）；"
+        1011, "路由决策主干（route_query + 三个 _route_by_* 判定器）；"
+              "2026-10-27 +2：付费对冲传 lang（insert_hedge 调用三行化；"
+              "语言条件对冲的判据在 paid_policy，本文件只留传参）；"
               "2026-10-26 +1：三条分支共用 general_kwargs（参数样板在 "
               "general_pool，route.py 只留一个 import；此前分散复制把文件顶到"
               " 1015，收口后回到 1009），上限 1008 → 1009；"

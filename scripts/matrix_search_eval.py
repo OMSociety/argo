@@ -379,9 +379,13 @@ ROUTE_MATRIX: list[dict[str, Any]] = [
     # 换成 yuanbao+tavily_free（隔离 A/B p50 773→489ms）——契约不变，引擎
     # 身份随实测排序走，故候选表跟随扩到当前领跑组合（原表断言的 anysearch/
     # local_bing 在新排序下已不是前三位）。
+    # 2026-10-27：覆盖地板 + 语言门落地后，英文通用的领队是 parallel_free
+    # （tavily 交付 2 条低于地板、yuanbao 只声明 chinese）。契约仍是「前三位
+    # ≥2 个通用源」，候选表继续随实测领队更新。
     {"id": "R_en_tech_nodomain", "q": "Crawl4AI pruning content filter extraction",
      "lang": "en", "domain": "general_search",
-     "primary_any": ["anysearch", "local_bing", "yuanbao", "tavily_free"],
+     "primary_any": ["anysearch", "local_bing", "yuanbao", "tavily_free",
+                     "parallel_free"],
      "forbid_cn": True, "scenario": "general"},
     {"id": "R_en_tech_py", "q": "python asyncio tutorial", "lang": "en",
      "domain": "english_tech", "primary_any": ["octen", "anysearch", "local_bing"],

@@ -1603,17 +1603,17 @@
     {
       "name": "route:R_en_pkg_diffuse",
       "status": "PASS",
-      "detail": "domain=general_search eng=yuanbao combo=['yuanbao', 'tavily_free'] lang=en",
+      "detail": "domain=general_search eng=parallel_free combo=['parallel_free', 'firecrawl'] lang=en",
       "meta": {
         "id": "R_en_pkg_diffuse",
         "q": "pnpm file: directory dependency no content hash reinstall",
         "scenario": "tech",
         "lang": "en",
         "domain": "general_search",
-        "engine": "yuanbao",
+        "engine": "parallel_free",
         "combo": [
-          "yuanbao",
-          "tavily_free"
+          "parallel_free",
+          "firecrawl"
         ],
         "primary_lang": "en"
       }
@@ -1734,17 +1734,17 @@
     {
       "name": "route:R_en_gen",
       "status": "PASS",
-      "detail": "domain=general_search eng=yuanbao combo=['yuanbao', 'tavily_free'] lang=en",
+      "detail": "domain=general_search eng=parallel_free combo=['parallel_free', 'firecrawl'] lang=en",
       "meta": {
         "id": "R_en_gen",
         "q": "hello world",
         "scenario": "general",
         "lang": "en",
         "domain": "general_search",
-        "engine": "yuanbao",
+        "engine": "parallel_free",
         "combo": [
-          "yuanbao",
-          "tavily_free"
+          "parallel_free",
+          "firecrawl"
         ],
         "primary_lang": "en"
       }
@@ -1770,17 +1770,17 @@
     {
       "name": "route:R_en_tech_nodomain",
       "status": "PASS",
-      "detail": "domain=general_search eng=yuanbao combo=['yuanbao', 'tavily_free'] lang=en",
+      "detail": "domain=general_search eng=parallel_free combo=['parallel_free', 'firecrawl'] lang=en",
       "meta": {
         "id": "R_en_tech_nodomain",
         "q": "Crawl4AI pruning content filter extraction",
         "scenario": "general",
         "lang": "en",
         "domain": "general_search",
-        "engine": "yuanbao",
+        "engine": "parallel_free",
         "combo": [
-          "yuanbao",
-          "tavily_free"
+          "parallel_free",
+          "firecrawl"
         ],
         "primary_lang": "en"
       }
@@ -1860,17 +1860,17 @@
     {
       "name": "route:N_en_history",
       "status": "PASS",
-      "detail": "domain=general_search eng=yuanbao combo=['yuanbao', 'tavily_free'] lang=en",
+      "detail": "domain=general_search eng=parallel_free combo=['parallel_free', 'firecrawl'] lang=en",
       "meta": {
         "id": "N_en_history",
         "q": "who invented the printing press",
         "scenario": "negative",
         "lang": "en",
         "domain": "general_search",
-        "engine": "yuanbao",
+        "engine": "parallel_free",
         "combo": [
-          "yuanbao",
-          "tavily_free"
+          "parallel_free",
+          "firecrawl"
         ],
         "primary_lang": "en"
       }
@@ -1878,17 +1878,17 @@
     {
       "name": "route:N_en_garden",
       "status": "PASS",
-      "detail": "domain=general_search eng=yuanbao combo=['yuanbao', 'tavily_free'] lang=en",
+      "detail": "domain=general_search eng=parallel_free combo=['parallel_free', 'firecrawl'] lang=en",
       "meta": {
         "id": "N_en_garden",
         "q": "how often should I water tomato plants",
         "scenario": "negative",
         "lang": "en",
         "domain": "general_search",
-        "engine": "yuanbao",
+        "engine": "parallel_free",
         "combo": [
-          "yuanbao",
-          "tavily_free"
+          "parallel_free",
+          "firecrawl"
         ],
         "primary_lang": "en"
       }
@@ -1914,17 +1914,17 @@
     {
       "name": "route:N_en_hobby",
       "status": "PASS",
-      "detail": "domain=general_search eng=yuanbao combo=['yuanbao', 'tavily_free'] lang=en",
+      "detail": "domain=general_search eng=parallel_free combo=['parallel_free', 'firecrawl'] lang=en",
       "meta": {
         "id": "N_en_hobby",
         "q": "best wood for beginner woodworking",
         "scenario": "negative",
         "lang": "en",
         "domain": "general_search",
-        "engine": "yuanbao",
+        "engine": "parallel_free",
         "combo": [
-          "yuanbao",
-          "tavily_free"
+          "parallel_free",
+          "firecrawl"
         ],
         "primary_lang": "en"
       }

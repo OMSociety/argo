@@ -24,6 +24,20 @@
 隔离状态目录交错跑 static/dynamic 两臂）。它是**冷启动种子**，不是长期
 真值：源一旦有 ≥3 条自适应样本，自适应分占 6 成、先验占 4 成。重测后用
 新数据更新此表，不要按印象调。
+
+## 覆盖地板与语言门（2026-10-27，issue #23）
+
+只按「快 + 词面」排序会选出交付很薄的源，或与查询语言错配的源（英文
+查询由中文语料源领跑，5 条结果全是中文长摘要，体积翻倍且相关性不对）。
+现在排序先分层、层内再比分数：
+
+  0 合格：覆盖率 ≥ COVERAGE_FLOOR（3 条）且语言适配；
+  1 语言错配：声明了 chinese 却拿来跑英文查询（或反之）；
+  2 交付太薄：实测平均交付 < 3 条（如 tavily_free 的匿名通道常态 2 条）。
+
+层级是**先验数据**决定的硬约束，不参与自适应混合——自适应分学习的是
+「这个源好不好」，回答不了「它能不能交够数」。非中英脚本不参与分层
+（语言覆盖源本身就是唯一召回，见 _NON_LATIN_LANG_BOOST）。
 """
 
 from __future__ import annotations
@@ -62,6 +76,81 @@ DEFAULT_PRIOR = 0.50
 # 第 3+ 候选（日常预算截断到 2 时通常轮不到，研究档不截断才参与）。
 # fast/budget 永不进；ARGO_PAID_SEARCH=off 或预算耗尽也不进。
 PAID_GENERAL_CANDIDATES = frozenset({"deepseek_search"})
+
+# ─── 交付覆盖（2026-10-27 单引擎单跑实测）──────────────────────────────────
+#
+# 排序只看「快 + 词面」会选出交付很薄的源：2026-10-27 nightly（issue #23）
+# 里无 key 环境的领队 tavily_free 对 Alan Turing 只交 2 条（基线 5 条）。
+# 覆盖地板让这种源顺延给交付够数的源，而不是靠早停后才发现「怎么只有两条」。
+#
+# 数据来源：同一条查询 `Alan Turing` 单引擎单跑（--no-cache，agent 档）。
+# 未列出的源给 COVERAGE_FLOOR 中性值——缺数据不惩罚，交给自适应分兜底。
+GENERAL_COVERAGE: dict[str, float] = {
+    "yuanbao": 5.0,        # 5 条，但全是中文长摘要（见 GENERAL_BYTES 与语言门）
+    "tavily_free": 2.0,    # 2 条：匿名通道交付薄，不能当领队
+    "parallel_free": 5.0,
+    "anysearch": 5.0,
+    "deepseek_search": 5.0,
+    "local_bing": 2.0,     # 单点实测 0 条，历史口径也不高；给保守值
+}
+COVERAGE_FLOOR = 3.0
+
+# agent 档 5 条结果的平均字节（同日实测）。**不参与排序**，只做监控报表与
+# bench 对照：把它折进分数需要凭空定一个「每 KB 折多少毫秒」的系数，而中文
+# 查询的长摘要（yuanbao 12.5KB）恰恰是分析场景要的上下文——体积该由 drift
+# 门禁守，不该让排序替用户做取舍。英文查询的体积问题由语言门解决。
+GENERAL_BYTES: dict[str, int] = {
+    "yuanbao": 12508,
+    "tavily_free": 3993,
+    "parallel_free": 6790,
+    "anysearch": 5859,
+    "deepseek_search": 7064,
+}
+
+# 语言与源声明的适配：只对中文/英文查询生效。zh 查询不让「只声明 english」
+# 的源领跑，en 查询不让「只声明 chinese」的源领跑；没声明语言的源（anysearch
+# 的 general/tech）保持中性。声明真源是 config 引擎字典（sync_backends 从
+# spec 派生），读不到时不判（fail-open）——缺数据不等于不适配。
+_LANG_PAIR = {"zh": ("chinese", "english"), "en": ("english", "chinese")}
+_COVERAGE_CACHE: dict[str, tuple[str, ...]] | None = None
+
+
+def _coverage_of(engine: str) -> tuple[str, ...]:
+    global _COVERAGE_CACHE
+    if _COVERAGE_CACHE is None:
+        try:
+            from config import load_config
+            engines = load_config().get("engines") or {}
+            _COVERAGE_CACHE = {
+                str(name): tuple((meta or {}).get("coverage") or ())
+                for name, meta in engines.items() if isinstance(meta, dict)}
+        except Exception:
+            _COVERAGE_CACHE = {}
+    return _COVERAGE_CACHE.get(engine, ())
+
+
+def _lang_misfit(engine: str, lang: str) -> bool:
+    """查询语言与源声明语言错配（只认 chinese/english 两种标记）。"""
+    pair = _LANG_PAIR.get(lang)
+    if not pair:
+        return False
+    own, other = pair
+    cov = {str(c).lower() for c in _coverage_of(engine)}
+    return other in cov and own not in cov
+
+
+# 非中英脚本（西里尔/阿拉伯/日韩…）不参与覆盖地板与语言门：那些语言下
+# anysearch/local_bing 这类语言覆盖源本就是唯一召回，交给既有 boost 处理。
+_TIERED_LANGS = frozenset({"zh", "en", "mixed", "other", ""})
+
+
+def _tier(engine: str, lang: str) -> int:
+    """排序层级：0 合格（覆盖够 + 语言适配）/ 1 语言错配 / 2 交付太薄。"""
+    if lang not in _TIERED_LANGS:
+        return 0
+    if GENERAL_COVERAGE.get(engine, COVERAGE_FLOOR) < COVERAGE_FLOOR:
+        return 2
+    return 1 if _lang_misfit(engine, lang) else 0
 
 # 非中英查询的语言覆盖加成。先验表是在中英查询上测的；西里尔/阿拉伯/
 # 日韩等脚本下，语言无关的覆盖源（anysearch/local_bing 带动态 setlang）
@@ -190,7 +279,7 @@ def rank_general_candidates(
             return get_learner().get_score_with_samples(
                 engine, domain, q_lang, use)
 
-    ranked: list[tuple[float, int, str]] = []
+    ranked: list[tuple[int, float, int, str]] = []
     for idx, engine in enumerate(pool):
         prior = _prior_for(engine, lang)
         try:
@@ -205,7 +294,9 @@ def rank_general_candidates(
             weight = 0.4 * prior + 0.6 * min(1.0, float(adaptive_score))
         else:
             weight = prior
-        # idx 取负：同分保持候选池原顺序（稳定排序，便于 A/B 复现）
-        ranked.append((-weight, idx, engine))
+        # 层级先于分数：覆盖太薄 / 语言错配的源，即便更快更高分也排到
+        # 合格源之后（分数在层内仍然说了算）。idx 取负：同分保持候选池
+        # 原顺序（稳定排序，便于 A/B 复现）。
+        ranked.append((_tier(engine, lang), -weight, idx, engine))
     ranked.sort()
-    return [engine for _w, _i, engine in ranked]
+    return [engine for _t, _w, _i, engine in ranked]
