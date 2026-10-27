@@ -1,10 +1,10 @@
 {
   "summary": {
-    "ok": 212,
+    "ok": 213,
     "fail": 0,
     "warn": 1,
     "by_status": {
-      "PASS": 212,
+      "PASS": 213,
       "FAIL": 0,
       "WARN": 1
     },
@@ -25,7 +25,7 @@
         "WARN": 0
       },
       "route": {
-        "PASS": 133,
+        "PASS": 134,
         "FAIL": 0,
         "WARN": 0
       },
@@ -216,14 +216,14 @@
         "n": 6
       },
       "community": {
-        "ok": 6,
-        "n": 6
+        "ok": 7,
+        "n": 7
       }
     },
     "route_by_lang": {
       "zh": {
-        "ok": 86,
-        "n": 86
+        "ok": 87,
+        "n": 87
       },
       "en": {
         "ok": 33,
@@ -1603,17 +1603,17 @@
     {
       "name": "route:R_en_pkg_diffuse",
       "status": "PASS",
-      "detail": "domain=general_search eng=octen combo=['octen', 'anysearch'] lang=en",
+      "detail": "domain=general_search eng=yuanbao combo=['yuanbao', 'tavily_free'] lang=en",
       "meta": {
         "id": "R_en_pkg_diffuse",
         "q": "pnpm file: directory dependency no content hash reinstall",
         "scenario": "tech",
         "lang": "en",
         "domain": "general_search",
-        "engine": "octen",
+        "engine": "yuanbao",
         "combo": [
-          "octen",
-          "anysearch"
+          "yuanbao",
+          "tavily_free"
         ],
         "primary_lang": "en"
       }
@@ -1621,17 +1621,17 @@
     {
       "name": "route:R_en_model_diffuse",
       "status": "PASS",
-      "detail": "domain=general_search eng=github combo=['github', 'octen'] lang=en",
+      "detail": "domain=dsh_plugin_search eng=dshopen combo=['dshopen', 'deepseek1024'] lang=en",
       "meta": {
         "id": "R_en_model_diffuse",
         "q": "DeepSeek Harness DSH 插件开发",
         "scenario": "tech",
         "lang": "en",
-        "domain": "general_search",
-        "engine": "github",
+        "domain": "dsh_plugin_search",
+        "engine": "dshopen",
         "combo": [
-          "github",
-          "octen"
+          "dshopen",
+          "deepseek1024"
         ],
         "primary_lang": "en"
       }
@@ -1680,17 +1680,17 @@
     {
       "name": "route:R_cyr_gen",
       "status": "PASS",
-      "detail": "domain=general_search eng=octen combo=['octen', 'anysearch'] lang=cyrillic",
+      "detail": "domain=general_search eng=anysearch combo=['anysearch', 'local_bing'] lang=cyrillic",
       "meta": {
         "id": "R_cyr_gen",
         "q": "Как написать скрипт",
         "scenario": "general",
         "lang": "cyrillic",
         "domain": "general_search",
-        "engine": "octen",
+        "engine": "anysearch",
         "combo": [
-          "octen",
-          "anysearch"
+          "anysearch",
+          "local_bing"
         ],
         "primary_lang": "cyrillic"
       }
@@ -1716,17 +1716,17 @@
     {
       "name": "route:R_th_gen",
       "status": "PASS",
-      "detail": "domain=general_search eng=octen combo=['octen', 'anysearch'] lang=thai",
+      "detail": "domain=general_search eng=anysearch combo=['anysearch', 'local_bing'] lang=thai",
       "meta": {
         "id": "R_th_gen",
         "q": "อากาศ กรุงเทพ",
         "scenario": "general",
         "lang": "thai",
         "domain": "general_search",
-        "engine": "octen",
+        "engine": "anysearch",
         "combo": [
-          "octen",
-          "anysearch"
+          "anysearch",
+          "local_bing"
         ],
         "primary_lang": "thai"
       }
@@ -1734,17 +1734,17 @@
     {
       "name": "route:R_en_gen",
       "status": "PASS",
-      "detail": "domain=general_search eng=octen combo=['octen', 'anysearch'] lang=en",
+      "detail": "domain=general_search eng=yuanbao combo=['yuanbao', 'tavily_free'] lang=en",
       "meta": {
         "id": "R_en_gen",
         "q": "hello world",
         "scenario": "general",
         "lang": "en",
         "domain": "general_search",
-        "engine": "octen",
+        "engine": "yuanbao",
         "combo": [
-          "octen",
-          "anysearch"
+          "yuanbao",
+          "tavily_free"
         ],
         "primary_lang": "en"
       }
@@ -1770,17 +1770,17 @@
     {
       "name": "route:R_en_tech_nodomain",
       "status": "PASS",
-      "detail": "domain=general_search eng=octen combo=['octen', 'anysearch'] lang=en",
+      "detail": "domain=general_search eng=yuanbao combo=['yuanbao', 'tavily_free'] lang=en",
       "meta": {
         "id": "R_en_tech_nodomain",
         "q": "Crawl4AI pruning content filter extraction",
         "scenario": "general",
         "lang": "en",
         "domain": "general_search",
-        "engine": "octen",
+        "engine": "yuanbao",
         "combo": [
-          "octen",
-          "anysearch"
+          "yuanbao",
+          "tavily_free"
         ],
         "primary_lang": "en"
       }
@@ -1860,17 +1860,17 @@
     {
       "name": "route:N_en_history",
       "status": "PASS",
-      "detail": "domain=general_search eng=octen combo=['octen', 'anysearch'] lang=en",
+      "detail": "domain=general_search eng=yuanbao combo=['yuanbao', 'tavily_free'] lang=en",
       "meta": {
         "id": "N_en_history",
         "q": "who invented the printing press",
         "scenario": "negative",
         "lang": "en",
         "domain": "general_search",
-        "engine": "octen",
+        "engine": "yuanbao",
         "combo": [
-          "octen",
-          "anysearch"
+          "yuanbao",
+          "tavily_free"
         ],
         "primary_lang": "en"
       }
@@ -1878,17 +1878,17 @@
     {
       "name": "route:N_en_garden",
       "status": "PASS",
-      "detail": "domain=general_search eng=octen combo=['octen', 'anysearch'] lang=en",
+      "detail": "domain=general_search eng=yuanbao combo=['yuanbao', 'tavily_free'] lang=en",
       "meta": {
         "id": "N_en_garden",
         "q": "how often should I water tomato plants",
         "scenario": "negative",
         "lang": "en",
         "domain": "general_search",
-        "engine": "octen",
+        "engine": "yuanbao",
         "combo": [
-          "octen",
-          "anysearch"
+          "yuanbao",
+          "tavily_free"
         ],
         "primary_lang": "en"
       }
@@ -1914,17 +1914,17 @@
     {
       "name": "route:N_en_hobby",
       "status": "PASS",
-      "detail": "domain=general_search eng=octen combo=['octen', 'anysearch'] lang=en",
+      "detail": "domain=general_search eng=yuanbao combo=['yuanbao', 'tavily_free'] lang=en",
       "meta": {
         "id": "N_en_hobby",
         "q": "best wood for beginner woodworking",
         "scenario": "negative",
         "lang": "en",
         "domain": "general_search",
-        "engine": "octen",
+        "engine": "yuanbao",
         "combo": [
-          "octen",
-          "anysearch"
+          "yuanbao",
+          "tavily_free"
         ],
         "primary_lang": "en"
       }
@@ -2643,7 +2643,7 @@
     {
       "name": "route:R_skill_search",
       "status": "PASS",
-      "detail": "domain=skill_search eng=skillsmp combo=['skillsmp', 'clawhub'] lang=en",
+      "detail": "domain=skill_search eng=skillsmp combo=['skillsmp', 'clawhub', 'explainx', 'skills_sh'] lang=en",
       "meta": {
         "id": "R_skill_search",
         "q": "agent skills 市场 目录",
@@ -2653,9 +2653,29 @@
         "engine": "skillsmp",
         "combo": [
           "skillsmp",
-          "clawhub"
+          "clawhub",
+          "explainx",
+          "skills_sh"
         ],
         "primary_lang": "en"
+      }
+    },
+    {
+      "name": "route:R_dsh_plugin",
+      "status": "PASS",
+      "detail": "domain=dsh_plugin_search eng=dshopen combo=['dshopen', 'deepseek1024'] lang=zh",
+      "meta": {
+        "id": "R_dsh_plugin",
+        "q": "dsh 插件 记忆",
+        "scenario": "community",
+        "lang": "zh",
+        "domain": "dsh_plugin_search",
+        "engine": "dshopen",
+        "combo": [
+          "dshopen",
+          "deepseek1024"
+        ],
+        "primary_lang": "zh"
       }
     },
     {
