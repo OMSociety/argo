@@ -599,7 +599,9 @@ def _route_by_domain(ctx: _RouteCtx, domain: dict[str, Any], secondary: list[dic
         # 双引擎默认串行，利于 early-stop（答案域）
         parallel = parallel and len(engines_combo) > 2
 
-    engines_combo = insert_hedge(engines_combo, domain.get("name", ""), mode, enabled)
+    engines_combo = insert_hedge(
+        engines_combo, domain.get("name", ""), mode, enabled,
+        lang=str((features or {}).get("primary_lang") or ""))
 
     return _done(
         engine=engines_combo[0],

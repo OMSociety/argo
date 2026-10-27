@@ -208,3 +208,60 @@ def test_batch14_hkex_s2t_longest_match_first():
     from engines_builders_batch14 import _hkex_s2t
     assert _hkex_s2t("腾讯回购注销公告") == "騰訊購回註銷公告"
     assert _hkex_s2t("股东大会决议") == "股東大會決議"
+
+
+def test_hedge_language_gate_for_general(monkeypatch):
+    """2026-10-27（issue #23）：英文通用查询才加 DeepSeek 对冲。
+
+    en 查询：常驻第二位（与 english_tech 同一套就绪判据）。
+    zh/未标语言：不加（10-21 实测中文宽泛查询 DeepSeek 更差）。
+    """
+    monkeypatch.setenv("ARGO_PAID_SEARCH", "auto")
+    monkeypatch.delenv("ARGO_PAID_HEDGE_DEFER", raising=False)
+    monkeypatch.setattr(paid_policy, "_key_ready", lambda e: True)
+    monkeypatch.setattr(paid_policy, "_budget_ok", lambda e: True)
+    monkeypatch.setattr(paid_policy, "_env_allowed", lambda e: True)
+    monkeypatch.setattr(paid_policy, "_admission_ok", lambda e: True)
+    import route_combo
+    monkeypatch.setattr(route_combo, "_breaker_blocked", lambda e: False)
+
+    assert paid_policy.hedge_for(
+        "general_search", "auto", enabled={"tinyfish"}, lang="en") == [
+            "deepseek_search"]
+    assert paid_policy.hedge_for(
+        "general_search", "auto", enabled={"tinyfish"}, lang="zh") == []
+    assert paid_policy.hedge_for(
+        "general_search", "auto", enabled={"tinyfish"}, lang="") == []
+    # 白名单域不受语言门影响（english_tech 的中文查询照旧对冲）
+    assert paid_policy.hedge_for(
+        "english_tech", "auto", enabled={"tinyfish"}, lang="zh") == [
+            "deepseek_search"]
+    # fast 档永不参与
+    assert paid_policy.hedge_for(
+        "general_search", "fast", enabled={"tinyfish"}, lang="en") == []
+
+
+def test_general_hedge_position_and_defer(monkeypatch):
+    """通用英文对冲默认第二位；DEFER=1 时第三位（免费源先跑）。"""
+    monkeypatch.setenv("ARGO_PAID_SEARCH", "auto")
+    monkeypatch.delenv("ARGO_PAID_HEDGE_DEFER", raising=False)
+    monkeypatch.setattr(paid_policy, "_key_ready", lambda e: True)
+    monkeypatch.setattr(paid_policy, "_budget_ok", lambda e: True)
+    monkeypatch.setattr(paid_policy, "_env_allowed", lambda e: True)
+    monkeypatch.setattr(paid_policy, "_admission_ok", lambda e: True)
+    import route_combo
+    monkeypatch.setattr(route_combo, "_breaker_blocked", lambda e: False)
+
+    assert paid_policy.insert_hedge(
+        ["parallel_free", "anysearch"], "general_search", "auto",
+        enabled={"tinyfish"}, lang="en") == [
+            "parallel_free", "deepseek_search", "anysearch"]
+    monkeypatch.setenv("ARGO_PAID_HEDGE_DEFER", "1")
+    assert paid_policy.insert_hedge(
+        ["parallel_free", "anysearch"], "general_search", "auto",
+        enabled={"tinyfish"}, lang="en") == [
+            "parallel_free", "anysearch", "deepseek_search"]
+    # zh 通用不插
+    assert paid_policy.insert_hedge(
+        ["yuanbao", "anysearch"], "general_search", "auto",
+        enabled={"tinyfish"}, lang="zh") == ["yuanbao", "anysearch"]

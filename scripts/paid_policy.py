@@ -11,9 +11,16 @@
     再不行返回空，由原 combo 继续。
   - `fast`/`budget` 模式不参与（与 quota 的成本纪律一致）。
 
-当前只开两个域：`english_tech`、`intl_news_flash`。依据 2026-10-21 多引擎
-实测：DeepSeek 在英文技术/英文新闻上 p50 515ms、日期覆盖 23/39，明显优于
-anysearch/Exa/Tavily；中文宽泛新闻与金融原文反而更差，故不纳入。
+当前只开三个域：`english_tech`、`intl_news_flash`、`global_event`。
+依据 2026-10-21 多引擎实测：DeepSeek 在英文技术/英文新闻上 p50 515ms、
+日期覆盖 23/39，明显优于 anysearch/Exa/Tavily；中文宽泛新闻与金融原文
+反而更差，故不纳入。
+
+2026-10-27（issue #23）追加**语言条件**：`general_search` 且
+`primary_lang=en` 时同样常驻第二位。实测该查询 DeepSeek 589ms/5 条/
+7,064B/5 条带 authority，比免费领队的 1.4–3.0s 更快、比中文长摘要源
+体积小一半；费用 ¥0.005/次（5 元/月≈1000 次），预算耗尽自动跳过。中文
+通用仍不加——按 10-21 的实测结论走。
 """
 
 from __future__ import annotations
@@ -37,7 +44,9 @@ PAID_DOMAIN_HEDGES: dict[str, str] = {
 #   条件第三位 p50 749ms / 均值 1246ms / 权威覆盖 0.50，DeepSeek 调用少 75%。
 # p50 打平、均值与权威覆盖常驻更好，而 5 元/月额度足够覆盖这两个域，
 # 故默认常驻；预算紧张或要严格省钱时再开 DEFER。
-_DEFER_DOMAINS = frozenset({"english_tech"})
+# general_search 的英文对冲同样受 DEFER 控制：DEFER=1 时降到第三位，
+# 免费源够用就完全不付费（1000 次/月的额度也能再省一道）。
+_DEFER_DOMAINS = frozenset({"english_tech", "general_search"})
 
 _FREE_FALLBACK = "tinyfish"
 
@@ -142,11 +151,19 @@ def _paid_hedge_ready(engine: str) -> bool:
 
 
 def hedge_for(domain: str, mode: str = "auto",
-              enabled: set[str] | None = None) -> list[str]:
-    """返回该域应插入的付费/回落引擎（0 或 1 个）。永不抛异常。"""
+              enabled: set[str] | None = None,
+              lang: str = "") -> list[str]:
+    """返回该域应插入的付费/回落引擎（0 或 1 个）。永不抛异常。
+
+    `lang` 只对 general_search 生效：英文通用查询才加 DeepSeek 对冲，
+    中文通用按 10-21 实测结论不加（中文宽泛查询它更差）。
+    """
     if not _enabled() or mode in ("fast", "budget"):
         return []
-    engine = PAID_DOMAIN_HEDGES.get(str(domain or ""))
+    domain = str(domain or "")
+    engine = PAID_DOMAIN_HEDGES.get(domain)
+    if not engine and domain == "general_search" and str(lang or "") == "en":
+        engine = "deepseek_search"
     if not engine:
         return []
     try:
@@ -163,14 +180,15 @@ def hedge_for(domain: str, mode: str = "auto",
 
 
 def insert_hedge(combo: list[str], domain: str, mode: str = "auto",
-                 enabled: set[str] | None = None) -> list[str]:
+                 enabled: set[str] | None = None,
+                 lang: str = "") -> list[str]:
     """把付费/回落引擎插到该域声明的位置（原地改并返回）。
 
     默认第二位；english_tech 第三位（免费源先跑，不够才付费）。位置不参与
     排序，只是 combo 的插入下标，后续 wave 调度按位置分波。
     """
     position = _hedge_position(domain)
-    for engine in reversed(hedge_for(domain, mode, enabled=enabled)):
+    for engine in reversed(hedge_for(domain, mode, enabled=enabled, lang=lang)):
         if engine not in combo:
             combo.insert(min(max(0, position), len(combo)), engine)
     return combo
